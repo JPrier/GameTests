@@ -7,6 +7,7 @@ Small Godot games that run in the browser (desktop and mobile).
 | Game | Folder |
 |---|---|
 | Kitchen Crawl: a restaurant-sim roguelike | [`games/kitchen-crawl`](games/kitchen-crawl) |
+| Bloom: a daily Game of Life puzzle | [`games/bloom`](games/bloom) |
 
 ## How deploys work
 
