@@ -59,7 +59,11 @@ var gen_acc := 0.0
 
 # ui
 var buttons: Array = []             # [{id, rect, label, primary, enabled}]
-var grid_rect := Rect2()
+var grid_rect := Rect2()            # main board on screen
+var main_region := Rect2i()         # which cells the main board shows
+var mini_rect := Rect2()            # inset board (plant phase only)
+var text_rect := Rect2()
+var zoomed := true                  # plant phase: main board zoomed on the zone
 var panel_rect := Rect2()
 var head_rect := Rect2()
 var cell_px := 10.0
@@ -276,6 +280,7 @@ func try_again() -> void:
 	if phase == Phase.RESULT:
 		_show_cells(seeds.keys())
 		phase = Phase.PLAN
+		zoomed = true
 
 
 func finish() -> void:
@@ -496,20 +501,31 @@ func _input(ev: InputEvent) -> void:
 		if ev.pressed:
 			if _press_button(p):
 				return
+			if phase == Phase.PLAN and mini_rect.has_area() and mini_rect.grow(8).has_point(p):
+				toggle_zoom()
+				return
+			if phase == Phase.RESULT and grid_rect.has_point(p):
+				try_again()   # back to planting (zoomed) — the next tap edits
+				return
 			var c := _cell_at(p)
-			if c >= 0 and (phase == Phase.PLAN or phase == Phase.RESULT):
-				try_again()
+			if c >= 0 and phase == Phase.PLAN:
 				if seeds.has(c):
 					paint_value = 0
 				elif in_zone(c):
 					paint_value = 1
 					if seeds.size() >= budget:
 						_toast("All %d seeds planted — tap one to remove it" % budget)
+				else:
+					_toast("Plant inside the green zone")
 				_paint(c)
 		else:
 			paint_value = -1
 	elif ev is InputEventMouseMotion and paint_value >= 0:
 		_paint(_cell_at(make_input_local(ev).position))
+
+
+func toggle_zoom() -> void:
+	zoomed = not zoomed
 
 
 func _paint(c: int) -> void:
@@ -521,12 +537,31 @@ func _paint(c: int) -> void:
 		toggle(c)
 
 
+## Square block of cells around the planting zone, used for the zoomed plant view.
+func plant_region() -> Rect2i:
+	var r := zone.grow(1)
+	var side: int = min(max(r.size.x, r.size.y), min(W, H))
+	var x: int = clamp(r.position.x - (side - r.size.x) / 2, 0, W - side)
+	var y: int = clamp(r.position.y - (side - r.size.y) / 2, 0, H - side)
+	return Rect2i(x, y, side, side)
+
+
+func _region_for_main() -> Rect2i:
+	if phase == Phase.PLAN and zoomed:
+		return plant_region()
+	return Rect2i(0, 0, W, H)
+
+
+func _board_cell_px(rect: Rect2, region: Rect2i) -> float:
+	return min(rect.size.x / region.size.x, rect.size.y / region.size.y)
+
+
 func _cell_at(p: Vector2) -> int:
 	if not grid_rect.has_point(p):
 		return -1
-	var x := int((p.x - grid_rect.position.x) / cell_px)
-	var y := int((p.y - grid_rect.position.y) / cell_px)
-	if x < 0 or y < 0 or x >= W or y >= H:
+	var x := main_region.position.x + int((p.x - grid_rect.position.x) / cell_px)
+	var y := main_region.position.y + int((p.y - grid_rect.position.y) / cell_px)
+	if not main_region.has_point(Vector2i(x, y)):
 		return -1
 	return y * W + x
 
@@ -553,19 +588,35 @@ func _layout() -> void:
 	var vs := get_viewport_rect().size
 	var m := 20.0
 	var portrait := vs.y >= vs.x * 1.05
+	var plan := phase == Phase.PLAN
 	if portrait:
 		head_rect = Rect2(m, m, vs.x - m * 2, 110)
-		var g: float = min(vs.x - m * 2, vs.y - head_rect.end.y - 330)
+		var g: float = min(vs.x - m * 2, vs.y - head_rect.end.y - 360)
 		g = max(g, 200.0)
 		grid_rect = Rect2((vs.x - g) / 2.0, head_rect.end.y + 8, g, g)
-		panel_rect = Rect2(m, grid_rect.end.y + 30, vs.x - m * 2, vs.y - grid_rect.end.y - 30 - m)
+		panel_rect = Rect2(m, grid_rect.end.y + 28, vs.x - m * 2, vs.y - grid_rect.end.y - 28 - m)
+		text_rect = Rect2(panel_rect.position, panel_rect.size - Vector2(0, 80))
+		mini_rect = Rect2()
+		if plan:
+			var ms: float = min(230.0, panel_rect.size.y - 80 - 16)
+			ms = min(ms, panel_rect.size.x * 0.42)
+			mini_rect = Rect2(panel_rect.position + Vector2(4, 4), Vector2(ms, ms))
+			text_rect = Rect2(panel_rect.position.x + ms + 28, panel_rect.position.y, panel_rect.size.x - ms - 28, text_rect.size.y)
 	else:
-		var g: float = min(vs.y - m * 2, vs.x * 0.6)
+		var g: float = min(vs.y - m * 2, vs.x * 0.58)
 		grid_rect = Rect2(m * 1.5, (vs.y - g) / 2.0, g, g)
 		var px := grid_rect.end.x + 32
 		head_rect = Rect2(px, grid_rect.position.y, vs.x - px - m * 1.5, 110)
 		panel_rect = Rect2(px, head_rect.end.y + 12, head_rect.size.x, grid_rect.end.y - head_rect.end.y - 12)
-	cell_px = grid_rect.size.x / W
+		text_rect = Rect2(panel_rect.position, panel_rect.size - Vector2(0, 80))
+		mini_rect = Rect2()
+		if plan:
+			var ms: float = min(170.0, panel_rect.size.x * 0.6, panel_rect.size.y * 0.4)
+			mini_rect = Rect2(panel_rect.position + Vector2(4, 4), Vector2(ms, ms))
+			text_rect = Rect2(panel_rect.position.x, mini_rect.end.y + 40, panel_rect.size.x, panel_rect.end.y - 80 - mini_rect.end.y - 40)
+	main_region = _region_for_main()
+	cell_px = _board_cell_px(grid_rect, main_region)
+	grid_rect.size = Vector2(main_region.size) * cell_px
 	_build_buttons()
 
 
@@ -598,7 +649,21 @@ func _build_buttons() -> void:
 
 func _draw() -> void:
 	_draw_header()
-	_draw_grid()
+	_draw_board(grid_rect, main_region, phase == Phase.PLAN or phase == Phase.RESULT)
+	if mini_rect.has_area():
+		var full := Rect2i(0, 0, W, H)
+		var mini_region: Rect2i = plant_region() if not zoomed else full
+		var mr := mini_rect
+		mr.size = Vector2(mini_region.size) * _board_cell_px(mini_rect, mini_region)
+		_draw_board(mr, mini_region, true)
+		if zoomed:
+			# outline the part of the map the big view shows
+			var cp := _board_cell_px(mr, full)
+			var pr := plant_region()
+			draw_rect(Rect2(mr.position + Vector2(pr.position) * cp, Vector2(pr.size) * cp), C_INK, false, 2.0)
+		_box(mr.grow(6), Color(0, 0, 0, 0), 10, Color(C_INK, 0.25))
+		var hint := "Tap: full map" if zoomed else "Tap: zoom in"
+		_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
 	_draw_panel()
 	for b in buttons:
 		_draw_button(b)
@@ -635,40 +700,45 @@ func _draw_header() -> void:
 	draw_string(font, Vector2(r.end.x - bw, r.position.y + 62), big, HORIZONTAL_ALIGNMENT_LEFT, -1, 52, C_ACCENT)
 
 
-func _cell_rect(i: int) -> Rect2:
-	return Rect2(grid_rect.position + Vector2(i % W, i / W) * cell_px, Vector2(cell_px, cell_px))
-
-
-func _draw_grid() -> void:
-	_box(grid_rect.grow(6), C_GRID_BG, 10)
-	var zr := Rect2(grid_rect.position + Vector2(zone.position) * cell_px, Vector2(zone.size) * cell_px)
-	var show_zone := phase == Phase.PLAN or phase == Phase.RESULT
-	if show_zone:
-		draw_rect(zr, C_ZONE)
-	for k in range(1, W):
-		var x := grid_rect.position.x + k * cell_px
-		draw_line(Vector2(x, grid_rect.position.y), Vector2(x, grid_rect.end.y), C_LINE, 1.0)
-		var y := grid_rect.position.y + k * cell_px
-		draw_line(Vector2(grid_rect.position.x, y), Vector2(grid_rect.end.x, y), C_LINE, 1.0)
-	var inset: float = max(1.0, cell_px * 0.08)
+## Draw the cells of `region` into `rect` (rect is already sized to whole cells).
+func _draw_board(rect: Rect2, region: Rect2i, show_zone: bool) -> void:
+	var cp := rect.size.x / region.size.x
+	_box(rect.grow(6), C_GRID_BG, 10)
+	var zr := Rect2i(zone).intersection(region)
+	var zrect := Rect2(rect.position + Vector2(zr.position - region.position) * cp, Vector2(zr.size) * cp)
+	if show_zone and zr.has_area():
+		draw_rect(zrect, C_ZONE)
+	if cp >= 6.0:
+		for k in range(1, region.size.x):
+			var x := rect.position.x + k * cp
+			draw_line(Vector2(x, rect.position.y), Vector2(x, rect.end.y), C_LINE, 1.0)
+		for k in range(1, region.size.y):
+			var y := rect.position.y + k * cp
+			draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), C_LINE, 1.0)
+	var inset: float = max(0.5, cp * 0.08)
 	var have_sim := alive.size() == W * H
-	for i in W * H:
-		var cr := _cell_rect(i)
-		var t := tiles[i]
-		if t == Cell.WALL:
-			draw_rect(cr.grow(-inset * 0.5), C_WALL)
-			draw_rect(Rect2(cr.position + Vector2(inset * 0.5, inset * 0.5), Vector2(cr.size.x - inset, inset * 1.5)), C_WALL_HI)
-			continue
-		var was_hit := have_sim and touched[i] == 1
-		if was_hit and alive[i] == 0:
-			draw_rect(cr.grow(-inset), C_TOUCHED)
-		if t == Cell.STAR:
-			_draw_star(cr.get_center(), cell_px * 0.42, was_hit)
-		if have_sim and alive[i] == 1:
-			var col := C_SEED if (phase == Phase.PLAN and seeds.has(i)) else C_ALIVE
-			_box(cr.grow(-inset), col, cell_px * 0.22)
-	if show_zone:
-		draw_rect(zr, C_ZONE_EDGE, false, 2.0)
+	for cy in range(region.position.y, region.end.y):
+		for cx in range(region.position.x, region.end.x):
+			var i := cy * W + cx
+			var cr := Rect2(rect.position + Vector2(cx - region.position.x, cy - region.position.y) * cp, Vector2(cp, cp))
+			var t := tiles[i]
+			if t == Cell.WALL:
+				draw_rect(cr.grow(-inset * 0.5), C_WALL)
+				draw_rect(Rect2(cr.position + Vector2(inset * 0.5, inset * 0.5), Vector2(cr.size.x - inset, inset * 1.5)), C_WALL_HI)
+				continue
+			var was_hit := have_sim and touched[i] == 1
+			var is_alive := have_sim and alive[i] == 1
+			if was_hit and not is_alive:
+				draw_rect(cr.grow(-inset), C_TOUCHED)
+			if t == Cell.STAR:
+				_draw_star(cr.get_center(), cp * 0.42, was_hit)
+			if is_alive:
+				var col := C_ALIVE
+				if phase == Phase.PLAN and seeds.has(i):
+					col = C_SEED
+				_box(cr.grow(-inset), col, cp * 0.22)
+	if show_zone and zr.has_area():
+		draw_rect(zrect, C_ZONE_EDGE, false, 2.0)
 
 
 func _draw_star(c: Vector2, r: float, hit: bool) -> void:
@@ -685,12 +755,12 @@ func _draw_star(c: Vector2, r: float, hit: bool) -> void:
 
 
 func _draw_panel() -> void:
-	var r := panel_rect
+	var r := text_rect
 	var lines: Array = []   # [text, size, color]
 	match phase:
 		Phase.PLAN:
-			lines.append(["Plant up to %d seeds in the green zone, then run Life for %d generations." % [budget, GENS], 26, C_INK])
-			lines.append(["Impact = every cell your colony touches, +%d for each gold star it reaches." % STAR_BONUS, 22, C_MUTED])
+			lines.append(["Plant up to %d seeds in the green zone." % budget, 26, C_INK])
+			lines.append(["Life runs %d generations. Impact = cells touched, +%d per gold star." % [GENS, STAR_BONUS], 22, C_MUTED])
 			lines.append(["Try %d of %d" % [tries.size() + 1, MAX_TRIES] + ("  ·  " + _tries_line() if not tries.is_empty() else ""), 22, C_MUTED])
 		Phase.RUN:
 			var s := current_score()
@@ -767,6 +837,6 @@ func get_agent_state() -> Dictionary:
 	return {
 		"phase": Phase.keys()[phase], "date": date, "puzzle": puzzle_no, "budget": budget,
 		"seeds": seeds.size(), "zone": [zone.position.x, zone.position.y, zone.size.x, zone.size.y],
-		"gen": gen, "score": sc, "tries": tries.map(func(t): return t.score), "best": best_score(),
+		"gen": gen, "score": sc, "zoomed": zoomed, "tries": tries.map(func(t): return t.score), "best": best_score(),
 		"stars": star_total, "target": target_score, "share": share_text() if not tries.is_empty() else "",
 	}

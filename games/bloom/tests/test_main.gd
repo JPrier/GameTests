@@ -143,3 +143,25 @@ func test_target_from_link_in_share():
 	main.finish()
 	assert_true(main.share_text().contains("Couldn't beat 99999"), "challenge line")
 	main.wipe_save()
+
+
+func test_plant_view_zooms_on_zone():
+	var main = await _fresh()
+	await wait_frames(2)
+	var r: Rect2i = main.plant_region()
+	assert_eq(r.size.x, r.size.y, "zoom region is square")
+	assert_true(r.encloses(main.zone), "zoom region covers the whole zone")
+	assert_true(main.zoomed, "plant phase starts zoomed")
+	assert_eq(main.main_region, r, "main board shows the zoomed region")
+	var zoomed_px: float = main.cell_px
+	main.toggle_zoom()
+	await wait_frames(1)
+	assert_gt(zoomed_px, main.cell_px * 2.5, "zoomed cells are much bigger than map cells")
+	assert_eq(main.main_region, Rect2i(0, 0, main.W, main.H), "map view shows the whole board")
+	main.toggle_zoom()
+	_plant(main, [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)])
+	main.run()
+	await wait_frames(1)
+	assert_eq(main.main_region, Rect2i(0, 0, main.W, main.H), "the run is shown on the full map")
+	main.skip()
+	main.wipe_save()
