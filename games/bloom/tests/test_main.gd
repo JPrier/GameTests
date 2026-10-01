@@ -165,3 +165,26 @@ func test_plant_view_zooms_on_zone():
 	assert_eq(main.main_region, Rect2i(0, 0, main.W, main.H), "the run is shown on the full map")
 	main.skip()
 	main.wipe_save()
+
+
+func test_dev_menu_resets_saves():
+	var main = await _fresh()
+	_plant(main, [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)])
+	main.run()
+	main.skip()
+	main.finish()
+	assert_eq(main.phase, main.Phase.FINAL, "day finished")
+	for i in 5:
+		main._dev_tap()
+	assert_true(main.dev_open, "five quick title taps open the dev menu")
+	main.dev_reset_today()
+	assert_false(main.dev_open, "menu closes after reset")
+	assert_eq(main.phase, main.Phase.PLAN, "fresh day after reset")
+	assert_eq(main.tries.size(), 0, "tries cleared")
+	main.run()
+	_plant(main, [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)])
+	main.run()
+	main.skip()
+	main.dev_reset_all()
+	assert_eq(main.tries.size(), 0, "reset all clears saves")
+	assert_false(FileAccess.file_exists("user://bloom_%s.json" % main.date), "save file removed")

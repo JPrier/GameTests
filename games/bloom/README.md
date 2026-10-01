@@ -10,4 +10,6 @@ When you finish, **Share score** sends your result with a link (`?d=<date>&s=<sc
 - Rules: B3/S23 on a bounded 28×28 grid; walls are always dead.
 - Progress is saved per day in browser storage, so a reload keeps your tries.
 
+Dev menu (hidden): tap the **Bloom** title 5 times quickly, or open with `?dev=1`. It can reset today's progress or every saved day.
+
 Tests: `gck test bloom` (tests/test_main.gd).

@@ -73,6 +73,9 @@ var toast_t := 0.0
 var share_pending := false
 var last_share_text := ""
 var anim_t := 0.0
+var dev_open := false               # hidden dev menu: tap the title 5x quickly, or ?dev=1
+var dev_taps := 0
+var dev_last_tap := -10.0
 var font: Font
 
 
@@ -88,6 +91,7 @@ func _ready() -> void:
 		base_url = String(url.base)
 	if _valid_date(String(url.get("d", ""))):
 		want = String(url.d)
+	dev_open = String(url.get("dev", "")) == "1"
 	var s := String(url.get("s", ""))
 	target_score = int(s) if s.is_valid_int() else 0
 	load_puzzle(want)
@@ -364,8 +368,29 @@ func _load_state() -> void:
 
 ## Forget today's progress (used by tests).
 func wipe_save() -> void:
-	if FileAccess.file_exists(_save_path()):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(_save_path()))
+	_wipe_file(_save_path())
+	_flush_storage()
+
+
+## Overwrite then delete: on the web a write is what reliably reaches IndexedDB,
+## and an empty file loads as a fresh day even if the delete doesn't persist.
+func _wipe_file(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string("{}")
+		f.close()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## On the web, user:// is IndexedDB and only syncs after a file write closes,
+## so deletions need a write afterwards to actually persist.
+func _flush_storage() -> void:
+	var f := FileAccess.open("user://.sync", FileAccess.WRITE)
+	if f:
+		f.store_string(str(Time.get_unix_time_from_system()))
+		f.close()
 
 
 # ------------------------------------------------------------------ sharing
@@ -457,7 +482,7 @@ func _read_url() -> Dictionary:
 	if not OS.has_feature("web"):
 		return {}
 	var r = JavaScriptBridge.eval("""(function(){var p=new URLSearchParams(location.search);
-		return JSON.stringify({d:p.get('d')||'',s:p.get('s')||'',base:location.origin+location.pathname});})()""", true)
+		return JSON.stringify({d:p.get('d')||'',s:p.get('s')||'',dev:p.get('dev')||'',base:location.origin+location.pathname});})()""", true)
 	if typeof(r) != TYPE_STRING:
 		return {}
 	var d = JSON.parse_string(r)
@@ -499,6 +524,12 @@ func _input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
+			if dev_open:
+				_press_button(p)
+				return
+			if Rect2(head_rect.position, Vector2(220, 100)).has_point(p):
+				_dev_tap()
+				return
 			if _press_button(p):
 				return
 			if phase == Phase.PLAN and mini_rect.has_area() and mini_rect.grow(8).has_point(p):
@@ -522,6 +553,37 @@ func _input(ev: InputEvent) -> void:
 			paint_value = -1
 	elif ev is InputEventMouseMotion and paint_value >= 0:
 		_paint(_cell_at(make_input_local(ev).position))
+
+
+func _dev_tap() -> void:
+	dev_taps = dev_taps + 1 if anim_t - dev_last_tap < 0.6 else 1
+	dev_last_tap = anim_t
+	if dev_taps >= 5:
+		dev_taps = 0
+		dev_open = true
+
+
+## Dev: forget today's tries and seeds.
+func dev_reset_today() -> void:
+	wipe_save()
+	load_puzzle(date)
+	dev_open = false
+	_toast("Dev: today's progress reset")
+
+
+## Dev: forget every saved day.
+func dev_reset_all() -> void:
+	var n := 0
+	var dir := DirAccess.open("user://")
+	if dir:
+		for f in dir.get_files():
+			if f.begins_with("bloom_") and f.ends_with(".json"):
+				_wipe_file("user://" + f)
+				n += 1
+	_flush_storage()
+	load_puzzle(date)
+	dev_open = false
+	_toast("Dev: cleared %d saved day(s)" % n)
 
 
 func toggle_zoom() -> void:
@@ -578,6 +640,9 @@ func _press_button(p: Vector2) -> bool:
 					"finish": finish()
 					"share": share()
 					"today": play_today()
+					"dev_today": dev_reset_today()
+					"dev_all": dev_reset_all()
+					"dev_close": dev_open = false
 			return true
 	return false
 
@@ -622,6 +687,15 @@ func _layout() -> void:
 
 func _build_buttons() -> void:
 	buttons.clear()
+	if dev_open:
+		var vs := get_viewport_rect().size
+		var w: float = min(vs.x - 80, 420.0)
+		var x := (vs.x - w) / 2.0
+		var y := vs.y / 2.0 - 110
+		for l in [["dev_today", "Reset today", true], ["dev_all", "Reset all days", true], ["dev_close", "Close", false]]:
+			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "rect": Rect2(x, y, w, 64)})
+			y += 78
+		return
 	var labels: Array = []
 	match phase:
 		Phase.PLAN:
@@ -665,6 +739,11 @@ func _draw() -> void:
 		var hint := "Tap: full map" if zoomed else "Tap: zoom in"
 		_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
 	_draw_panel()
+	if dev_open:
+		var vs := get_viewport_rect().size
+		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
+		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 140), 32, C_STAR)
+		_text_c("Saved progress for #%d (%s)" % [puzzle_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 180), 20, C_MUTED)
 	for b in buttons:
 		_draw_button(b)
 	if toast_t > 0.0 and toast != "":
