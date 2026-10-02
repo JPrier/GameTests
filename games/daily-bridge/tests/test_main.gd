@@ -137,14 +137,9 @@ func test_score_curve():
 
 func test_no_hard_material_cap():
 	var main = await _fresh()
-	var x := 0
-	var y := 0
-	while main.cost() <= main.ideal * 2:
-		main.add_beam(Vector2i(x, y), Vector2i(x + 2, y), BridgeSim.Mat.ROAD)
-		x += 2
-		if x >= main.gap:
-			x = 0
-			y -= 1
+	for y in range(0, -6, -1):
+		main.add_path(Vector2i(0, y), Vector2i(main.gap, y), BridgeSim.Mat.ROAD)
+	assert_gt(main.cost(), int(main.ideal * 1.5), "well over the ideal")
 	assert_true(main.can_go(), "a heavy bridge can still be tried")
 	main.go()
 	assert_eq(main.phase, main.Phase.RUN, "running")

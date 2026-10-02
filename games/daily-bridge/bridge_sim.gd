@@ -25,9 +25,9 @@ const STRENGTH := [11000.0, 13500.0]   # newtons of tension or compression befor
 const COST := [15, 10]                # material per metre
 
 const VEHICLES := [
-	{"name": "Hatchback", "mass": 320.0, "base": 1.5, "r": 0.33, "speed": 4.5, "color": "e8584a"},
-	{"name": "Camper van", "mass": 480.0, "base": 1.9, "r": 0.38, "speed": 4.0, "color": "4aa3e8"},
-	{"name": "Pickup truck", "mass": 620.0, "base": 2.2, "r": 0.42, "speed": 3.6, "color": "f2b33d"},
+	{"name": "Hatchback", "mass": 550.0, "base": 1.5, "r": 0.33, "speed": 4.5, "color": "e8584a"},
+	{"name": "Camper van", "mass": 800.0, "base": 1.9, "r": 0.38, "speed": 4.0, "color": "4aa3e8"},
+	{"name": "Pickup truck", "mass": 1050.0, "base": 2.2, "r": 0.42, "speed": 3.6, "color": "f2b33d"},
 ]
 
 # level
@@ -401,11 +401,38 @@ static func pillar_design(level: Dictionary, truss_h := 0) -> Array:
 
 
 ## The candidate designs the daily budget is measured against.
+## A Warren truss hung under the deck (h metres deep).
+static func under_design(level: Dictionary, h := 2) -> Array:
+	var g := int(level.gap)
+	var d: Array = []
+	var x := 0
+	while x < g:
+		d.append(beam(Vector2i(x, 0), Vector2i(x + 2, 0), Mat.ROAD))
+		var lo := Vector2i(x + 1, h)
+		d.append(beam(Vector2i(x, 0), lo, Mat.WOOD))
+		d.append(beam(lo, Vector2i(x + 2, 0), Mat.WOOD))
+		if x + 2 < g:
+			d.append(beam(lo, Vector2i(x + 3, h), Mat.WOOD))
+		x += 2
+	return d
+
+
+## Trusses above and below the deck, sharing the road.
+static func double_design(level: Dictionary, top := 2, below := 2) -> Array:
+	var d := reference_design(level, top)
+	for b in under_design(level, below):
+		if int(b.m) == Mat.WOOD:
+			d.append(b)
+	return d
+
+
 static func candidates(level: Dictionary) -> Array:
-	var c: Array = [reference_design(level, 1), reference_design(level, 2)]
+	var c: Array = [reference_design(level, 1), reference_design(level, 2), under_design(level, 1),
+		under_design(level, 2), double_design(level, 1, 1), double_design(level, 2, 1), double_design(level, 2, 2)]
 	if int(level.get("pillar_h", 0)) > 0:
 		c.append(pillar_design(level, 0))
 		c.append(pillar_design(level, 1))
+		c.append(pillar_design(level, 2))
 	return c
 
 

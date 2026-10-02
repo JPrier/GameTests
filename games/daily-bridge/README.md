@@ -12,7 +12,7 @@ Build a bridge, then watch one vehicle try to cross. Everyone gets the same cany
 - Press **Go** to send the vehicle. Beams glow red as they strain and snap when overloaded. After a failed attempt the bridge is kept, with snapped beams marked ×, so you can repair it.
 - Score = 100 × ideal ÷ material used, on your best crossing; a bridge that falls scores 0. The material bar shows the ideal and your projected score as you build. **Share result** sends your score with a link (`?d=<date>&s=<score>`) that opens the same day's bridge, with your score shown as the one to beat.
 
-Each day picks a gap (8, 10 or 12 m), a vehicle (hatchback 320 kg, camper van 480 kg or pickup truck 620 kg), lower anchors on both cliff faces, and sometimes a rock pillar mid-gap. Puzzle #1 is 2026-10-02.
+Each day picks a gap (8, 10 or 12 m), a vehicle (hatchback 550 kg, camper van 800 kg or pickup truck 1050 kg), lower anchors on both cliff faces, and sometimes a rock pillar mid-gap. Puzzle #1 is 2026-10-02.
 
 ## How it works
 
