@@ -18,6 +18,7 @@ const BEAM_DAMP := 0.6          # fraction of relative axial velocity removed pe
 const FRICTION := 0.85          # ground contact friction (0..1 of slip removed per substep)
 const SETTLE := 1.5             # seconds of gravity before the shaking starts
 const AFTER := 3.0              # seconds after the quake before scoring
+const BUCKLE_LEN := 1.8         # beams longer than this lose compression strength ~ (BUCKLE_LEN / L)^2
 
 enum Mat { WOOD, STEEL }
 # density kg/m, EA (axial stiffness, N), strength (N), cost per metre
@@ -45,7 +46,8 @@ var ba := PackedInt32Array()
 var bb := PackedInt32Array()
 var b_rest := PackedFloat64Array()
 var b_alpha := PackedFloat64Array()  # compliance (1/stiffness)
-var b_strength := PackedFloat64Array()
+var b_strength := PackedFloat64Array()   # tension limit (N)
+var b_cstrength := PackedFloat64Array()  # compression limit (N), lower for long beams (buckling)
 var b_mat := PackedByteArray()
 var b_ok := PackedByteArray()
 var b_force := PackedFloat64Array()  # signed avg axial force last step (+ = tension)
@@ -80,7 +82,7 @@ func setup(design: Array, anchors: Array, q) -> void:
 	px.resize(n); py.resize(n); ox.resize(n); oy.resize(n)
 	vx.resize(n); vy.resize(n); inv_m.resize(n); rest_x.resize(n); rest_y.resize(n)
 	anchor.resize(n)
-	b_rest.resize(m); b_alpha.resize(m); b_strength.resize(m)
+	b_rest.resize(m); b_alpha.resize(m); b_strength.resize(m); b_cstrength.resize(m)
 	b_force.resize(m); b_peak.resize(m); broken_at.resize(m)
 	ba.resize(m)
 	bb.resize(m)
@@ -97,6 +99,7 @@ func setup(design: Array, anchors: Array, q) -> void:
 		b_rest[i] = len
 		b_alpha[i] = len / float(mat.ea)
 		b_strength[i] = mat.strength
+		b_cstrength[i] = mat.strength * minf(1.0, pow(BUCKLE_LEN / len, 2.0))
 		b_mat[i] = int(bdef.m)
 		b_ok[i] = 1
 		b_force[i] = 0.0
@@ -201,7 +204,7 @@ func step() -> void:
 			continue
 		var f := b_force[i] / SUB
 		b_force[i] = f
-		var r := absf(f) / b_strength[i]
+		var r := stress_ratio(i)
 		if r > b_peak[i]:
 			b_peak[i] = r
 		if r > 1.0:
@@ -228,6 +231,12 @@ func step() -> void:
 		vy[b] -= ny * k * inv_m[b]
 	t += STEP
 	steps += 1
+
+
+## |force| / limit for beam i in the last step (> 1 snaps). Compression uses the buckling limit.
+func stress_ratio(i: int) -> float:
+	var f := b_force[i]
+	return f / b_strength[i] if f >= 0.0 else -f / b_cstrength[i]
 
 
 func run_to_end() -> void:

@@ -9,7 +9,8 @@ const Quake = preload("res://quake.gd")
 
 const GW := 14                        # build grid width (m)
 const GH := 18                        # build grid height (m)
-const MAX_LEN := 2.3                  # longest beam (m)
+const MAX_LEN := 3.2                  # longest single beam (m)
+const PIECE_LENS := [1, 2, 3]         # piece-length choices (m) for drawn lines
 const MAX_TRIES := 3
 const EPOCH := "2026-10-02"           # quake #1
 const DEFAULT_URL := "https://jprier.github.io/GameTests/earthquake-test/"
@@ -55,6 +56,9 @@ var quake = null
 var design: Array = []                # [{a: Vector2i, b: Vector2i, m: int}]
 var history: Array = []               # undo stack of design copies
 var build_mat := 0                     # Sim.Mat
+var piece_len := 2                     # target length (m) of each piece in a drawn line
+var erasing := false                   # Erase tool: tap or swipe across beams to remove them
+var erase_stroke := false              # an erase gesture is in progress (one undo step)
 var selected := Vector2i(-1, -1)      # tapped joint waiting for a second tap
 var tries: Array = []                 # [{score, built, broken, beams, design, end_x, end_y, end_ok}]
 var finished := false
@@ -78,6 +82,15 @@ var panel_rect := Rect2()
 var text_rect := Rect2()
 var ppm := 30.0                       # pixels per metre
 var vis_k := 1.0                      # current visual exaggeration
+# camera: zoom 1 fits the whole site; cam_center is the world point at the board's centre
+const ZOOM_MAX := 4.0
+var zoom := 1.0
+var cam_center := Vector2(-1e9, 0)
+var fit_ppm := 30.0
+var panning := false
+var pan_last := Vector2()
+var touches := {}                      # screen-touch index -> position (pinch zoom)
+var gesture := false                   # two-finger gesture active: ignore the emulated mouse
 var origin := Vector2()               # screen position of world (0, 0)
 var drag_from := Vector2i(-1, -1)
 var drag_to := Vector2i(-1, -1)
@@ -262,12 +275,123 @@ func add_beam(a: Vector2i, b: Vector2i, mat: int = build_mat) -> bool:
 	return true
 
 
+## Plan a straight line of beams from a to b, cut into pieces of about `plen` metres.
+## Pieces start and end on grid points that lie exactly on the line, so a drawn line
+## can be any length; only the step between neighbouring grid points must be <= MAX_LEN.
+## Returns {pieces: [[p, q], ...] still to build, why: "" or the reason it can't,
+## cost: of those pieces, short: true when the budget ran out part-way}.
+func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = build_mat) -> Dictionary:
+	var out := {"pieces": [], "why": "", "cost": 0.0, "short": false}
+	if a == b:
+		out.why = "same"
+		return out
+	if not in_grid(a) or not in_grid(b):
+		out.why = "Off the site"
+		return out
+	if not is_node(a):
+		if is_node(b):
+			var t := a
+			a = b
+			b = t
+		else:
+			out.why = "Start from an anchor or a joint"
+			return out
+	var d := b - a
+	var g := _gcd(absi(d.x), absi(d.y))
+	var step := d / g
+	var u := Vector2(step).length()
+	if u > MAX_LEN + 1e-6:
+		out.why = "No joint fits on that angle — max %.1f m per piece" % MAX_LEN
+		return out
+	var m := clampi(roundi(plen / u), 1, maxi(1, floori(MAX_LEN / u + 1e-6)))
+	for k in range(0, g + 1):
+		var p := a + step * k
+		if p.y == 0 and not is_anchor(p):
+			out.why = "Only anchors can touch the ground"
+			return out
+	var unit_cost := float(Sim.MATS[mat].cost)
+	var left := money_left()
+	var any_new := false
+	var k := 0
+	while k < g:
+		var k2 := mini(k + m, g)
+		var p := a + step * k
+		var q := a + step * k2
+		k = k2
+		if beam_index(p, q) >= 0:
+			continue
+		any_new = true
+		var c := Vector2(p).distance_to(Vector2(q)) * unit_cost
+		if out.cost + c > left + 1e-6:
+			out.short = true
+			break
+		out.pieces.append([p, q])
+		out.cost += c
+	if not any_new:
+		out.why = "Already built"
+	elif out.pieces.is_empty():
+		out.why = "Not enough budget"
+	return out
+
+
+static func _gcd(x: int, y: int) -> int:
+	while y != 0:
+		var t := y
+		y = x % y
+		x = t
+	return maxi(x, 1)
+
+
+## Build a planned line as one undo step. Returns how many pieces were added.
+func add_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = build_mat) -> int:
+	if phase == Phase.RESULT:
+		back_to_build()
+	if phase != Phase.BUILD:
+		return 0
+	var plan := plan_chain(a, b, plen, mat)
+	if plan.why != "":
+		if plan.why != "same":
+			_toast(plan.why)
+		return 0
+	_push_history()
+	for pq in plan.pieces:
+		design.append({"a": pq[0], "b": pq[1], "m": mat})
+	_save_state()
+	if plan.short:
+		_toast("Budget ran out — built %d piece%s" % [plan.pieces.size(), "" if plan.pieces.size() == 1 else "s"])
+	return plan.pieces.size()
+
+
+func set_erasing(on: bool) -> void:
+	erasing = on
+	selected = Vector2i(-1, -1)
+
+
+## Erase the beam nearest world point w (Erase tool). One undo step per stroke.
+func erase_at(w: Vector2) -> bool:
+	if phase != Phase.BUILD:
+		return false
+	var i := beam_at(w, true)
+	if i < 0:
+		return false
+	if not erase_stroke:
+		_push_history()
+		erase_stroke = true
+	design.remove_at(i)
+	_save_state()
+	return true
+
+
+func set_piece_len(l: int) -> void:
+	if PIECE_LENS.has(l):
+		piece_len = l
+
+
 func remove_beam(i: int) -> void:
 	if phase != Phase.BUILD or i < 0 or i >= design.size():
 		return
 	_push_history()
 	design.remove_at(i)
-	_prune()
 	_save_state()
 
 
@@ -316,10 +440,28 @@ func set_mat(m: int) -> void:
 	build_mat = clampi(m, 0, Sim.MATS.size() - 1)
 
 
+## Grid points attached to an anchor through the design (pieces left floating aren't).
+func attached_points(d: Array = design) -> Dictionary:
+	var reach := {}
+	for a in anchors:
+		reach[a] = true
+	var changed := true
+	while changed:
+		changed = false
+		for b in d:
+			if reach.has(b.a) != reach.has(b.b):
+				reach[b.a] = true
+				reach[b.b] = true
+				changed = true
+	return reach
+
+
 func built_height(d: Array = design) -> float:
+	var att := attached_points(d)
 	var h := 0
 	for b in d:
-		h = maxi(h, maxi(b.a.y, b.b.y))
+		if att.has(b.a):
+			h = maxi(h, maxi(b.a.y, b.b.y))
 	return h
 
 
@@ -643,9 +785,13 @@ func _process(delta: float) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	if _camera_input(ev):
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
+			if gesture:
+				return
 			if dev_open or tut_open:
 				_press_button(p)
 				return
@@ -662,36 +808,172 @@ func _input(ev: InputEvent) -> void:
 			if phase == Phase.RESULT:
 				back_to_build()
 				return
-			if phase != Phase.BUILD:
-				return
 			press_pos = p
+			pan_last = p
 			dragging = false
-			var g := snap(p)
 			drag_to = Vector2i(-1, -1)
+			drag_from = Vector2i(-1, -1)
+			if phase != Phase.BUILD:
+				panning = zoom > 1.01
+				return
+			if erasing:
+				erase_stroke = false
+				erase_at(screen_to_world(p))
+				return
+			var g := snap(p)
 			if g.x >= 0 and is_node(g):
 				drag_from = g
-			else:
-				drag_from = Vector2i(-1, -1)
+			elif zoom > 1.01:
+				panning = true
 		else:
-			if phase == Phase.BUILD and not dev_open and not tut_open and board_rect.has_point(p):
+			if gesture:
+				if touches.is_empty():
+					gesture = false
+				_end_pointer()
+				return
+			var was_pan_drag := panning and dragging
+			if phase == Phase.BUILD and not dev_open and not tut_open and not erasing and not was_pan_drag and board_rect.has_point(p):
 				_release(p)
-			drag_from = Vector2i(-1, -1)
-			drag_to = Vector2i(-1, -1)
-			dragging = false
-	elif ev is InputEventMouseMotion and drag_from.x >= 0:
+			_end_pointer()
+	elif ev is InputEventMouseMotion and not gesture:
+		if (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
+			return
 		var p: Vector2 = make_input_local(ev).position
-		if p.distance_to(press_pos) > ppm * 0.45:
+		if p.distance_to(press_pos) > 12.0:
 			dragging = true
-		if dragging:
+		if erasing and phase == Phase.BUILD and board_rect.has_point(press_pos):
+			# swipe: erase everything the pointer crosses
+			var a := screen_to_world(pan_last)
+			var b := screen_to_world(p)
+			var steps := maxi(1, ceili(a.distance_to(b) / 0.15))
+			for k in steps + 1:
+				erase_at(a.lerp(b, float(k) / steps))
+			pan_last = p
+			return
+		if panning:
+			if dragging:
+				_pan_by(p - pan_last)
+			pan_last = p
+			return
+		if drag_from.x >= 0 and dragging:
 			var g := snap(p)
 			drag_to = g if g.x >= 0 and g != drag_from else Vector2i(-1, -1)
+
+
+func _end_pointer() -> void:
+	drag_from = Vector2i(-1, -1)
+	drag_to = Vector2i(-1, -1)
+	dragging = false
+	panning = false
+	erase_stroke = false
+
+
+## Zoom/pan input: mouse wheel, trackpad pinch/scroll, two-finger touch. True when consumed.
+func _camera_input(ev: InputEvent) -> bool:
+	if dev_open or tut_open:
+		return false
+	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		var p: Vector2 = make_input_local(ev).position
+		if board_rect.has_point(p):
+			zoom_at(p, 1.15 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.15)
+			return true
+		return false
+	if ev is InputEventMagnifyGesture:
+		var p: Vector2 = make_input_local(ev).position
+		zoom_at(p if board_rect.has_point(p) else board_rect.get_center(), ev.factor)
+		return true
+	if ev is InputEventPanGesture:
+		_pan_by(-ev.delta * 8.0)
+		return true
+	if ev is InputEventScreenTouch:
+		var p: Vector2 = make_input_local(ev).position
+		if ev.pressed:
+			touches[ev.index] = p
+			if touches.size() >= 2 and not gesture:
+				gesture = true
+				_cancel_for_gesture()
+		else:
+			touches.erase(ev.index)
+			if touches.is_empty() and gesture:
+				gesture = false
+				_end_pointer()
+		return false   # the emulated mouse events still arrive; they're ignored while gesture
+	if ev is InputEventScreenDrag:
+		var p: Vector2 = make_input_local(ev).position
+		if touches.size() >= 2 and touches.has(ev.index):
+			var ids: Array = touches.keys()
+			var other: Vector2 = touches[ids[1] if ids[0] == ev.index else ids[0]]
+			var before: Vector2 = touches[ev.index]
+			var d0 := before.distance_to(other)
+			var d1 := p.distance_to(other)
+			var mid0 := (before + other) * 0.5
+			var mid1 := (p + other) * 0.5
+			touches[ev.index] = p
+			if d0 > 4.0:
+				zoom_at(mid1, d1 / d0)
+			_pan_by(mid1 - mid0)
+			return true
+		if touches.has(ev.index):
+			touches[ev.index] = p
+	return false
+
+
+## A second finger landed: abandon what the first finger started (and undo a stray erase).
+func _cancel_for_gesture() -> void:
+	if erase_stroke:
+		undo()
+	_end_pointer()
+
+
+func zoom_at(p: Vector2, factor: float) -> void:
+	var w := screen_to_world(p)
+	zoom = clampf(zoom * factor, 1.0, ZOOM_MAX)
+	ppm = fit_ppm * zoom
+	# keep world point w under the pointer
+	var c := board_rect.get_center()
+	cam_center = Vector2(w.x - (p.x - c.x) / ppm, w.y + (p.y - c.y) / ppm)
+	_clamp_camera()
+	_apply_camera()
+
+
+func zoom_reset() -> void:
+	zoom = 1.0
+	cam_center = _fit_center()
+	_apply_camera()
+
+
+func _pan_by(screen_delta: Vector2) -> void:
+	cam_center += Vector2(-screen_delta.x, screen_delta.y) / ppm
+	_clamp_camera()
+	_apply_camera()
+
+
+func _fit_center() -> Vector2:
+	return Vector2(GW / 2.0, (GH + VIEW_PAD - VIEW_GROUND) / 2.0)
+
+
+func _clamp_camera() -> void:
+	var hw := board_rect.size.x / (2.0 * ppm)
+	var hh := board_rect.size.y / (2.0 * ppm)
+	var x0 := -VIEW_PAD
+	var x1 := GW + VIEW_PAD
+	var y0 := -VIEW_GROUND
+	var y1 := GH + VIEW_PAD
+	cam_center.x = (x0 + x1) / 2.0 if hw * 2.0 >= x1 - x0 - 1e-6 else clampf(cam_center.x, x0 + hw, x1 - hw)
+	cam_center.y = (y0 + y1) / 2.0 if hh * 2.0 >= y1 - y0 - 1e-6 else clampf(cam_center.y, y0 + hh, y1 - hh)
+
+
+func _apply_camera() -> void:
+	ppm = fit_ppm * zoom
+	var c := board_rect.get_center()
+	origin = Vector2(c.x - cam_center.x * ppm, c.y + cam_center.y * ppm)
 
 
 ## Pointer released on the board: finish a drag, or handle a tap.
 func _release(p: Vector2) -> void:
 	if dragging and drag_from.x >= 0:
 		if drag_to.x >= 0:
-			add_beam(drag_from, drag_to)
+			add_chain(drag_from, drag_to)
 		selected = Vector2i(-1, -1)
 		return
 	tap_world(snap(p), screen_to_world(p))
@@ -708,9 +990,9 @@ func tap_world(g: Vector2i, w: Vector2) -> void:
 			selected = Vector2i(-1, -1)
 			return
 		if g.x >= 0:
-			var why := check_beam(selected, g)
+			var why: String = plan_chain(selected, g).why
 			if why == "":
-				add_beam(selected, g)
+				add_chain(selected, g)
 				selected = g
 				return
 			if is_node(g):
@@ -729,16 +1011,16 @@ func tap_world(g: Vector2i, w: Vector2) -> void:
 		_toast("Start at an anchor or a joint")
 
 
-func beam_at(w: Vector2) -> int:
+func beam_at(w: Vector2, whole := false) -> int:
 	var best := -1
-	var best_d := 0.28
+	var best_d := maxf(0.28, 14.0 / ppm) if not whole else maxf(0.35, 18.0 / ppm)
 	for i in design.size():
 		var b: Dictionary = design[i]
 		var a := Vector2(b.a)
 		var c := Vector2(b.b)
 		var q := Geometry2D.get_closest_point_to_segment(w, a, c)
 		var d := q.distance_to(w)
-		if d < best_d and q.distance_to(a) > 0.2 and q.distance_to(c) > 0.2:
+		if d < best_d and (whole or (q.distance_to(a) > 0.2 and q.distance_to(c) > 0.2)):
 			best_d = d
 			best = i
 	return best
@@ -803,6 +1085,16 @@ func _press_button(p: Vector2) -> bool:
 					"clear": clear_design()
 					"wood": set_mat(Sim.Mat.WOOD)
 					"steel": set_mat(Sim.Mat.STEEL)
+					"erase": set_erasing(not erasing)
+					"zoom_in": zoom_at(board_rect.get_center(), 1.5)
+					"zoom_out":
+						if zoom / 1.5 <= 1.01:
+							zoom_reset()
+						else:
+							zoom_at(board_rect.get_center(), 1.0 / 1.5)
+					"len1": set_piece_len(1)
+					"len2": set_piece_len(2)
+					"len3": set_piece_len(3)
 					"skip": skip()
 					"again": back_to_build()
 					"finish": finish()
@@ -860,7 +1152,11 @@ func _layout() -> void:
 		head_rect = Rect2(px, m, pw, 92)
 		seis_rect = Rect2(px, head_rect.end.y + 4, pw, 72)
 		panel_rect = Rect2(px, seis_rect.end.y + 16, pw, vs.y - seis_rect.end.y - 16 - m)
-	origin = board_rect.position + Vector2(VIEW_PAD * ppm, (GH + VIEW_PAD) * ppm)
+	fit_ppm = ppm
+	if cam_center.x < -1e8:
+		cam_center = _fit_center()
+	_clamp_camera()
+	_apply_camera()
 	_build_buttons()
 
 
@@ -887,8 +1183,16 @@ func _build_buttons() -> void:
 	var rows: Array = []
 	match phase:
 		Phase.BUILD:
-			rows.append([["wood", "Wood $1/m", build_mat == Sim.Mat.WOOD, true], ["steel", "Steel $3/m", build_mat == Sim.Mat.STEEL, true]])
-			rows.append([["run", "Start quake", true, not design.is_empty()], ["undo", "Undo", false, not history.is_empty()], ["clear", "Clear", false, not design.is_empty()]])
+			var mats := [["wood", "Wood $1/m", build_mat == Sim.Mat.WOOD, true], ["steel", "Steel $3/m", build_mat == Sim.Mat.STEEL, true]]
+			var lens: Array = []
+			for l in PIECE_LENS:
+				lens.append(["len%d" % l, "%d m" % l, piece_len == l, true])
+			if panel_rect.size.x >= 560:
+				rows.append(mats + lens)
+			else:
+				rows.append(mats)
+				rows.append(lens)
+			rows.append([["run", "Start quake", true, not design.is_empty()], ["undo", "Undo", false, not history.is_empty()], ["erase", "Erase", erasing, not design.is_empty() or erasing], ["clear", "Clear", false, not design.is_empty()]])
 		Phase.RUN:
 			rows.append([["skip", "Fast-forward" if not fast else "Fast-forwarding…", false, not fast]])
 		Phase.RESULT:
@@ -907,14 +1211,26 @@ func _build_buttons() -> void:
 		for i in n:
 			var l: Array = row[i]
 			var w := free / n
-			if n == 3:
+			if n == 4:
+				w = free * (0.34 if i == 0 else 0.22)
+			elif n == 5:
+				w = free * (0.25 if i < 2 else 0.5 / 3.0)
+			elif n == 3 and phase == Phase.BUILD and String(row[0][0]).begins_with("len"):
+				w = free / 3.0
+			elif n == 3:
 				w = free * (0.46 if i == 0 else 0.27)
 			elif n == 2 and phase != Phase.BUILD:
 				w = free * (0.62 if i == 0 else 0.38)
-			var kind := "toggle" if l[0] in ["wood", "steel"] else "button"
+			var kind := "toggle" if l[0] in ["wood", "steel", "erase"] or String(l[0]).begins_with("len") else "button"
 			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": l[3], "rect": Rect2(x, y, w, bh), "kind": kind})
 			x += w + gap
 		y += bh + gap
+	# zoom controls in the board's top-right corner
+	var zs := 46.0
+	var zx := board_rect.end.x - zs - 8
+	var zy := board_rect.position.y + 8
+	buttons.append({"id": "zoom_in", "label": "+", "primary": false, "enabled": zoom < ZOOM_MAX - 0.01, "rect": Rect2(zx, zy, zs, zs), "kind": "zoom"})
+	buttons.append({"id": "zoom_out", "label": "-", "primary": false, "enabled": zoom > 1.01, "rect": Rect2(zx, zy + zs + 6, zs, zs), "kind": "zoom"})
 
 
 # ------------------------------------------------------------------ drawing
@@ -922,9 +1238,10 @@ func _build_buttons() -> void:
 func _draw() -> void:
 	if buttons.is_empty():
 		_layout()
+	_draw_board()
+	_mask_outside_board()
 	_draw_header()
 	_draw_seismo()
-	_draw_board()
 	_draw_panel()
 	_draw_help_button()
 	if tut_open and not dev_open:
@@ -944,6 +1261,17 @@ func _draw() -> void:
 		var r := Rect2((vs.x - tw) / 2.0, ty, tw, 46)
 		_box(r, Color(0.08, 0.07, 0.06, 0.94 * a), 23, Color(C_ACCENT, 0.6 * a))
 		_text_c(toast, r.get_center() + Vector2(0, 8), 22, Color(C_INK, a))
+
+
+## Cover anything drawn outside the board (the zoomed site) with the page background.
+func _mask_outside_board() -> void:
+	var vs := get_viewport_rect().size
+	var r := board_rect
+	draw_rect(Rect2(0, 0, vs.x, r.position.y), C_BG)
+	draw_rect(Rect2(0, r.end.y, vs.x, vs.y - r.end.y), C_BG)
+	draw_rect(Rect2(0, r.position.y, r.position.x, r.size.y), C_BG)
+	draw_rect(Rect2(r.end.x, r.position.y, vs.x - r.end.x, r.size.y), C_BG)
+	_box(r.grow(2), Color(0, 0, 0, 0), 12, Color(C_INK, 0.08))
 
 
 func _draw_header() -> void:
@@ -1018,8 +1346,9 @@ func _draw_board() -> void:
 	elif (phase == Phase.RESULT or phase == Phase.FINAL) and show_try >= 0:
 		g = Vector2(float(tries[show_try].end_gx), float(tries[show_try].end_gy))
 	var gy0 := world_to_screen(Vector2(0, g.y)).y
-	var ground := Rect2(r.position.x, gy0, r.size.x, r.end.y - gy0)
-	_box(ground, C_GROUND, 0)
+	var ground := Rect2(r.position.x, gy0, r.size.x, maxf(0.0, r.end.y - gy0))
+	if ground.size.y > 0.0:
+		_box(ground, C_GROUND, 0)
 	draw_line(Vector2(r.position.x, gy0), Vector2(r.end.x, gy0), C_GROUND_HI, 3.0)
 	# soil texture ticks that slide with the ground
 	var off := fposmod(g.x * ppm, ppm)
@@ -1038,9 +1367,8 @@ func _draw_board() -> void:
 			for gx2 in range(0, GW + 1):
 				var p := Vector2i(gx2, gy)
 				var s := world_to_screen(Vector2(p))
-				if focus.x >= 0 and Vector2(p).distance_to(Vector2(focus)) <= MAX_LEN + 1e-6 and p != focus:
-					var ok := check_beam(focus, p) == ""
-					draw_circle(s, maxf(2.5, ppm * 0.09), Color(C_DOT_REACH, 0.9 if ok else 0.25))
+				if focus.x >= 0 and _reach(focus).has(p):
+					draw_circle(s, maxf(2.5, ppm * 0.09), Color(C_DOT_REACH, 0.85))
 				else:
 					draw_circle(s, maxf(1.5, ppm * 0.05), C_DOT)
 		# height ruler
@@ -1109,20 +1437,65 @@ func _draw_joint(s: Vector2, anchor := false) -> void:
 
 func _draw_design() -> void:
 	var joints := {}
+	var att := attached_points()
 	for b in design:
-		_draw_beam(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), int(b.m))
+		if att.has(b.a):
+			_draw_beam(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), int(b.m))
+		else:   # floating piece: not attached to any anchor, it'll just fall
+			_draw_beam(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), int(b.m), Color(C_DANGER, 0.5), 0.45)
 		joints[b.a] = true
 		joints[b.b] = true
+	var plan_pts: Array = []
 	if drag_from.x >= 0 and drag_to.x >= 0:
-		var ok := check_beam(drag_from, drag_to) == ""
-		_draw_beam(world_to_screen(Vector2(drag_from)), world_to_screen(Vector2(drag_to)), build_mat, Color(C_DANGER, 0.0 if ok else 0.8), 0.6)
+		var plan := plan_chain(drag_from, drag_to)
+		if plan.why == "":
+			for pq in plan.pieces:
+				_draw_beam(world_to_screen(Vector2(pq[0])), world_to_screen(Vector2(pq[1])), build_mat, Color(0, 0, 0, 0), 0.65)
+				plan_pts.append(pq[1])
+			var n_p: int = plan.pieces.size()
+			_draw_drag_label("%d piece%s · $%d%s" % [n_p, "" if n_p == 1 else "s", ceili(plan.cost), " (budget!)" if plan.short else ""])
+		elif plan.why != "same":
+			_draw_beam(world_to_screen(Vector2(drag_from)), world_to_screen(Vector2(drag_to)), build_mat, Color(C_DANGER, 0.85), 0.5)
+			_draw_drag_label(plan.why)
 	for p in joints:
 		_draw_joint(world_to_screen(Vector2(p)), is_anchor(p))
 	for a in anchors:
 		_draw_joint(world_to_screen(Vector2(a)), true)
+	for p in plan_pts:
+		_draw_joint(world_to_screen(Vector2(p)), false)
 	if selected.x >= 0:
 		var s := world_to_screen(Vector2(selected))
 		draw_arc(s, ppm * 0.32 + 2.0 * sin(anim_t * 6.0), 0, TAU, 28, C_DOT_REACH, 3.0)
+
+
+## Small pill near the drag end saying what the line will build.
+func _draw_drag_label(text: String) -> void:
+	var s := world_to_screen(Vector2(drag_to)) + Vector2(0, -ppm * 0.6 - 18)
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 20
+	var r := Rect2(s.x - tw / 2.0, s.y - 16, tw, 30)
+	r.position.x = clampf(r.position.x, board_rect.position.x + 4, board_rect.end.x - tw - 4)
+	r.position.y = maxf(r.position.y, board_rect.position.y + 4)
+	_box(r, Color(0.08, 0.07, 0.06, 0.9), 15, Color(C_DOT_REACH, 0.5))
+	_text_c(text, r.get_center() + Vector2(0, 6), 18, C_INK)
+
+
+## Grid points a line can be drawn to from `focus` with the current settings (cached).
+var _reach_key := ""
+var _reach_set := {}
+
+
+func _reach(focus: Vector2i) -> Dictionary:
+	var key := "%s|%d|%d|%d|%d" % [focus, piece_len, build_mat, design.size(), floori(money_left() * 100)]
+	if key == _reach_key:
+		return _reach_set
+	_reach_key = key
+	_reach_set = {}
+	for gy in range(0, GH + 1):
+		for gx in range(0, GW + 1):
+			var p := Vector2i(gx, gy)
+			if p != focus and plan_chain(focus, p).why == "":
+				_reach_set[p] = true
+	return _reach_set
 
 
 func _stress_tint(ratio: float) -> Color:
@@ -1151,7 +1524,7 @@ func _draw_sim() -> void:
 			continue
 		var a := world_to_screen(_vis(sim.ba[i]))
 		var b := world_to_screen(_vis(sim.bb[i]))
-		var ratio: float = absf(sim.b_force[i]) / sim.b_strength[i]
+		var ratio: float = sim.stress_ratio(i)
 		_draw_beam(a, b, sim.b_mat[i], _stress_tint(ratio))
 	for j in sim.n:
 		_draw_joint(world_to_screen(_vis(j)), sim.anchor[j] == 1)
@@ -1200,9 +1573,11 @@ func _draw_panel() -> void:
 	var lines: Array = []
 	match phase:
 		Phase.BUILD:
-			var hint := "Drag from an anchor or a joint to build a beam. Tap a beam to remove it."
-			if selected.x >= 0:
-				hint = "Tap a lit dot to build from the selected joint. Tap it again to deselect."
+			var hint := "Pick a piece length, then drag a line from an anchor or joint — it's built from pieces of that length. Tap a beam to remove it."
+			if erasing:
+				hint = "Erasing: tap or swipe across pieces to remove them. Tap Erase again to build."
+			elif selected.x >= 0:
+				hint = "Tap a lit dot to build a line to it from the selected joint. Tap the joint again to deselect."
 			lines.append([hint, 21, C_INK])
 			lines.append(["Built %d m · %d beams · try %d of %d%s" % [int(built_height()), design.size(), tries.size() + 1, MAX_TRIES,
 				("  ·  " + _tries_line()) if not tries.is_empty() else ""], 19, C_MUTED])
@@ -1257,10 +1632,18 @@ func _countdown() -> String:
 
 
 func _draw_button(b: Dictionary) -> void:
+	if b.get("kind", "") == "zoom":
+		_box(b.rect, Color(0.1, 0.09, 0.08, 0.8 if b.enabled else 0.4), 12, Color(C_INK, 0.25))
+		var c: Vector2 = b.rect.get_center()
+		var col := C_INK if b.enabled else Color(C_INK, 0.3)
+		draw_line(c - Vector2(9, 0), c + Vector2(9, 0), col, 3.0)
+		if b.id == "zoom_in":
+			draw_line(c - Vector2(0, 9), c + Vector2(0, 9), col, 3.0)
+		return
 	var toggle: bool = b.get("kind", "") == "toggle"
 	var col: Color = C_BTN_PRIMARY if b.primary else C_BTN
 	if toggle:
-		var mc: Color = C_WOOD if b.id == "wood" else C_STEEL
+		var mc: Color = C_WOOD if b.id == "wood" else (C_STEEL if b.id == "steel" else (C_DANGER if b.id == "erase" else C_DOT_REACH))
 		col = Color(mc, 0.95) if b.primary else C_BTN
 	if not b.enabled:
 		col = Color(col, 0.35)
@@ -1320,8 +1703,8 @@ func _draw_tutorial() -> void:
 	y = _para("How Earthquake Test works", x, y, tw, 32, C_INK) + 14
 	var rows := [
 		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
-		["beam", "Drag from an anchor or joint to a nearby dot to build a beam (max %.1f m). Or tap a joint, then tap dots." % MAX_LEN],
-		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger."],
+		["beam", "Pick a piece length (1, 2 or 3 m), then drag a line from an anchor or joint. It's built from pieces of that length, with a joint between each. Erase removes single pieces."],
+		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
 		["quake", "Start the quake: today's exact seismogram hits your build. Overloaded beams snap."],
 		["height", "Score = height still standing (attached to an anchor) when the shaking stops."],
 		["tries", "%d tries a day — best counts. Share your result; the link opens the same quake." % MAX_TRIES],
@@ -1351,7 +1734,7 @@ func _draw_tutorial() -> void:
 		if y > bottom:
 			break
 	if y + 60 < bottom:
-		_para("Watch the seismograph: bigger, faster shaking finds tall, floppy towers. Triangles are your friend.", x, y + 6, tw, 18, C_MUTED)
+		_para("Pinch, scroll or use the + and - buttons to zoom; drag empty space to pan. Triangles are your friend.", x, y + 6, tw, 18, C_MUTED)
 
 
 func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:

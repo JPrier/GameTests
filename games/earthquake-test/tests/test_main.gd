@@ -46,14 +46,16 @@ func test_build_rules():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
 	assert_false(main.add_beam(a + Vector2i(0, 3), a + Vector2i(0, 4)), "must start at an anchor or joint")
-	assert_false(main.add_beam(a, a + Vector2i(3, 1)), "too long")
+	assert_false(main.add_beam(a, a + Vector2i(3, 2)), "too long (3.6 m)")
+	assert_false(main.add_beam(a, a + Vector2i(0, 4)), "longer than MAX_LEN as one beam")
 	assert_false(main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 0)), "ground points must be anchors")
 	assert_true(main.add_beam(a, a + Vector2i(0, 1)), "post from anchor")
 	assert_false(main.add_beam(a + Vector2i(0, 1), a), "no duplicate beams")
 	assert_true(main.add_beam(a + Vector2i(0, 1), a + Vector2i(0, 3)), "build up from a joint")
 	assert_eq(main.design.size(), 2, "two beams")
 	main.remove_beam(0)
-	assert_eq(main.design.size(), 0, "removing the base prunes what hung off it")
+	assert_eq(main.design.size(), 1, "removing one piece removes only that piece")
+	assert_eq(main.built_height(), 0.0, "the piece left floating doesn't count as built")
 	main.undo()
 	assert_eq(main.design.size(), 2, "undo restores")
 
@@ -205,3 +207,104 @@ func test_slow_title_taps_do_nothing():
 		main._dev_tap()
 		main.anim_t += 1.0
 	assert_false(main.dev_open, "taps spaced out by a second don't count")
+
+
+func _lens(main) -> Array:
+	var out: Array = []
+	for b in main.design:
+		out.append(snappedf(Vector2(b.a).distance_to(Vector2(b.b)), 0.01))
+	return out
+
+
+func test_drawn_line_is_cut_into_pieces():
+	var main = await _fresh()
+	var a: Vector2i = main.anchors[0]
+	main.set_piece_len(2)
+	assert_eq(main.add_chain(a, a + Vector2i(0, 7)), 4, "7 m up in 2 m pieces = 2+2+2+1")
+	assert_eq(_lens(main), [2.0, 2.0, 2.0, 1.0], "piece lengths")
+	main.undo()
+	assert_eq(main.design.size(), 0, "a whole line undoes in one step")
+	main.set_piece_len(3)
+	assert_eq(main.add_chain(a, a + Vector2i(0, 9)), 3, "9 m in 3 m pieces")
+	main.set_piece_len(1)
+	assert_eq(main.add_chain(a + Vector2i(0, 9), a + Vector2i(2, 9)), 2, "1 m pieces across the top")
+	assert_true(main.is_node(a + Vector2i(1, 9)), "a joint between pieces")
+
+
+func test_diagonal_lines_and_bad_angles():
+	var main = await _fresh()
+	var a: Vector2i = main.anchors[0]
+	main.set_piece_len(2)
+	assert_eq(main.add_chain(a, a + Vector2i(4, 4)), 4, "45° steps are 1.41 m, so 2 m pieces round to one step")
+	main.undo()
+	main.set_piece_len(3)
+	assert_eq(main.add_chain(a, a + Vector2i(4, 4)), 2, "3 m pieces on 45° = two 2.83 m beams")
+	main.undo()
+	var plan: Dictionary = main.plan_chain(a, a + Vector2i(3, 5))
+	assert_ne(plan.why, "", "no grid points on a 3:5 line within reach")
+	assert_eq(main.add_chain(a + Vector2i(0, 4), a), 2, "drawing towards an anchor works too (3 m + 1 m)")
+
+
+func test_existing_pieces_are_skipped_and_budget_truncates():
+	var main = await _fresh()
+	var a: Vector2i = main.anchors[0]
+	main.set_piece_len(1)
+	main.add_chain(a, a + Vector2i(0, 2))
+	assert_eq(main.add_chain(a, a + Vector2i(0, 4)), 2, "only the new part is built")
+	assert_eq(main.design.size(), 4, "no duplicates")
+	main.set_mat(1)
+	assert_eq(main.add_chain(a + Vector2i(0, 4), a + Vector2i(0, 18)), 14, "14 steel pieces")
+	var left: float = main.money_left()
+	var b: Vector2i = main.anchors[1]
+	var n: int = main.add_chain(b, b + Vector2i(0, 18))
+	assert_eq(n, floori(left / 3.0), "the line stops where the budget runs out")
+	assert_true(main.money_left() >= 0.0, "never overspend")
+
+
+func test_long_beams_buckle_sooner():
+	var Sim = load("res://quake_sim.gd")
+	var s = Sim.new()
+	var q = load("res://quake.gd").new()
+	q.make(DAY)
+	s.setup([{"a": Vector2i(0, 0), "b": Vector2i(0, 1), "m": 0}, {"a": Vector2i(1, 0), "b": Vector2i(1, 3), "m": 0}], [Vector2i(0, 0), Vector2i(1, 0)], q)
+	assert_eq(s.b_cstrength[0], s.b_strength[0], "short beams: full compression strength")
+	assert_lt(s.b_cstrength[1], s.b_strength[1] * 0.5, "3 m beams buckle at under half")
+
+
+func test_erase_tool_removes_single_pieces():
+	var main = await _fresh()
+	var a: Vector2i = main.anchors[0]
+	main.set_piece_len(1)
+	main.add_chain(a, a + Vector2i(0, 4))
+	main.set_erasing(true)
+	assert_true(main.erase_at(Vector2(a) + Vector2(0.05, 2.5)), "erase the third piece")
+	assert_eq(main.design.size(), 3, "only that piece goes")
+	main.erase_stroke = false
+	main.undo()
+	assert_eq(main.design.size(), 4, "undo brings it back")
+	# a swipe erases several pieces as one undo step
+	main.erase_stroke = false
+	main.erase_at(Vector2(a) + Vector2(0, 1.5))
+	main.erase_at(Vector2(a) + Vector2(0, 3.5))
+	assert_eq(main.design.size(), 2, "two pieces erased in one stroke")
+	main.erase_stroke = false
+	main.undo()
+	assert_eq(main.design.size(), 4, "one undo restores the whole stroke")
+	main.set_erasing(false)
+
+
+func test_zoom_keeps_point_under_pointer():
+	var main = await _fresh()
+	await wait_frames(2)
+	var p: Vector2 = main.board_rect.get_center() + Vector2(30, 40)
+	var w: Vector2 = main.screen_to_world(p)
+	main.zoom_at(p, 2.0)
+	assert_near(main.zoom, 2.0, 0.001, "zoomed in")
+	assert_lt(main.screen_to_world(p).distance_to(w), 0.01, "world point stays under the pointer")
+	main.zoom_at(p, 100.0)
+	assert_near(main.zoom, main.ZOOM_MAX, 0.001, "zoom is capped")
+	main._pan_by(Vector2(-100000, 0))
+	var right: Vector2 = main.screen_to_world(Vector2(main.board_rect.end.x, 0))
+	assert_lt(right.x, main.GW + main.VIEW_PAD + 0.01, "panning stops at the edge of the site")
+	main.zoom_reset()
+	assert_near(main.zoom, 1.0, 0.001, "reset")
