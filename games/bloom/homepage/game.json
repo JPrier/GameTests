@@ -1,0 +1,7 @@
+{
+  "daily": true,
+  "start": "2026-10-01",
+  "clock": "local",
+  "tagline": "Plant a few seed cells, run the Game of Life, and spread as far as you can.",
+  "order": 10
+}
