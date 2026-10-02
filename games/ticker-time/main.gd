@@ -657,9 +657,25 @@ func _dev_tap() -> void:
 	title_taps.append(now)
 	while title_taps.size() > 0 and now - float(title_taps[0]) > 3.0:
 		title_taps.pop_front()
-	if title_taps.size() >= 5 and dev_mode:
+	if title_taps.size() >= 5:
 		title_taps.clear()
-		dev_open = not dev_open
+		if not dev_mode:
+			enable_dev()
+		else:
+			dev_open = not dev_open
+
+
+## Turn dev mode on mid-session (5 quick taps on the title). Dev progress is kept apart from real progress.
+func enable_dev() -> void:
+	if dev_mode:
+		return
+	dev_mode = true
+	var back := screen
+	load_day(date)
+	if back != Screen.MENU:
+		open_mode(Screen.YEAR if back in [Screen.YEAR, Screen.YEAR_END] else Screen.UD)
+	dev_open = true
+	_toast("Dev mode on")
 
 
 func get_agent_state() -> Dictionary:

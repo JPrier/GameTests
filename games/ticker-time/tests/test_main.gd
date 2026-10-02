@@ -176,3 +176,17 @@ func test_stake_slider_and_legacy_saves():
 	main.load_day(main.date)
 	assert_near(float(main.ud_bets[0].frac), 1.0, 0.001, "legacy stake index maps to a fraction")
 	main.wipe_save()
+
+
+func test_five_title_taps_enable_dev():
+	var main = await _fresh()
+	main.dev_mode = false
+	main.dev_open = false
+	for i in 5:
+		main._dev_tap()
+	assert_true(main.dev_mode, "5 quick taps turn dev mode on")
+	assert_true(main.dev_open, "and open the panel")
+	assert_true(String(main._save_path()).contains("dev_"), "dev progress is separate")
+	for i in 5:
+		main._dev_tap()
+	assert_false(main.dev_open, "5 more taps close it")

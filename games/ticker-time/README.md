@@ -17,6 +17,6 @@ A daily stock-chart game with two modes. Everyone gets the same charts each day.
 
 ## Dev mode
 
-Hidden in the published build. Open with `?dev=1` (it's on automatically in debug/editor runs), then tap the title 5 times, long-press it, or press `` ` ``. The panel shows the day, seeds and answers, and can jump days (±1, ±30, today, random, any future date), reset the day, reveal answers on the charts, and instantly win or lose. Dev progress is saved separately from real progress. The same controls exist as methods for agents: `dev_set_day("2026-11-05")`, `dev_shift(n)`, `dev_reset()`, `dev_win()`, `dev_lose()`.
+Hidden from normal play. Tap the **Ticker Time** title 5 times quickly (within about 3 seconds) to turn it on and open the panel; after that the same taps, a long-press on the title or `` ` `` toggle it. `?dev=1` (or a debug/editor run) starts with dev mode already on. The panel shows the day, seeds and answers, and can jump days (±1, ±30, today, random, any future date), reset the day, reveal answers on the charts, and instantly win or lose. Dev progress is saved separately from real progress. The same controls exist as methods for agents: `dev_set_day("2026-11-05")`, `dev_shift(n)`, `dev_reset()`, `dev_win()`, `dev_lose()`.
 
 Tests: `gck test ticker-time` (tests/test_main.gd): determinism, 60 upcoming days valid, scoring, money maths, saving, share text and dev controls.
