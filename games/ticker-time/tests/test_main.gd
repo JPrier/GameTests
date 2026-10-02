@@ -111,8 +111,10 @@ func test_up_down_money():
 	for i in 5:
 		var ret: float = main.ud_return(main.ud_rounds[i])
 		var dir := 1 if i % 2 == 0 else -1
-		main.set_stake(i % 3)
-		var amt := snappedf(expect * float(main.STAKES[i % 3]), 0.01)
+		var frac: float = [0.05, 0.35, 1.0, 0.6, 0.25][i]
+		main.set_stake(frac)
+		assert_near(main.stake, frac, 0.001, "slider stake set")
+		var amt := snappedf(expect * frac, 0.01)
 		expect = snappedf(expect + snappedf(maxf(-amt, amt * ret * dir), 0.01), 0.01)
 		main.place_bet(dir)
 		main.next_round()
@@ -153,3 +155,24 @@ func test_dev_controls():
 	main.wipe_save()
 	main.dev_mode = false
 	assert_false(String(main._save_path()).contains("dev_"), "real saves untouched by dev")
+
+
+func test_stake_slider_and_legacy_saves():
+	var main = await _fresh()
+	main.set_stake(0.0)
+	assert_near(main.stake, 0.05, 0.001, "stake has a 5% floor")
+	main.set_stake(0.42)
+	assert_near(main.stake, 0.40, 0.001, "stake snaps to 5% steps")
+	main.set_stake(3.0)
+	assert_near(main.stake, 1.0, 0.001, "stake caps at all in")
+	main.open_mode(main.Screen.UD)
+	main.set_stake(0.5)
+	await press_key(KEY_RIGHT)
+	assert_near(main.stake, 0.55, 0.001, "right arrow raises the bet")
+	# an old save stored an index into [25%, 50%, all in]
+	var f := FileAccess.open(main._save_path(), FileAccess.WRITE)
+	f.store_string(JSON.stringify({"year": [], "ud": [{"dir": 1, "stake": 2}]}))
+	f.close()
+	main.load_day(main.date)
+	assert_near(float(main.ud_bets[0].frac), 1.0, 0.001, "legacy stake index maps to a fraction")
+	main.wipe_save()

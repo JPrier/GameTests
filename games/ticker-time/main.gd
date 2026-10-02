@@ -13,8 +13,9 @@ const YEAR_MAX := 2025
 const START_CASH := 1000.0
 const LOOKBACK := 52                   # weeks of history shown in Up or Down
 const AHEAD := 4                       # weeks until the bet settles (~1 month)
-const STAKES := [0.25, 0.5, 1.0]
-const STAKE_LABELS := ["25%", "50%", "All in"]
+const STAKE_STEP := 0.05               # the bet slider moves in 5% steps
+const STAKE_MIN := 0.05
+const LEGACY_STAKES := [0.25, 0.5, 1.0]  # older saves stored an index into these
 const YEAR_POINTS := [100, 80, 60, 45, 30, 20, 10]
 const YEAR_BINS := [[1995, 2000], [2001, 2006], [2007, 2012], [2013, 2018], [2019, 2025]]
 const MONTHS := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -52,14 +53,14 @@ var dev_reveal := false
 var year_rounds: Array = []    # [{stock, year}]
 var ud_rounds: Array = []      # [{stock, end}]  end = global week index of the last week shown
 var year_guesses: Array = []   # ints
-var ud_bets: Array = []        # [{dir: 1|-1, stake: index into STAKES}]
+var ud_bets: Array = []        # [{dir: 1|-1, frac: share of cash bet, 0.05..1}]
 
 var screen := Screen.MENU
 var year_i := 0
 var ud_i := 0
 var revealed := false
 var cur_guess := 2010
-var stake_i := 1
+var stake := 0.5
 var reveal_t := 1.0
 var bump_t := 0.0
 
@@ -213,7 +214,7 @@ func load_day(d: String) -> void:
 	year_i = year_guesses.size()
 	ud_i = ud_bets.size()
 	cur_guess = 2010
-	stake_i = 1
+	stake = 0.5
 
 
 func generate(d: String) -> void:
@@ -333,7 +334,7 @@ func ud_results() -> Array:
 	for i in ud_bets.size():
 		var bet: Dictionary = ud_bets[i]
 		var ret := ud_return(ud_rounds[i])
-		var amount := snappedf(cash * float(STAKES[int(bet.stake)]), 0.01)
+		var amount := snappedf(cash * float(bet.frac), 0.01)
 		var pnl := maxf(-amount, amount * ret * int(bet.dir))
 		pnl = snappedf(pnl, 0.01)
 		var before := cash
@@ -397,14 +398,21 @@ func lock_guess() -> void:
 func place_bet(dir: int) -> void:
 	if screen != Screen.UD or revealed or ud_done():
 		return
-	ud_bets.append({"dir": dir, "stake": stake_i})
+	ud_bets.append({"dir": dir, "frac": stake})
 	revealed = true
 	reveal_t = 0.0
 	_save_state()
 
 
-func set_stake(i: int) -> void:
-	stake_i = clampi(i, 0, STAKES.size() - 1)
+func set_stake(frac: float) -> void:
+	var f := clampf(snappedf(frac, STAKE_STEP), STAKE_MIN, 1.0)
+	if not is_equal_approx(f, stake):
+		bump_t = 1.0
+	stake = f
+
+
+func stake_label(frac: float) -> String:
+	return "all in" if frac >= 0.999 else "%d%%" % int(round(frac * 100.0))
 
 
 func next_round() -> void:
@@ -447,8 +455,10 @@ func _load_state() -> void:
 			year_guesses.append(int(g))
 	for b in data.get("ud", []):
 		if b is Dictionary and ud_bets.size() < ud_rounds.size():
-			ud_bets.append({"dir": 1 if int(b.get("dir", 1)) > 0 else -1,
-				"stake": clampi(int(b.get("stake", 1)), 0, STAKES.size() - 1)})
+			var frac := float(b.get("frac", -1.0))
+			if frac < 0.0:
+				frac = float(LEGACY_STAKES[clampi(int(b.get("stake", 1)), 0, LEGACY_STAKES.size() - 1)])
+			ud_bets.append({"dir": 1 if int(b.get("dir", 1)) > 0 else -1, "frac": clampf(frac, STAKE_MIN, 1.0)})
 
 
 func wipe_save() -> void:
@@ -634,7 +644,7 @@ func _dev_finish(win: bool) -> void:
 	if do_ud:
 		while ud_bets.size() < ud_rounds.size():
 			var up := ud_return(ud_rounds[ud_bets.size()]) > 0
-			ud_bets.append({"dir": (1 if up else -1) * (1 if win else -1), "stake": STAKES.size() - 1})
+			ud_bets.append({"dir": (1 if up else -1) * (1 if win else -1), "frac": 1.0})
 	_save_state()
 	revealed = false
 	if screen == Screen.MENU:
@@ -666,7 +676,7 @@ func get_agent_state() -> Dictionary:
 		ua.append("%s %s" % [stocks[int(r.stock)].t, pct(ud_return(r))])
 	return {"day": date, "puzzle": puzzle_no, "seed_year": seed_for("year", date), "seed_ud": seed_for("ud", date),
 		"screen": Screen.keys()[screen], "state": state, "round_year": year_i, "round_ud": ud_i, "revealed": revealed,
-		"guess": cur_guess, "stake": STAKE_LABELS[stake_i], "year_score": year_score(), "year_done": year_done(),
+		"guess": cur_guess, "stake": stake, "year_score": year_score(), "year_done": year_done(),
 		"cash": cash(), "ud_done": ud_done(), "dev_mode": dev_mode, "dev_open": dev_open,
 		"year_answers": ya, "ud_answers": ua, "share_text": share_text()}
 
@@ -714,8 +724,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 			place_bet(1)
 		elif ev.is_action_pressed("bet_down"):
 			place_bet(-1)
+		elif ev.is_action_pressed("left", true):
+			set_stake(stake - STAKE_STEP)
+		elif ev.is_action_pressed("right", true):
+			set_stake(stake + STAKE_STEP)
 		elif key.physical_keycode >= KEY_1 and key.physical_keycode <= KEY_3:
-			set_stake(key.physical_keycode - KEY_1)
+			set_stake(float(LEGACY_STAKES[key.physical_keycode - KEY_1]))
 	elif revealed and ev.is_action_pressed("confirm"):
 		next_round()
 	elif screen == Screen.MENU and ev.is_action_pressed("confirm"):
@@ -746,14 +760,17 @@ func _on_press(p: Vector2) -> void:
 			return
 	if dev_open:
 		return
-	if screen == Screen.YEAR and not revealed and slider_rect.grow_individual(0, 16, 0, 16).has_point(p):
+	if (screen == Screen.YEAR or screen == Screen.UD) and not revealed and slider_rect.grow_individual(12, 18, 12, 18).has_point(p):
 		slider_drag = true
 		_slider_to(p.x)
 
 
 func _slider_to(x: float) -> void:
 	var t := clampf((x - slider_rect.position.x) / slider_rect.size.x, 0.0, 1.0)
-	set_guess(YEAR_MIN + int(round(t * (YEAR_MAX - YEAR_MIN))))
+	if screen == Screen.UD:
+		set_stake(STAKE_MIN + t * (1.0 - STAKE_MIN))
+	else:
+		set_guess(YEAR_MIN + int(round(t * (YEAR_MAX - YEAR_MIN))))
 
 
 func _do(id: String) -> void:
@@ -767,9 +784,8 @@ func _do(id: String) -> void:
 		"next": next_round()
 		"up": place_bet(1)
 		"down": place_bet(-1)
-		"stake0": set_stake(0)
-		"stake1": set_stake(1)
-		"stake2": set_stake(2)
+		"stake_minus": set_stake(stake - STAKE_STEP)
+		"stake_plus": set_stake(stake + STAKE_STEP)
 		"share": share()
 		"dev_prev": dev_shift(-1)
 		"dev_next": dev_shift(1)
@@ -861,10 +877,9 @@ func _layout_ud(vs: Vector2) -> void:
 		_btn("next", Rect2(b.position.x, b.end.y - 54, b.size.x, 54),
 			"See results" if ud_i >= ROUNDS - 1 else "Next stock", "primary")
 		return
-	var sw := (b.size.x - 16) / 3.0
-	for i in STAKES.size():
-		_btn("stake%d" % i, Rect2(b.position.x + i * (sw + 8), b.position.y + 34, sw, 44),
-			STAKE_LABELS[i], "on" if i == stake_i else "")
+	slider_rect = Rect2(b.position.x + 60, b.position.y + 60, b.size.x - 120, 8)
+	_btn("stake_minus", Rect2(b.position.x, b.position.y + 40, 44, 44), "-")
+	_btn("stake_plus", Rect2(b.end.x - 44, b.position.y + 40, 44, 44), "+")
 	var hw := (b.size.x - 12) * 0.5
 	_btn("down", Rect2(b.position.x, b.end.y - 70, hw, 70), "Down", "down")
 	_btn("up", Rect2(b.position.x + hw + 12, b.end.y - 70, hw, 70), "Up", "up")
@@ -1011,7 +1026,7 @@ func _draw_menu(vs: Vector2) -> void:
 	_text(b.position + Vector2(18, 38), "Up or Down", 24)
 	_text(b.position + Vector2(18, 66), "Start with $1,000. Bet on the next month.", 16, C_MUTED)
 	var c := cash()
-	var st2 := "%s (%s)" % [money(c), pct(c / START_CASH - 1.0)] if ud_bets.size() > 0 else "5 stocks. Pick a stake, call the move."
+	var st2 := "%s (%s)" % [money(c), pct(c / START_CASH - 1.0)] if ud_bets.size() > 0 else "5 stocks. Slide your bet, call the move."
 	_text(b.position + Vector2(18, 94), st2, 16, (C_UP if c >= START_CASH else C_DOWN) if ud_bets.size() > 0 else C_MUTED)
 	_draw_progress_dots(Rect2(b.end.x - 112, b.position.y + 22, 96, 20), ud_bets.size(), false)
 	_draw_walk(Rect2(b.end.x - 150, b.position.y + 50, 132, 48), 11, C_LINE)
@@ -1129,7 +1144,7 @@ func _draw_ud(vs: Vector2) -> void:
 		_text(info.position + Vector2(0, 66), "%s · %s %d to %s %d" % [stocks[si].n, MONTHS[int(d0.month) - 1], int(d0.year),
 			MONTHS[int(d1.month) - 1], int(d1.year)], 16, C_MUTED)
 	else:
-		_text(info.position + Vector2(0, 66), "The last 12 months. Where is it in a month?", 16, C_MUTED)
+		_text(info.position + Vector2(0, 66), "%s · last 12 months" % stocks[si].n, 16, C_MUTED)
 	var hist := series(si, e - LOOKBACK + 1, e)
 	var fut: Array = []
 	if revealed or dev_reveal:
@@ -1148,7 +1163,20 @@ func _draw_ud(vs: Vector2) -> void:
 		_text_c(b, b.position.y + 106, ("You made %s" if res.pnl >= 0 else "You lost %s") % money(absf(pnl)), 20,
 			C_UP if float(res.pnl) >= 0 else C_DOWN)
 	else:
-		_text(b.position + Vector2(0, 22), "Stake: %s of %s" % [money(shown_cash * float(STAKES[stake_i])), money(shown_cash)], 15, C_MUTED)
+		var amt := snappedf(shown_cash * stake, 0.01)
+		var sz := int(22 * (1.0 + bump_t * 0.06))
+		_text(b.position + Vector2(0, 26), "Bet %s" % money(amt), sz, C_ACCENT)
+		_text(Vector2(b.end.x - 200, b.position.y + 26), "%s of %s" % [stake_label(stake), money(shown_cash)], 15, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 200)
+		var sr := slider_rect
+		var kx := sr.position.x + sr.size.x * (stake - STAKE_MIN) / (1.0 - STAKE_MIN)
+		_round_rect(sr, Color(1, 1, 1, 0.12), 4)
+		_round_rect(Rect2(sr.position, Vector2(kx - sr.position.x, sr.size.y)), Color(C_ACCENT, 0.55), 4)
+		for f in [0.25, 0.5, 0.75, 1.0]:
+			var tx: float = sr.position.x + sr.size.x * (float(f) - STAKE_MIN) / (1.0 - STAKE_MIN)
+			draw_line(Vector2(tx, sr.end.y + 4), Vector2(tx, sr.end.y + 9), C_MUTED, 1)
+			_text(Vector2(tx - 30, sr.end.y + 24), stake_label(float(f)), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 60)
+		draw_circle(Vector2(kx, sr.get_center().y), 13, C_ACCENT)
+		draw_circle(Vector2(kx, sr.get_center().y), 5, C_BG)
 
 
 ## values: main series; future: continuation (first point == last of values); labels: [[t 0..1, text]]
@@ -1312,7 +1340,7 @@ func _draw_ud_end(vs: Vector2) -> void:
 		if i < results.size():
 			var res: Dictionary = results[i]
 			_text(Vector2(rr.end.x - 154, rr.get_center().y - 2), money(float(res.pnl), true), 18, C_UP if float(res.pnl) >= 0 else C_DOWN, HORIZONTAL_ALIGNMENT_RIGHT, 140)
-			_text(Vector2(rr.end.x - 154, rr.get_center().y + 17), "%s · %s" % ["up" if int(ud_bets[i].dir) > 0 else "down", String(STAKE_LABELS[int(ud_bets[i].stake)]).to_lower()],
+			_text(Vector2(rr.end.x - 154, rr.get_center().y + 17), "%s · %s" % ["up" if int(ud_bets[i].dir) > 0 else "down", stake_label(float(ud_bets[i].frac))],
 				13, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 140)
 
 

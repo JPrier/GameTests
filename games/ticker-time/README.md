@@ -7,7 +7,7 @@ A daily stock-chart game with two modes. Everyone gets the same charts each day.
 ## Modes
 
 - **Guess the Year**: five real one-year price charts (January to December), each with its ticker and modern company name. Drag the slider (or use ← →) to pick a year from 1995 to 2025 and lock it in. Points by distance: exact 100, then 80, 60, 45, 30, 20, 10 for 1–6 years off. Max 500. Each day draws one year from each era (1995–2000, 2001–06, 2007–12, 2013–18, 2019–25) in shuffled order.
-- **Up or Down**: start with $1,000. Each of five rounds shows a ticker and its last 12 months of prices, with no dates. Pick a stake (25%, 50% or all in) and bet up or down. The bet settles on the real price 4 weeks later: you gain or lose your stake times the move (a losing short can't lose more than its stake). Afterwards the company name and dates are revealed. The end screen also shows what perfect all-in calls would have made.
+- **Up or Down**: start with $1,000. Each of five rounds shows a ticker, the company name and its last 12 months of prices, with no dates. Slide your bet (5% to all in, in 5% steps; ← → or 1/2/3 for 25%/50%/all in on a keyboard) and bet up or down. The bet settles on the real price 4 weeks later: you gain or lose your stake times the move (a losing short can't lose more than its stake). Afterwards the dates are revealed. The end screen also shows what perfect all-in calls would have made.
 
 **Share** copies a spoiler-free summary (score, coloured squares, final cash) with a link `?day=YYYY-MM-DD` that opens the same day. Puzzle #1 is 2026-10-02. Progress is saved per day in browser storage.
 
