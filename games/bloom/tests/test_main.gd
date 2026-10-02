@@ -93,8 +93,9 @@ func test_scoring_counts_touched_and_stars():
 	assert_eq(r.score, 4 + main.STAR_BONUS, "score formula")
 
 
-func test_three_tries_then_share():
+func test_five_tries_then_share():
 	var main = await _fresh()
+	assert_eq(main.MAX_TRIES, 5, "five tries a day")
 	_plant(main, [Vector2i(1, 0), Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, 2)])  # R-pentomino
 	main.run()
 	assert_eq(main.phase, main.Phase.RUN, "running")
@@ -102,18 +103,17 @@ func test_three_tries_then_share():
 	assert_gt(main.gen, 0, "generations advance over time")
 	main.skip()
 	assert_eq(main.phase, main.Phase.RESULT, "result after first try")
-	assert_eq(main.tries.size(), 1, "one try recorded")
 	assert_gt(main.tries[0].score, 5, "pentomino spreads")
 	main.try_again()
 	assert_eq(main.seeds.size(), 5, "seeds kept for editing")
-	main.run()
-	main.skip()
-	main.try_again()
-	main.toggle(main.seeds.keys()[0])
-	main.run()
-	main.skip()
-	assert_eq(main.phase, main.Phase.FINAL, "final after 3 tries")
-	assert_eq(main.tries.size(), 3, "three tries")
+	for i in 4:
+		main.run()
+		main.skip()
+		if i < 3:
+			assert_eq(main.phase, main.Phase.RESULT, "still has tries left")
+			main.try_again()
+	assert_eq(main.phase, main.Phase.FINAL, "final after 5 tries")
+	assert_eq(main.tries.size(), 5, "five tries recorded")
 	var text: String = main.share_text()
 	assert_true(text.contains("Bloom #1"), "share has puzzle number")
 	assert_true(text.contains("Impact %d" % main.best_score()), "share has best score")
@@ -244,34 +244,97 @@ func test_shape_library():
 	assert_eq(main.shape_cells(main._shape_index("Glider gun")).size(), 36, "gosper gun is 36 cells")
 
 
-func test_playground():
+func test_maps_are_open_and_reachable():
 	var main = await _fresh()
+	for d in ["2026-10-01", "2026-10-02", "2026-11-15", "2027-03-09", "2027-07-21"]:
+		main.generate(d)
+		assert_true(main.all_reachable(), "%s: every open square is reachable from the zone" % d)
+		var frac: float = float(main.tiles.count(main.Cell.WALL)) / (main.W * main.H)
+		assert_true(frac > 0.05 and frac < 0.45, "%s: wall share %.2f is sensible" % [d, frac])
+		assert_gt(main.star_total, 10, "%s: stars placed" % d)
+
+
+func test_shape_tools_in_daily_play():
+	var main = await _fresh()
+	main.tool = main._shape_index("Glider")
+	var z: Rect2i = main.zone
+	var centre := z.position + z.size / 2
+	assert_true(main.stamp(main.tool, centre), "glider fits in the zone")
+	assert_eq(main.seeds.size(), 5, "a glider uses 5 seeds")
+	var before: Dictionary = main.seeds.duplicate()
+	assert_false(main.stamp(main.tool, z.position - Vector2i(3, 3)), "can't place outside the zone")
+	assert_eq(main.seeds, before, "failed stamp changes nothing")
+	main.clear_seeds()
+	main.tool_rot = 1
+	var cells: Array = main.rotated_cells(main.tool, 1)
+	assert_eq(cells.size(), 5, "rotated glider keeps 5 cells")
+	assert_ne(cells, main.shape_cells(main.tool), "rotation changes the layout")
+	assert_eq(main.rotated_cells(main.tool, 4), main.shape_cells(main.tool), "four turns is a full circle")
+	# budget is enforced
+	main.clear_seeds()
+	main.tool = main._shape_index("Blinker")
+	main.tool_rot = 0
+	var placed := 0
+	for y in range(z.position.y + 1, z.end.y - 1, 2):
+		for x in range(z.position.x + 2, z.end.x - 2, 4):
+			if main.stamp(main.tool, Vector2i(x, y)):
+				placed += 1
+	assert_true(main.seeds.size() <= main.budget, "never more seeds than the budget")
+	assert_gt(placed, 2, "several blinkers placed")
+	var names: Array = main._chip_defs().map(func(c): return c.label)
+	assert_true(names.has("Glider") and names.has("Blinker") and names.has("Rotate"), "daily chips")
+	assert_false(names.has("Glider gun"), "big shapes are playground-only")
+
+
+func test_playground_practice_map():
+	var main = await _fresh()
+	var daily: PackedByteArray = main.tiles.duplicate()
 	main.open_playground()
-	await wait_frames(1)
-	assert_true(main.pg_open, "playground opens")
-	main.pg_clear()
-	main.pg_stamp(main._shape_index("Glider"), Vector2i(10, 10))
-	assert_eq(main.pg_cells.count(1), 5, "glider stamped")
-	var before: PackedByteArray = main.pg_cells.duplicate()
-	for i in 4:
-		main.pg_step()
-	assert_eq(main.pg_cells.count(1), 5, "glider survives")
-	assert_ne(main.pg_cells, before, "glider moved")
-	assert_eq(main.pg_gen, 4, "step counter")
-	main.pg_reset()
-	assert_eq(main.pg_cells, before, "reset restores the starting board")
-	assert_eq(main.pg_gen, 0, "reset zeroes steps")
-	main.pg_clear()
-	main.pg_stamp(main._shape_index("Glider gun"), Vector2i(20, 12))
-	var n0: int = main.pg_cells.count(1)
-	for i in 60:
-		main.pg_step()
-	assert_gt(main.pg_cells.count(1), n0, "gun has fired gliders")
-	main.pg_toggle_play()
-	assert_true(main.pg_running, "play starts")
-	var g: int = main.pg_gen
-	await wait_seconds(0.5)
-	assert_gt(main.pg_gen, g, "playing advances steps")
+	assert_true(main.practice, "playground opens")
+	var p1: PackedByteArray = main.tiles.duplicate()
+	assert_ne(p1, daily, "practice map differs from the daily map")
+	assert_true(main.all_reachable(), "practice map is reachable")
 	main.close_playground()
-	assert_false(main.pg_open, "back to the puzzle")
-	assert_false(main.pg_running, "closing pauses it")
+	main.date = "2026-10-02"
+	main.open_playground()   # this saves the daily progress first...
+	main.wipe_save()         # ...so clear it to check practice itself writes nothing
+	assert_eq(main.tiles, p1, "practice map is the same every day")
+	assert_true(main._chip_defs().size() > main.SHAPES.size(), "all shapes available in the playground")
+	# unlimited tries, nothing saved
+	main.tool = -1
+	var z: Rect2i = main.zone
+	for i in 3:
+		main.toggle((z.position.y + 2) * main.W + z.position.x + 2 + i)
+	for i in 8:
+		main.run()
+		main.skip()
+		assert_eq(main.phase, main.Phase.RESULT, "practice never runs out of tries")
+		main.try_again()
+	assert_false(FileAccess.file_exists("user://bloom3_2026-10-02.json"), "practice saves nothing")
+	# no limits: place outside the zone and beyond the budget
+	main.no_limits = true
+	main.clear_seeds()
+	var outside := -1
+	for i in main.W * main.H:
+		if not main.in_zone(i) and main.tiles[i] == 0:
+			outside = i
+			break
+	assert_true(main.toggle(outside), "no limits allows planting outside the zone")
+	main.clear_seeds()
+	main.tool = main._shape_index("Glider gun")
+	main.tool_rot = 0
+	var placed := false
+	for y in range(5, main.H - 5):
+		for x in range(18, main.W - 18):
+			if main.stamp(main.tool, Vector2i(x, y)):
+				placed = true
+				break
+		if placed:
+			break
+	assert_true(placed, "the glider gun fits somewhere on the practice map")
+	assert_eq(main.seeds.size(), 36, "gun placed with No limits")
+	main.close_playground()
+	assert_false(main.practice, "back to the daily puzzle")
+	assert_eq(main.tool, -1, "playground-only tool is reset")
+	main.date = "2026-10-01"
+	main.wipe_save()
