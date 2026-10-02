@@ -24,10 +24,10 @@ func _cheapest_crossing(main) -> Array:
 func test_same_date_same_level():
 	var main = await _fresh()
 	var a: Dictionary = main.level()
-	var budget_a: int = main.budget
+	var ideal_a: int = main.ideal
 	main.generate(DAY)
 	assert_eq(main.level(), a, "level is deterministic")
-	assert_eq(main.budget, budget_a, "budget is deterministic")
+	assert_eq(main.ideal, ideal_a, "ideal is deterministic")
 	assert_eq(main.day_number(DAY), 1, "puzzle #1 is the epoch")
 	assert_eq(main.day_number("2026-10-12"), 11, "puzzle numbering")
 	var seen := {}
@@ -36,7 +36,7 @@ func test_same_date_same_level():
 		main.generate(d)
 		var key := "%d-%d-%d" % [main.pillar_h, main.gap, main.vehicle_i]
 		assert_true(main.BEST_KNOWN.has(key), "every generated level has a known budget: " + key)
-		assert_true(main.budget >= int(main.BEST_KNOWN[key]), "budget covers the reference bridge")
+		assert_eq(main.ideal, int(main.BEST_KNOWN[key]), "ideal is the best known bridge")
 		seen[key] = true
 	assert_gt(seen.size(), 6, "levels vary from day to day")
 
@@ -125,20 +125,31 @@ func test_pointer_drag_and_tap():
 	assert_eq(main.design.size(), 2, "erase by tapping a beam")
 
 
-func test_over_budget_blocks_go():
+func test_score_curve():
+	var main = await _fresh()
+	var ideal: int = main.ideal
+	assert_eq(main.score_for(ideal), 100, "ideal scores 100")
+	assert_eq(main.score_for(ideal * 2), 50, "twice the material scores 50")
+	assert_lt(main.score_for(ideal * 10), 11, "heading toward 0")
+	assert_gt(main.score_for(ideal - 40), 100, "beating the ideal scores over 100")
+	assert_gt(main.score_for(ideal + 10), main.score_for(ideal + 80), "less material always scores more")
+
+
+func test_no_hard_material_cap():
 	var main = await _fresh()
 	var x := 0
 	var y := 0
-	while main.cost() <= main.budget:
+	while main.cost() <= main.ideal * 2:
 		main.add_beam(Vector2i(x, y), Vector2i(x + 2, y), BridgeSim.Mat.ROAD)
 		x += 2
 		if x >= main.gap:
 			x = 0
 			y -= 1
-	assert_false(main.can_go(), "can't go over budget")
+	assert_true(main.can_go(), "a heavy bridge can still be tried")
 	main.go()
-	assert_eq(main.phase, main.Phase.BUILD, "still building")
-	assert_eq(main.tries.size(), 0, "no attempt used")
+	assert_eq(main.phase, main.Phase.RUN, "running")
+	main.skip()
+	main.wipe_save()
 
 
 func test_attempt_flow_and_share():
@@ -162,12 +173,14 @@ func test_attempt_flow_and_share():
 	main.go()
 	main.skip()
 	assert_true(main.tries[1].crossed, "reference bridge crosses")
-	assert_eq(main.best_score(), main.budget - BridgeSim.design_cost(best), "score is material to spare")
+	assert_eq(main.tries[0].score, 0, "a fall scores 0")
+	assert_eq(main.best_score(), 100, "the ideal bridge scores 100")
 	main.finish()
 	assert_eq(main.phase, main.Phase.FINAL, "finished for the day")
 	var text: String = main.share_text()
 	assert_true(text.contains("Daily Bridge #1"), "share text names the puzzle")
 	assert_true(text.contains("💥 ✅"), "share text shows the attempts")
+	assert_true(text.contains("Score 100"), "share text shows the score")
 	assert_true(main.share_link().contains("d=%s&s=%d" % [DAY, main.best_score()]), "share link carries date + score")
 	# progress survives a reload
 	main.load_puzzle(DAY)
@@ -195,18 +208,3 @@ func test_three_attempts_max():
 	assert_eq(main.tries.size(), 3, "replay doesn't use an attempt")
 	main.wipe_save()
 
-
-## The budget must leave room to experiment: the sturdy 2 m-deep truss fits and crosses on every level.
-func test_budget_leaves_room():
-	var main = await _fresh()
-	for key: String in main.BEST_KNOWN:
-		var parts := key.split("-")
-		main.pillar_h = int(parts[0])
-		main.gap = int(parts[1])
-		main.vehicle_i = int(parts[2])
-		main.anchors = [Vector2i(0, 0), Vector2i(main.gap, 0)]
-		var budget := ceili(int(main.BEST_KNOWN[key]) * main.BUDGET_SLACK / 10.0) * 10
-		var sturdy := BridgeSim.reference_design(main.level(), 2)
-		assert_true(BridgeSim.design_cost(sturdy) <= budget, key + ": deep truss fits the budget")
-		assert_true(main.simulate(sturdy).crossed, key + ": deep truss crosses")
-		assert_gt(budget - int(main.BEST_KNOWN[key]), 40, key + ": real slack over the cheapest bridge")

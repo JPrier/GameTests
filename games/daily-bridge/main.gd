@@ -1,10 +1,11 @@
 extends Node2D
 ## Daily Bridge — a daily bridge-building physics puzzle.
-## Everyone gets the same canyon, anchors, vehicle and material budget each day.
+## Everyone gets the same canyon, anchors and vehicle each day.
 ## Drag beams between joints (road for the vehicle to drive on, wood to brace it),
-## stay within the budget, then press Go: one vehicle tries to cross. The physics is
-## deterministic (bridge_sim.gd), so the same bridge always plays out the same way.
-## Three attempts a day; the score is the material left over on your cheapest crossing.
+## then press Go: one vehicle tries to cross. The physics is deterministic (bridge_sim.gd),
+## so the same bridge always plays out the same way. Three attempts a day.
+## Score = 100 x ideal / material used: 100 matches the best known bridge, more material
+## drifts toward 0, beating the ideal goes over 100. A bridge that falls scores 0.
 
 const EPOCH := "2026-10-02"           # puzzle #1
 const DEFAULT_URL := "https://jprier.github.io/GameTests/daily-bridge/"
@@ -13,8 +14,6 @@ const BUILD_MIN_X := -2
 const BUILD_MIN_Y := -5
 const BUILD_MAX_Y := 4
 const MAX_HISTORY := 60
-## Room above the cheapest known crossing, so several designs fit and saving material still scores.
-const BUDGET_SLACK := 1.25
 const TUT_FLAG := "user://daily_bridge_tutorial_seen"
 
 ## Cheapest known crossing (BridgeSim.candidates) per "pillar-gap-vehicle".
@@ -65,16 +64,16 @@ var vehicle_i := 0
 var pillar_h := 0
 var low_y := 2
 var anchors: Array = []
-var budget := 300
+var ideal := 300                    # material used by the best known bridge (scores 100)
 
 # player
 var design: Array = []              # [{p:Vector2i, q:Vector2i, m:int}]
 var history: Array = []             # undo stack of designs
 var tool: int = Tool.ROAD
-var tries: Array = []               # [{crossed, outcome, cost, saved, snapped, design}]
+var tries: Array = []               # [{crossed, outcome, cost, score, snapped, design}]
 var finished := false
 var phase: int = Phase.BUILD
-var target_score := -1              # material saved by whoever sent the link (?s=)
+var target_score := -1              # score of whoever sent the link (?s=)
 var base_url := DEFAULT_URL
 var last_loads := {}                # beam key -> {load, broken} from the previous attempt
 
@@ -190,7 +189,7 @@ func generate(d: String) -> void:
 	if pillar_h > 0:
 		anchors.append(Vector2i(gap / 2, pillar_h))
 	var best: int = BEST_KNOWN.get("%d-%d-%d" % [pillar_h, gap, vehicle_i], 999)
-	budget = ceili(best * BUDGET_SLACK / 10.0) * 10
+	ideal = best
 
 
 func level() -> Dictionary:
@@ -343,7 +342,7 @@ func tries_left() -> int:
 
 
 func can_go() -> bool:
-	return phase == Phase.BUILD and tries_left() > 0 and not design.is_empty() and cost() <= budget
+	return phase == Phase.BUILD and tries_left() > 0 and not design.is_empty()
 
 
 func go() -> void:
@@ -351,9 +350,6 @@ func go() -> void:
 		return
 	if design.is_empty():
 		_toast("Build something first")
-		return
-	if cost() > budget:
-		_toast("Over budget by %d" % (cost() - budget))
 		return
 	if tries_left() <= 0:
 		return
@@ -403,7 +399,7 @@ func _finish_try() -> void:
 	var r := sim.summary()
 	var c := BridgeSim.design_cost(sim_design)
 	tries.append({"crossed": bool(r.crossed), "outcome": String(r.outcome), "cost": c,
-		"saved": budget - c if r.crossed else -1, "snapped": int(r.snapped),
+		"score": score_for(c) if r.crossed else 0, "snapped": int(r.snapped),
 		"design": _pack(sim_design)})
 	last_loads = {}
 	for b in sim.ba.size():
@@ -456,14 +452,19 @@ func _show_best() -> void:
 func best_try() -> Dictionary:
 	var best := {}
 	for t in tries:
-		if t.crossed and (best.is_empty() or int(t.saved) > int(best.saved)):
+		if t.crossed and (best.is_empty() or int(t.score) > int(best.score)):
 			best = t
 	return best
 
 
+## 100 at the ideal bridge, toward 0 the more material you use, over 100 if you beat it.
+func score_for(material: int) -> int:
+	return roundi(100.0 * ideal / maxf(1.0, material))
+
+
 func best_score() -> int:
 	var b := best_try()
-	return int(b.saved) if not b.is_empty() else -1
+	return int(b.score) if not b.is_empty() else 0
 
 
 func _pack(d: Array) -> Array:
@@ -505,7 +506,8 @@ func _load_state() -> void:
 	for t in data.get("tries", []):
 		if t is Dictionary:
 			tries.append({"crossed": bool(t.get("crossed", false)), "outcome": String(t.get("outcome", "")),
-				"cost": int(t.get("cost", 0)), "saved": int(t.get("saved", -1)),
+				"cost": int(t.get("cost", 0)),
+				"score": score_for(int(t.get("cost", 0))) if bool(t.get("crossed", false)) else 0,
 				"snapped": int(t.get("snapped", 0)), "design": t.get("design", [])})
 	finished = bool(data.get("finished", false)) or tries.size() >= MAX_TRIES
 
@@ -536,8 +538,7 @@ func _flush_storage() -> void:
 # ------------------------------------------------------------------ sharing
 
 func share_link() -> String:
-	var s := best_score()
-	return "%s?d=%s&s=%d" % [base_url, date, s] if s >= 0 else "%s?d=%s" % [base_url, date]
+	return "%s?d=%s&s=%d" % [base_url, date, best_score()]
 
 
 func share_text() -> String:
@@ -548,17 +549,17 @@ func share_text() -> String:
 	for t in tries:
 		marks.append("✅" if t.crossed else "💥")
 	var best := best_score()
-	if best >= 0:
-		lines.append("Made it with %d of %d material to spare" % [best, budget])
+	if not best_try().is_empty():
+		lines.append("Score %d — %d material (ideal %d)" % [best, int(best_try().cost), ideal])
 	else:
-		lines.append("Didn't make it across")
+		lines.append("Score 0 — didn't make it across")
 	lines.append("Attempts: " + " ".join(marks))
-	if target_score >= 0:
+	if target_score > 0:
 		if best > target_score:
 			lines.append("Beat the %d I was sent 🏆" % target_score)
 		else:
 			lines.append("Couldn't beat %d — can you?" % target_score)
-	lines.append("Can you build it cheaper? " + share_link())
+	lines.append("Can you beat it? " + share_link())
 	return "\n".join(lines)
 
 
@@ -944,8 +945,6 @@ func _build_buttons(_narrow: bool) -> void:
 			var cw := bw
 			_btn("clear", Rect2(x0, y2, cw, row_h), "Clear", false, not design.is_empty())
 			var label := "Go!  (attempt %d of %d)" % [tries.size() + 1, MAX_TRIES]
-			if cost() > budget:
-				label = "Over budget"
 			_btn("go", Rect2(x0 + cw + pad, y2, w - cw - pad, row_h), label, true, can_go())
 		Phase.RUN:
 			var hw := (w - pad) / 2.0
@@ -1251,8 +1250,8 @@ func _draw_header() -> void:
 	var right := help_rect.position.x - 12 * ui
 	var tl := "Attempts left: %d" % tries_left()
 	_text(tl, Vector2(r.position.x, r.position.y + r.size.y * 0.47), 16, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
-	if target_score >= 0:
-		_text("To beat: %d spare" % target_score, Vector2(r.position.x, r.position.y + r.size.y * 0.84), 14, C_BTN_ON, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
+	if target_score > 0:
+		_text("Score to beat: %d" % target_score, Vector2(r.position.x, r.position.y + r.size.y * 0.84), 14, C_BTN_ON, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
 	_box(help_rect, C_BTN, 20 * ui)
 	_text_c("?", help_rect.get_center(), 22, C_INK)
 	# today's job, as a label in the sky over the vehicle
@@ -1282,7 +1281,7 @@ func _draw_panel() -> void:
 		Phase.FINAL:
 			_draw_final_line(Rect2(r.position.x + pad, y1, r.size.x - pad * 2, row_h))
 	if phase == Phase.BUILD:
-		# budget bar lives just above the panel so the tools stay in thumb reach
+		# material bar lives just above the panel so the tools stay in thumb reach
 		var br := Rect2(r.position.x, r.position.y - 42 * ui, r.size.x, 36 * ui)
 		_box(br, C_PANEL, 10)
 		_draw_budget(br.grow(-6), cost())
@@ -1291,22 +1290,29 @@ func _draw_panel() -> void:
 
 
 func _draw_budget(r: Rect2, used: int) -> void:
-	var over := used > budget
-	var lbl := "Material %d / %d" % [used, budget]
-	var lw := font.get_string_size("Material 888 / 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
-	_text(lbl, Vector2(r.position.x + 6, r.get_center().y + 6 * ui), 16, C_BAD if over else C_INK)
-	var bar := Rect2(r.position.x + lw + 20, r.position.y + r.size.y * 0.3, r.size.x - lw - 26, r.size.y * 0.4)
+	# label · bar (ideal marked) · projected score
+	var lbl := "Material %d · ideal %d" % [used, ideal]
+	var lw := font.get_string_size("Material 888 · ideal 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
+	var sc := "Score %d" % score_for(used) if used > 0 else "Score —"
+	var sw := font.get_string_size("Score 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
+	var cy := r.get_center().y + 6 * ui
+	_text(lbl, Vector2(r.position.x + 6, cy), 16, C_INK)
+	var col := C_GOOD if used <= ideal else (Color("e0a33a") if used <= ideal * 1.5 else C_BAD)
+	_text(sc, Vector2(r.end.x - sw - 6, cy), 16, col if used > 0 else C_MUTED)
+	var bar := Rect2(r.position.x + lw + 16, r.position.y + r.size.y * 0.3, r.size.x - lw - sw - 32, r.size.y * 0.4)
 	_box(bar, Color("d5dde4"), 6)
-	var f := clampf(float(used) / float(budget), 0.0, 1.0)
+	var span := ideal * 2.0                 # the bar shows 0 .. 2x ideal; ideal sits in the middle
+	var f := clampf(used / span, 0.0, 1.0)
 	if f > 0.0:
-		_box(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), C_BAD if over else (Color("e0a33a") if f > 0.9 else C_GOOD), 6)
-
+		_box(Rect2(bar.position, Vector2(maxf(bar.size.y, bar.size.x * f), bar.size.y)), col, 6)
+	var tx := bar.position.x + bar.size.x * 0.5
+	draw_line(Vector2(tx, bar.position.y - 4), Vector2(tx, bar.end.y + 4), C_INK, 2.0)
 
 func _draw_result_line(r: Rect2, t: Dictionary) -> void:
 	var msg := ""
 	var col := C_INK
 	if t.crossed:
-		msg = "Made it across! %d material to spare." % int(t.saved)
+		msg = "Made it across! Score %d (%d material, ideal %d)." % [int(t.score), int(t.cost), ideal]
 		col = C_GOOD
 	else:
 		match String(t.outcome):
@@ -1321,13 +1327,14 @@ func _draw_result_line(r: Rect2, t: Dictionary) -> void:
 func _draw_final_line(r: Rect2) -> void:
 	var best := best_score()
 	var msg := ""
-	if best >= 0:
-		msg = "Best: crossed with %d of %d to spare." % [best, budget]
+	var bt := best_try()
+	if not bt.is_empty():
+		msg = "Best score %d (%d material, ideal %d)." % [best, int(bt.cost), ideal]
 	else:
-		msg = "No crossing today."
+		msg = "No crossing today — score 0."
 	if date == today:
 		msg += "  Next bridge in " + _countdown()
-	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, C_GOOD if best >= 0 else C_INK)
+	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, C_GOOD if not bt.is_empty() else C_INK)
 
 
 func _countdown() -> String:
@@ -1411,8 +1418,8 @@ func _draw_tutorial() -> void:
 	var lines := [
 		"Drag from a joint to place a beam (or tap a joint, then tap where it should go). Red joints are anchored to the rock.",
 		"Road is what the vehicle drives on. Wood is lighter and cheaper — brace the road with triangles.",
-		"Stay within today's material budget, then press Go. Strained beams glow red, then snap.",
-		"3 attempts a day. Cross with material to spare — the more you save, the better your score.",
+		"Press Go to send the vehicle. Strained beams glow red, then snap.",
+		"3 attempts a day. Matching today's ideal bridge scores 100 — less material scores higher, more scores lower.",
 	]
 	var y := dy + 34 * ui
 	var fs := int(17 * ui)
@@ -1454,9 +1461,9 @@ func _draw_dev() -> void:
 func get_agent_state() -> Dictionary:
 	var st := {
 		"phase": ["build", "run", "result", "final"][phase], "date": date, "puzzle": puzzle_no,
-		"gap": gap, "vehicle": String(vehicle().name), "pillar_h": pillar_h, "budget": budget,
+		"gap": gap, "vehicle": String(vehicle().name), "pillar_h": pillar_h, "ideal": ideal,
 		"cost": cost(), "beams": design.size(), "tries": tries.size(), "tries_left": tries_left(),
-		"best_saved": best_score(), "finished": finished, "tool": ["road", "wood", "erase"][tool],
+		"best_score": best_score(), "finished": finished, "tool": ["road", "wood", "erase"][tool],
 		"tutorial": tut_open,
 	}
 	if sim != null:
