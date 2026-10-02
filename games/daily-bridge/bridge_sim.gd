@@ -13,7 +13,8 @@ const H := FRAME_DT / SUBSTEPS
 const DAMPING := 0.35          # per second, keeps a broken bridge from swinging forever
 const WATER_Y := 6.0
 const MAX_TIME := 30.0
-const MAX_LEN := 2.3           # longest beam, in metres (grid units)
+const MAX_LEN := 4.0           # longest single beam, in metres (grid units)
+const BUCKLE_LEN := 2.3        # beams longer than this lose compression strength (Euler: ~1/L²)
 const JOINT_MASS := 1.5
 
 enum Mat { ROAD, WOOD }
@@ -48,6 +49,8 @@ var bb := PackedInt32Array()
 var rest := PackedFloat64Array()
 var mat := PackedInt32Array()
 var comp := PackedFloat64Array()   # compliance (1 / k)
+var str_t := PackedFloat64Array()  # tension strength
+var str_c := PackedFloat64Array()  # compression strength (lower for long, slender beams)
 var force := PackedFloat64Array()  # last solved force: + tension, - compression
 var load := PackedFloat64Array()   # smoothed |force| / strength
 var peak := PackedFloat64Array()   # highest load seen before snapping
@@ -96,6 +99,8 @@ func setup(level: Dictionary, design: Array) -> void:
 		rest.append(L)
 		mat.append(m)
 		comp.append(L / float(STIFFNESS[m]))
+		str_t.append(float(STRENGTH[m]))
+		str_c.append(float(STRENGTH[m]) * minf(1.0, pow(BUCKLE_LEN / L, 2.0)))
 		force.append(0.0)
 		load.append(0.0)
 		peak.append(0.0)
@@ -238,7 +243,7 @@ func _substep() -> void:
 		var f := -dl / h2
 		force[b] = f
 		var m := mat[b]
-		var ld := absf(f) / float(STRENGTH[m])
+		var ld := f / str_t[b] if f > 0.0 else -f / str_c[b]
 		load[b] += (ld - load[b]) * 0.06
 		if load[b] > 1.0:
 			broken[b] = 1

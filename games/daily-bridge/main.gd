@@ -70,6 +70,8 @@ var ideal := 300                    # material used by the best known bridge (sc
 var design: Array = []              # [{p:Vector2i, q:Vector2i, m:int}]
 var history: Array = []             # undo stack of designs
 var tool: int = Tool.ROAD
+var piece_len := 2                  # metres per piece when a drag is split up
+const PIECE_LENGTHS := [1, 2, 3, 4]
 var tries: Array = []               # [{crossed, outcome, cost, score, snapped, design}]
 var finished := false
 var phase: int = Phase.BUILD
@@ -258,7 +260,7 @@ func beam_problem(p: Vector2i, q: Vector2i) -> String:
 	if p == q:
 		return "Pick a different point"
 	if Vector2(p).distance_to(Vector2(q)) > BridgeSim.MAX_LEN + 0.001:
-		return "Too long — beams reach %.1f m at most" % BridgeSim.MAX_LEN
+		return "Too long — pieces reach %d m at most" % int(BridgeSim.MAX_LEN)
 	var pp := point_problem(p)
 	if pp == "":
 		pp = point_problem(q)
@@ -269,6 +271,76 @@ func beam_problem(p: Vector2i, q: Vector2i) -> String:
 		if _key(b.p, b.q) == k:
 			return "There's already a beam there"
 	return ""
+
+
+## Grid points a drag from p to q is split into: pieces of up to piece_len metres along the
+## line, ending at q. Empty when the line can't be split onto the grid within MAX_LEN.
+func split_path(p: Vector2i, q: Vector2i, length := -1) -> Array:
+	var d := q - p
+	if d == Vector2i.ZERO:
+		return []
+	if length < 0:
+		length = piece_len
+	var g := _gcd(absi(d.x), absi(d.y))
+	var u := d / g                                  # smallest grid step along the line
+	var ul := Vector2(u).length()
+	if ul > BridgeSim.MAX_LEN + 0.001:
+		return []
+	var k := maxi(1, int(floor((length + 0.001) / ul)))
+	var pts: Array = [p]
+	var i := k
+	while i < g:
+		pts.append(p + u * i)
+		i += k
+	pts.append(q)
+	return pts
+
+
+static func _gcd(a: int, b: int) -> int:
+	while b != 0:
+		var t := a % b
+		a = b
+		b = t
+	return a
+
+
+## Why a drag p→q can't be built ("" when it can).
+func path_problem(p: Vector2i, q: Vector2i) -> String:
+	if p == q:
+		return "Pick a different point"
+	var pts := split_path(p, q)
+	if pts.is_empty():
+		return "That angle needs a piece longer than %d m" % int(BridgeSim.MAX_LEN)
+	var fresh := 0
+	for i in pts.size() - 1:
+		var why := beam_problem(pts[i], pts[i + 1])
+		if why == "There's already a beam there":
+			continue
+		if why != "":
+			return why
+		fresh += 1
+	return "" if fresh > 0 else "There's already a beam there"
+
+
+## Build a drag as pieces of piece_len (one undo step). Existing beams along the line are kept.
+func add_path(p: Vector2i, q: Vector2i, m: int) -> bool:
+	if phase != Phase.BUILD:
+		return false
+	var why := path_problem(p, q)
+	if why != "":
+		_toast(why)
+		return false
+	_push_history()
+	var pts := split_path(p, q)
+	for i in pts.size() - 1:
+		if beam_problem(pts[i], pts[i + 1]) == "":
+			design.append(BridgeSim.beam(pts[i], pts[i + 1], m))
+	_design_changed()
+	return true
+
+
+func set_piece_len(n: int) -> void:
+	piece_len = clampi(n, 1, int(BridgeSim.MAX_LEN))
 
 
 func add_beam(p: Vector2i, q: Vector2i, m: int) -> bool:
@@ -824,9 +896,8 @@ func _on_press(p: Vector2) -> void:
 		drag_from = j
 		dragging = true
 	elif selected != NONE:
-		add_beam(selected, _snap(p), tool)
 		var q := _snap(p)
-		if is_joint(q):
+		if add_path(selected, q, tool):
 			selected = q
 	else:
 		_toast("Start a beam from a joint — drag from a dot")
@@ -843,12 +914,12 @@ func _on_release(p: Vector2) -> void:
 	if q == drag_from or p.distance_to(press_pos) < 10.0:
 		# a tap on a joint: select it (tap again elsewhere to build from it), or build from the selection
 		if selected != NONE and selected != drag_from:
-			if add_beam(selected, drag_from, tool):
+			if add_path(selected, drag_from, tool):
 				selected = drag_from
 		else:
 			selected = NONE if selected == drag_from else drag_from
 		return
-	if add_beam(drag_from, q, tool):
+	if add_path(drag_from, q, tool):
 		selected = q
 
 
@@ -869,6 +940,10 @@ func _do(id: String) -> void:
 		"wood": set_tool(Tool.WOOD)
 		"erase": set_tool(Tool.ERASE)
 		"undo": undo()
+		"len1": set_piece_len(1)
+		"len2": set_piece_len(2)
+		"len3": set_piece_len(3)
+		"len4": set_piece_len(4)
 		"clear": clear_design()
 		"go": go()
 		"fast": fast = not fast
@@ -942,10 +1017,18 @@ func _build_buttons(_narrow: bool) -> void:
 			_btn("wood", Rect2(x0 + (bw + pad), y1, bw, row_h), "Wood", false, true, tool == Tool.WOOD)
 			_btn("erase", Rect2(x0 + (bw + pad) * 2, y1, bw, row_h), "Erase", false, true, tool == Tool.ERASE)
 			_btn("undo", Rect2(x0 + (bw + pad) * 3, y1, bw, row_h), "Undo", false, not history.is_empty())
-			var cw := bw
+			var cw := w * 0.17
 			_btn("clear", Rect2(x0, y2, cw, row_h), "Clear", false, not design.is_empty())
-			var label := "Go!  (attempt %d of %d)" % [tries.size() + 1, MAX_TRIES]
-			_btn("go", Rect2(x0 + cw + pad, y2, w - cw - pad, row_h), label, true, can_go())
+			# piece length picker: drags are split into pieces this long
+			var sx := x0 + cw + pad
+			var sw := w * 0.46
+			var gap_px := 4.0
+			var pw := (sw - gap_px * (PIECE_LENGTHS.size() - 1)) / PIECE_LENGTHS.size()
+			for i in PIECE_LENGTHS.size():
+				var n: int = PIECE_LENGTHS[i]
+				_btn("len%d" % n, Rect2(sx + i * (pw + gap_px), y2, pw, row_h), "%d m" % n, false, tool != Tool.ERASE, piece_len == n)
+			var gx := sx + sw + pad
+			_btn("go", Rect2(gx, y2, x0 + w - gx, row_h), "Go!", true, can_go())
 		Phase.RUN:
 			var hw := (w - pad) / 2.0
 			_btn("fast", Rect2(x0, y2, hw, row_h), "Speed: %s" % ("4x" if fast else "1x"), false, true, fast)
@@ -1074,14 +1157,26 @@ func _draw_build_grid() -> void:
 	# reach preview while dragging or with a joint selected
 	var from := drag_from if dragging else selected
 	if from != NONE and tool != Tool.ERASE:
-		draw_arc(w2s(Vector2(from)), BridgeSim.MAX_LEN * ppm, 0, TAU, 64, Color(1, 1, 1, 0.5), 1.5)
 		if dragging:
 			var q := _snap(drag_pos)
-			var ok := beam_problem(from, q) == ""
+			var ok := q != from and path_problem(from, q) == ""
 			var col := (C_ROAD if tool == Tool.ROAD else C_WOOD) if ok else C_BAD
 			col.a = 0.75
 			draw_line(w2s(Vector2(from)), w2s(Vector2(q)), col, _beam_w(tool))
-			draw_circle(w2s(Vector2(q)), ppm * 0.14, col)
+			var pts := split_path(from, q)
+			for i in range(1, pts.size()):
+				var c := w2s(Vector2(pts[i]))
+				draw_circle(c, maxf(5.0, ppm * 0.15), C_INK)
+				draw_circle(c, maxf(3.5, ppm * 0.11), C_JOINT if ok else C_BAD)
+			if ok and pts.size() > 2:
+				var lbl := "%d pieces" % (pts.size() - 1)
+				var fs := int(14 * ui)
+				var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+				var at := w2s(Vector2(q)) + Vector2(ppm * 0.4, ppm * 0.5)
+				at.x = minf(at.x, get_viewport_rect().size.x - tw - 16)
+				var box := Rect2(at - Vector2(6, fs), Vector2(tw + 12, fs + 10))
+				_box(box, Color(1, 1, 1, 0.85), 8)
+				_text(lbl, at + Vector2(0, -2), 14, C_INK)
 
 
 func _beam_w(m: int) -> float:
@@ -1416,8 +1511,8 @@ func _draw_tutorial() -> void:
 	for i in 4:
 		draw_circle(deck[i], s * 0.16, C_ANCHOR if i == 0 or i == 3 else C_JOINT)
 	var lines := [
-		"Drag from a joint to place a beam (or tap a joint, then tap where it should go). Red joints are anchored to the rock.",
-		"Road is what the vehicle drives on. Wood is lighter and cheaper — brace the road with triangles.",
+		"Pick a piece length, then drag from a joint as far as you like: the line is split into pieces of that length, with joints between them. Red joints are anchored to the rock.",
+		"Road is what the vehicle drives on. Wood is lighter and cheaper — brace the road with triangles. Long pieces buckle more easily when squeezed.",
 		"Press Go to send the vehicle. Strained beams glow red, then snap.",
 		"3 attempts a day. Matching today's ideal bridge scores 100 — less material scores higher, more scores lower.",
 	]

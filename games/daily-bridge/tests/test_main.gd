@@ -80,7 +80,7 @@ func test_flat_deck_falls():
 
 func test_build_rules():
 	var main = await _fresh()
-	assert_false(main.add_beam(Vector2i(0, 0), Vector2i(3, 0), BridgeSim.Mat.ROAD), "3 m is too long")
+	assert_false(main.add_beam(Vector2i(0, 0), Vector2i(5, 0), BridgeSim.Mat.ROAD), "5 m is too long for one piece")
 	assert_false(main.add_beam(Vector2i(0, 0), Vector2i(-1, 1), BridgeSim.Mat.WOOD), "can't build into rock")
 	assert_false(main.add_beam(Vector2i(0, 0), Vector2i(0, 0), BridgeSim.Mat.WOOD), "zero-length beam")
 	assert_true(main.add_beam(Vector2i(0, 0), Vector2i(2, 0), BridgeSim.Mat.ROAD), "a road panel")
@@ -208,3 +208,33 @@ func test_three_attempts_max():
 	assert_eq(main.tries.size(), 3, "replay doesn't use an attempt")
 	main.wipe_save()
 
+
+
+func test_drag_splits_into_pieces():
+	var main = await _fresh()
+	main.set_piece_len(2)
+	assert_eq(main.split_path(Vector2i(0, 0), Vector2i(5, 0)), [Vector2i(0, 0), Vector2i(2, 0), Vector2i(4, 0), Vector2i(5, 0)], "2 m pieces, remainder at the end")
+	assert_eq(main.split_path(Vector2i(0, 0), Vector2i(4, -4)).size(), 5, "diagonals split at every grid step that fits (1.41 m)")
+	assert_eq(main.split_path(Vector2i(0, 0), Vector2i(2, -4)).size(), 3, "a 2.24 m step can't be shortened, so it's its own piece")
+	assert_true(main.split_path(Vector2i(0, 0), Vector2i(3, -4)).is_empty(), "a 5 m primitive step is too long")
+	assert_true(main.add_path(Vector2i(0, 0), Vector2i(main.gap, 0), BridgeSim.Mat.ROAD), "drag the whole deck in one go")
+	assert_eq(main.design.size(), main.gap / 2, "split into 2 m pieces")
+	main.undo()
+	assert_eq(main.design.size(), 0, "one drag is one undo step")
+	main.set_piece_len(4)
+	main.add_path(Vector2i(0, 0), Vector2i(main.gap, 0), BridgeSim.Mat.ROAD)
+	assert_eq(main.design.size(), ceili(main.gap / 4.0), "4 m pieces")
+	main.set_piece_len(1)
+	assert_true(main.add_path(Vector2i(0, 0), Vector2i(0, -3), BridgeSim.Mat.WOOD), "a fresh post")
+	assert_eq(main.design.size(), ceili(main.gap / 4.0) + 3, "1 m pieces")
+	assert_false(main.add_path(Vector2i(0, 0), Vector2i(0, -3), BridgeSim.Mat.WOOD), "dragging over existing beams adds nothing")
+	main.wipe_save()
+
+
+func test_long_pieces_buckle():
+	var main = await _fresh()
+	var s := BridgeSim.new()
+	s.setup(main.level(), [BridgeSim.beam(Vector2i(0, 0), Vector2i(2, 0), 1), BridgeSim.beam(Vector2i(0, 0), Vector2i(4, 0), 1)])
+	assert_eq(s.str_t[0], s.str_t[1], "tension strength doesn't depend on length")
+	assert_eq(s.str_c[0], s.str_t[0], "short pieces are as strong squeezed as stretched")
+	assert_lt(s.str_c[1], s.str_c[0] * 0.5, "a 4 m piece buckles at under half the load")

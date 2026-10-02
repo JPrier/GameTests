@@ -6,7 +6,8 @@ Build a bridge, then watch one vehicle try to cross. Everyone gets the same cany
 
 ## How it plays
 
-- Drag from a joint to place a beam, or tap a joint and then tap where the beam should go (taps chain, so you can lay a deck panel by panel). Beams snap to a 1 m grid and reach 2.3 m at most. Red joints are anchored to the rock.
+- Pick a piece length (1–4 m), then drag from a joint as far as you like: the line snaps to the 1 m grid and is split into pieces of that length, with joints between them (one undo step per drag). Tapping a joint and then a point does the same. Red joints are anchored to the rock.
+- Long pieces save joints but buckle: beyond 2.3 m a piece's compression strength falls off roughly with 1/length² (tension is unaffected).
 - **Road** (15 per metre) is the only thing the vehicle drives on. **Wood** (10 per metre) is lighter and cheaper; use it to brace the road into triangles.
 - Press **Go** to send the vehicle. Beams glow red as they strain and snap when overloaded. After a failed attempt the bridge is kept, with snapped beams marked ×, so you can repair it.
 - Score = 100 × ideal ÷ material used, on your best crossing; a bridge that falls scores 0. The material bar shows the ideal and your projected score as you build. **Share result** sends your score with a link (`?d=<date>&s=<score>`) that opens the same day's bridge, with your score shown as the one to beat.
