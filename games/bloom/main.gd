@@ -95,6 +95,9 @@ func _ready() -> void:
 	var s := String(url.get("s", ""))
 	target_score = int(s) if s.is_valid_int() else 0
 	load_puzzle(want)
+	_demo_reset()
+	if not dev_open and not tutorial_seen():
+		open_tutorial()
 
 
 func _add_key_action(action: String, keys: Array) -> void:
@@ -498,6 +501,8 @@ func _toast(msg: String) -> void:
 
 func _process(delta: float) -> void:
 	anim_t += delta
+	if tut_open:
+		_tut_process(delta)
 	if toast_t > 0.0:
 		toast_t -= delta
 	if share_pending:
@@ -509,12 +514,15 @@ func _process(delta: float) -> void:
 			step()
 		if gen >= GENS:
 			_finish_try()
-	if Input.is_action_just_pressed("run"):
+	if tut_open:
+		if Input.is_action_just_pressed("run"):
+			tut_next()
+	elif Input.is_action_just_pressed("run"):
 		match phase:
 			Phase.PLAN: run()
 			Phase.RUN: skip()
 			Phase.RESULT: try_again()
-	if Input.is_action_just_pressed("clear"):
+	if Input.is_action_just_pressed("clear") and not tut_open:
 		clear_seeds()
 	_layout()
 	queue_redraw()
@@ -524,10 +532,13 @@ func _input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
-			if dev_open:
+			if dev_open or tut_open:
 				_press_button(p)
 				return
-			if Rect2(head_rect.position, Vector2(220, 100)).has_point(p):
+			if help_rect.grow(10).has_point(p):
+				open_tutorial()
+				return
+			if Rect2(head_rect.position, Vector2(170, 100)).has_point(p):
 				_dev_tap()
 				return
 			if _press_button(p):
@@ -580,10 +591,11 @@ func dev_reset_all() -> void:
 			if f.begins_with("bloom_") and f.ends_with(".json"):
 				_wipe_file("user://" + f)
 				n += 1
+	_wipe_file(TUT_FLAG)
 	_flush_storage()
 	load_puzzle(date)
 	dev_open = false
-	_toast("Dev: cleared %d saved day(s)" % n)
+	_toast("Dev: cleared %d saved day(s) + tutorial" % n)
 
 
 func toggle_zoom() -> void:
@@ -643,6 +655,9 @@ func _press_button(p: Vector2) -> bool:
 					"dev_today": dev_reset_today()
 					"dev_all": dev_reset_all()
 					"dev_close": dev_open = false
+					"tut_skip": close_tutorial()
+					"tut_next": tut_next()
+					"tut_back": tut_back()
 			return true
 	return false
 
@@ -687,6 +702,9 @@ func _layout() -> void:
 
 func _build_buttons() -> void:
 	buttons.clear()
+	if tut_open and not dev_open:
+		_tut_layout()
+		return
 	if dev_open:
 		var vs := get_viewport_rect().size
 		var w: float = min(vs.x - 80, 420.0)
@@ -722,6 +740,8 @@ func _build_buttons() -> void:
 
 
 func _draw() -> void:
+	if buttons.is_empty() and phase != Phase.RUN:
+		_layout()
 	_draw_header()
 	_draw_board(grid_rect, main_region, phase == Phase.PLAN or phase == Phase.RESULT)
 	if mini_rect.has_area():
@@ -739,6 +759,9 @@ func _draw() -> void:
 		var hint := "Tap: full map" if zoomed else "Tap: zoom in"
 		_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
 	_draw_panel()
+	_draw_help_button()
+	if tut_open and not dev_open:
+		_draw_tutorial()
 	if dev_open:
 		var vs := get_viewport_rect().size
 		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
@@ -909,6 +932,230 @@ func _text_c(s: String, center: Vector2, size: int, col: Color) -> void:
 	draw_string(font, Vector2(center.x - w / 2.0, center.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 
 
+# ------------------------------------------------------------------ tutorial modal
+
+const TUT_FLAG := "user://bloom_tutorial_seen"
+const TUT_PAGES := 2
+const DEMO_N := 10                  # demo board is DEMO_N x DEMO_N, wrapping at the edges
+const DEMO_STEP := 0.35             # seconds per demo generation
+
+var tut_open := false
+var tut_page := 0
+var tut_rect := Rect2()
+var help_rect := Rect2()            # the "?" button in the header
+var demo := PackedByteArray()
+var demo_t := 0.0
+var demo_gen := 0
+
+
+func open_tutorial() -> void:
+	tut_open = true
+	tut_page = 0
+	_demo_reset()
+
+
+func close_tutorial() -> void:
+	tut_open = false
+	var f := FileAccess.open(TUT_FLAG, FileAccess.WRITE)
+	if f:
+		f.store_string("1")
+		f.close()
+
+
+func tutorial_seen() -> bool:
+	return FileAccess.file_exists(TUT_FLAG)
+
+
+func tut_next() -> void:
+	if tut_page < TUT_PAGES - 1:
+		tut_page += 1
+	else:
+		close_tutorial()
+
+
+func tut_back() -> void:
+	tut_page = max(tut_page - 1, 0)
+
+
+func _demo_reset() -> void:
+	demo = PackedByteArray()
+	demo.resize(DEMO_N * DEMO_N)
+	for c in [Vector2i(2, 1), Vector2i(3, 2), Vector2i(1, 3), Vector2i(2, 3), Vector2i(3, 3)]:  # glider
+		demo[c.y * DEMO_N + c.x] = 1
+	demo_t = 0.0
+	demo_gen = 0
+
+
+func _demo_step() -> void:
+	var nxt := PackedByteArray()
+	nxt.resize(DEMO_N * DEMO_N)
+	for y in DEMO_N:
+		for x in DEMO_N:
+			var n := 0
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					if dx != 0 or dy != 0:
+						n += demo[posmod(y + dy, DEMO_N) * DEMO_N + posmod(x + dx, DEMO_N)]
+			var i := y * DEMO_N + x
+			if n == 3 or (n == 2 and demo[i] == 1):
+				nxt[i] = 1
+	demo = nxt
+	demo_gen += 1
+
+
+func _tut_process(delta: float) -> void:
+	demo_t += delta
+	while demo_t >= DEMO_STEP:
+		demo_t -= DEMO_STEP
+		_demo_step()
+
+
+func _tut_layout() -> void:
+	var vs := get_viewport_rect().size
+	var w: float = min(vs.x - 32, 680.0)
+	var h: float = min(vs.y - 32, 900.0)
+	tut_rect = Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
+	var bh := 64.0
+	var pad := 24.0
+	var y := tut_rect.end.y - pad - bh
+	var bw := (tut_rect.size.x - pad * 2 - 12) / 2.0
+	var x0 := tut_rect.position.x + pad
+	if tut_page == 0:
+		buttons.append({"id": "tut_skip", "label": "Skip", "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
+		buttons.append({"id": "tut_next", "label": "Next", "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
+	else:
+		buttons.append({"id": "tut_back", "label": "Back", "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
+		buttons.append({"id": "tut_next", "label": "Let's play", "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
+
+
+## Draws wrapped text at y and returns the y below it.
+func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:
+	draw_multiline_string(font, Vector2(x, y + font.get_ascent(size)), text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1, col)
+	return y + font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size).y
+
+
+func _draw_tutorial() -> void:
+	var vs := get_viewport_rect().size
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.02, 0.03, 0.06, 0.82))
+	_box(tut_rect, Color("18203a"), 18, Color(C_ACCENT, 0.35))
+	var pad := 28.0
+	var x := tut_rect.position.x + pad
+	var w := tut_rect.size.x - pad * 2
+	var y := tut_rect.position.y + pad
+	var bottom: float = tut_rect.end.y - 24.0 - 64.0 - 24.0   # above the button row
+	# page dots
+	for i in TUT_PAGES:
+		draw_circle(Vector2(tut_rect.end.x - pad - (TUT_PAGES - 1 - i) * 22, y + 12), 6, C_ACCENT if i == tut_page else Color(C_INK, 0.25))
+	if tut_page == 0:
+		_tut_page_life(x, y, w, bottom)
+	else:
+		_tut_page_bloom(x, y, w, bottom)
+
+
+func _tut_page_life(x: float, y: float, w: float, bottom: float) -> void:
+	y = _para("Conway's Game of Life", x, y, w - 60, 34, C_INK) + 12
+	y = _para("A grid of cells, each alive or dead. Every generation, all cells update at once by counting their 8 neighbours. Nobody plays it — you set up the start and watch what grows.", x, y, w, 22, C_MUTED) + 18
+	# three rules, each shown as before -> after on a 3x3 patch
+	var rules := [
+		["Birth", "empty + exactly 3", [1, 2, 3], false, true],
+		["Survive", "alive + 2 or 3", [0, 5], true, true],
+		["Die", "alive + <2 or >3", [2], true, false],
+	]
+	var col_w := w / 3.0
+	var cell: float = clamp((col_w - 44) / 6.0, 10.0, 24.0)
+	var patch := cell * 3
+	for r in rules.size():
+		var rule: Array = rules[r]
+		var cx := x + col_w * r + col_w / 2.0
+		var gapw := 30.0
+		var left := cx - (patch * 2 + gapw) / 2.0
+		_draw_patch(Vector2(left, y), cell, rule[2], rule[3])
+		var ay := y + patch / 2.0
+		var ax := left + patch + gapw / 2.0
+		draw_colored_polygon(PackedVector2Array([Vector2(ax - 7, ay - 7), Vector2(ax + 6, ay), Vector2(ax - 7, ay + 7)]), C_MUTED)
+		_draw_patch(Vector2(left + patch + gapw, y), cell, rule[2], rule[4], true)
+		_text_c(rule[0], Vector2(cx, y + patch + 30), 22, C_INK)
+		_text_c(rule[1], Vector2(cx, y + patch + 56), 18, C_MUTED)
+	y += patch + 76
+	# live demo: a glider walking across a wrapping board
+	var room: float = bottom - y - 34
+	var side: float = clamp(room, 120.0, 300.0)
+	var demo_rect := Rect2(x + (w - side) / 2.0, y, side, side)
+	if room >= 120.0:
+		var cp := side / DEMO_N
+		_box(demo_rect.grow(4), C_GRID_BG, 8)
+		for k in range(1, DEMO_N):
+			draw_line(Vector2(demo_rect.position.x + k * cp, demo_rect.position.y), Vector2(demo_rect.position.x + k * cp, demo_rect.end.y), C_LINE)
+			draw_line(Vector2(demo_rect.position.x, demo_rect.position.y + k * cp), Vector2(demo_rect.end.x, demo_rect.position.y + k * cp), C_LINE)
+		for i in DEMO_N * DEMO_N:
+			if demo[i] == 1:
+				var cr := Rect2(demo_rect.position + Vector2(i % DEMO_N, i / DEMO_N) * cp, Vector2(cp, cp))
+				_box(cr.grow(-cp * 0.08), C_ALIVE, cp * 0.22)
+		_text_c("Five cells that walk forever — a \"glider\" (gen %d)" % demo_gen, Vector2(x + w / 2.0, demo_rect.end.y + 28), 18, C_MUTED)
+
+
+## A 3x3 patch: centre cell plus the listed neighbour slots (0..7, clockwise from top-left) alive.
+func _draw_patch(at: Vector2, cell: float, alive_n: Array, centre: bool, faded := false) -> void:
+	var slots := [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(2, 1), Vector2i(2, 2), Vector2i(1, 2), Vector2i(0, 2), Vector2i(0, 1)]
+	var r := Rect2(at, Vector2(cell * 3, cell * 3))
+	_box(r.grow(3), C_GRID_BG, 4)
+	for s in alive_n:
+		var p: Vector2i = slots[int(s)]
+		_box(Rect2(at + Vector2(p) * cell, Vector2(cell, cell)).grow(-1.5), Color(C_ALIVE, 0.45 if faded else 1.0), 3)
+	var c := Rect2(at + Vector2(cell, cell), Vector2(cell, cell))
+	if centre:
+		_box(c.grow(-1.5), C_SEED if faded else C_ALIVE, 3)
+	draw_rect(c, Color(C_STAR, 0.9), false, 1.5)
+
+
+func _tut_page_bloom(x: float, y: float, w: float, bottom: float) -> void:
+	y = _para("Today's puzzle", x, y, w - 60, 34, C_INK) + 16
+	var icon := 28.0
+	var tx := x + icon + 18
+	var tw := w - icon - 18
+	var rows := [
+		["zone", "Plant up to %d seeds inside the green zone. Tap a seed again to remove it." % budget],
+		["play", "Hit Run. Life plays out for %d generations on the whole map." % GENS],
+		["touch", "Impact = every cell your colony ever touched."],
+		["star", "Reach a gold star for +%d bonus." % STAR_BONUS],
+		["wall", "Walls are always dead — nothing grows through them."],
+		["tries", "%d tries a day; your best counts. Then share your score — the link gives friends the same map." % MAX_TRIES],
+	]
+	for row in rows:
+		var ir := Rect2(x, y + 2, icon, icon)
+		match row[0]:
+			"zone":
+				draw_rect(ir, C_ZONE)
+				draw_rect(ir, C_ZONE_EDGE, false, 2.0)
+				_box(Rect2(ir.position + Vector2(8, 8), Vector2(12, 12)), C_SEED, 3)
+			"play":
+				_box(ir, C_BTN_PRIMARY, 6)
+				draw_colored_polygon(PackedVector2Array([ir.position + Vector2(10, 7), ir.position + Vector2(21, 14), ir.position + Vector2(10, 21)]), C_INK)
+			"touch":
+				_box(ir.grow(-2), C_TOUCHED, 4)
+			"star":
+				_draw_star(ir.get_center(), 13, true)
+			"wall":
+				draw_rect(ir.grow(-2), C_WALL)
+				draw_rect(Rect2(ir.position + Vector2(2, 2), Vector2(ir.size.x - 4, 5)), C_WALL_HI)
+			"tries":
+				_text_c(str(MAX_TRIES), ir.get_center() + Vector2(0, 9), 26, C_ACCENT)
+		var ny := _para(row[1], tx, y, tw, 22, C_INK)
+		y = max(ny, y + icon + 4) + 16
+		if y > bottom:
+			break
+	if y + 40 < bottom:
+		_para("Tip: tap the small map to see the whole board while planting.", x, y + 8, w, 18, C_MUTED)
+
+
+func _draw_help_button() -> void:
+	var tw := font.get_string_size("Bloom", HORIZONTAL_ALIGNMENT_LEFT, -1, 52).x
+	help_rect = Rect2(head_rect.position + Vector2(tw + 16, 18), Vector2(40, 40))
+	draw_circle(help_rect.get_center(), 19, C_BTN)
+	draw_arc(help_rect.get_center(), 19, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
+	_text_c("?", help_rect.get_center() + Vector2(0, 9), 26, C_INK)
+
+
 # ------------------------------------------------------------------ agent hooks
 
 func get_agent_state() -> Dictionary:
@@ -916,6 +1163,6 @@ func get_agent_state() -> Dictionary:
 	return {
 		"phase": Phase.keys()[phase], "date": date, "puzzle": puzzle_no, "budget": budget,
 		"seeds": seeds.size(), "zone": [zone.position.x, zone.position.y, zone.size.x, zone.size.y],
-		"gen": gen, "score": sc, "zoomed": zoomed, "tries": tries.map(func(t): return t.score), "best": best_score(),
+		"gen": gen, "score": sc, "zoomed": zoomed, "tutorial": tut_open, "tut_page": tut_page, "tries": tries.map(func(t): return t.score), "best": best_score(),
 		"stars": star_total, "target": target_score, "share": share_text() if not tries.is_empty() else "",
 	}

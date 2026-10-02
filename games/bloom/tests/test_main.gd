@@ -9,6 +9,7 @@ func _fresh(d := DAY) -> Node:
 	main.wipe_save()
 	main.target_score = 0
 	main.load_puzzle(d)
+	main.tut_open = false
 	return main
 
 
@@ -188,3 +189,39 @@ func test_dev_menu_resets_saves():
 	main.dev_reset_all()
 	assert_eq(main.tries.size(), 0, "reset all clears saves")
 	assert_false(FileAccess.file_exists("user://bloom_%s.json" % main.date), "save file removed")
+
+
+func test_tutorial_on_first_visit():
+	var flag := "user://bloom_tutorial_seen"
+	if FileAccess.file_exists(flag):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(flag))
+	var main = await load_scene("res://main.tscn")
+	await wait_frames(2)
+	assert_true(main.tut_open, "tutorial opens on first visit")
+	assert_eq(main.tut_page, 0, "starts on the Game of Life page")
+	var g: int = main.demo_gen
+	await wait_seconds(0.8)
+	assert_gt(main.demo_gen, g, "glider demo animates")
+	main.tut_next()
+	assert_eq(main.tut_page, 1, "second page explains the puzzle")
+	main.tut_back()
+	assert_eq(main.tut_page, 0, "back works")
+	main.tut_next()
+	main.tut_next()
+	assert_false(main.tut_open, "last Next closes it")
+	assert_true(main.tutorial_seen(), "seen flag saved")
+	var again = await load_scene("res://main.tscn")
+	await wait_frames(1)
+	assert_false(again.tut_open, "not shown again after it was seen")
+	again.open_tutorial()
+	assert_true(again.tut_open, "? button reopens it")
+	again.close_tutorial()
+
+
+func test_glider_demo_moves():
+	var main = await _fresh()
+	main._demo_reset()
+	for i in 4:
+		main._demo_step()
+	assert_eq(main.demo.count(1), 5, "glider keeps 5 cells")
+	assert_eq(main.demo[2 * main.DEMO_N + 3], 1, "glider moved one cell diagonally after 4 gens")
