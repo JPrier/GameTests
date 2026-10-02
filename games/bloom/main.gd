@@ -448,11 +448,14 @@ func share() -> void:
 				}else{ask();}
 			};
 			var touch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
-			if(navigator.share&&touch){
+			if(navigator.share&&touch&&!window.__bloomCopyNext){
+				// Never fall back to the clipboard from here: the share sheet has used up the tap's
+				// user gesture, and a clipboard write without one makes Chrome show a permission prompt.
 				navigator.share({text:t}).then(function(){done('shared');},function(e){
-					if(e&&e.name==='AbortError'){done('cancelled');}else{copy();}
+					if(e&&e.name==='AbortError'){done('cancelled');}
+					else{window.__bloomCopyNext=true;done('share_failed');}
 				});
-			}else{copy();}
+			}else{window.__bloomCopyNext=false;copy();}
 		})(%s)""" % JSON.stringify(last_share_text)
 		JavaScriptBridge.eval(js, true)
 		share_pending = true
@@ -470,6 +473,7 @@ func _poll_share() -> void:
 		"copied": _toast("Result + link copied — paste it anywhere")
 		"shared": _toast("Shared!")
 		"prompted", "cancelled": pass
+		"share_failed": _toast("Couldn't share — tap again to copy")
 		_: _toast("Couldn't share — try again")
 
 
