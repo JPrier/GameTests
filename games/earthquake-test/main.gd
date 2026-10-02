@@ -10,6 +10,7 @@ const Quake = preload("res://quake.gd")
 const GW := 14                        # build grid width (m)
 const GH := 18                        # build grid height (m)
 const MAX_LEN := 3.2                  # longest single beam (m)
+const U := 100                        # build coordinates are integer centimetres (grid dots every U)
 const PIECE_LENS := [1, 2, 3]         # piece-length choices (m) for drawn lines
 const MAX_TRIES := 3
 const EPOCH := "2026-10-02"           # quake #1
@@ -171,10 +172,10 @@ func generate(d: String) -> void:
 		var x := rng.randi_range(2, GW - 2)
 		var ok := true
 		for a in anchors:
-			if absi(a.x - x) < 2:
+			if absi(a.x / U - x) < 2:
 				ok = false
 		if ok:
-			anchors.append(Vector2i(x, 0))
+			anchors.append(Vector2i(x * U, 0))
 	anchors.sort_custom(func(a, b): return a.x < b.x)
 	quake = Quake.new()
 	quake.make(d)
@@ -205,7 +206,17 @@ func design_cost(d: Array = design) -> float:
 
 
 func beam_len(b: Dictionary) -> float:
-	return Vector2(b.a).distance_to(Vector2(b.b))
+	return wpos(b.a).distance_to(wpos(b.b))
+
+
+## World position (metres) of a build point (centimetres).
+static func wpos(p: Vector2i) -> Vector2:
+	return Vector2(p) / U
+
+
+## Build point (cm) for a grid dot (whole metres).
+static func dot(x: int, y: int) -> Vector2i:
+	return Vector2i(x * U, y * U)
 
 
 func money_left() -> float:
@@ -226,6 +237,28 @@ func is_node(p: Vector2i) -> bool:
 	return false
 
 
+## True when segment p-q lies along an existing beam (so building it would overlap).
+func _covered(p: Vector2i, q: Vector2i) -> bool:
+	for b in design:
+		var a := Vector2(b.a)
+		var c := Vector2(b.b)
+		if Geometry2D.get_closest_point_to_segment(Vector2(p), a, c).distance_to(Vector2(p)) <= 1.5 \
+				and Geometry2D.get_closest_point_to_segment(Vector2(q), a, c).distance_to(Vector2(q)) <= 1.5:
+			return true
+	return false
+
+
+## Every anchor and joint in the design.
+func _all_nodes() -> Array:
+	var seen := {}
+	for a in anchors:
+		seen[a] = true
+	for b in design:
+		seen[b.a] = true
+		seen[b.b] = true
+	return seen.keys()
+
+
 func beam_index(a: Vector2i, b: Vector2i) -> int:
 	for i in design.size():
 		var d: Dictionary = design[i]
@@ -235,7 +268,7 @@ func beam_index(a: Vector2i, b: Vector2i) -> int:
 
 
 func in_grid(p: Vector2i) -> bool:
-	return p.x >= 0 and p.x <= GW and p.y >= 0 and p.y <= GH
+	return p.x >= 0 and p.x <= GW * U and p.y >= 0 and p.y <= GH * U
 
 
 ## "" when the beam can be built, otherwise the reason it can't.
@@ -249,11 +282,11 @@ func check_beam(a: Vector2i, b: Vector2i, mat: int = build_mat) -> String:
 	for p in [a, b]:
 		if p.y == 0 and not is_anchor(p):
 			return "Only anchors can touch the ground"
-	if Vector2(a).distance_to(Vector2(b)) > MAX_LEN + 1e-6:
+	if wpos(a).distance_to(wpos(b)) > MAX_LEN + 1e-6:
 		return "Too long — max %.1f m" % MAX_LEN
 	if beam_index(a, b) >= 0:
 		return "Already built"
-	var c := Vector2(a).distance_to(Vector2(b)) * float(Sim.MATS[mat].cost)
+	var c := wpos(a).distance_to(wpos(b)) * float(Sim.MATS[mat].cost)
 	if c > money_left() + 1e-6:
 		return "Not enough budget ($%d needed)" % ceili(c)
 	return ""
@@ -275,11 +308,10 @@ func add_beam(a: Vector2i, b: Vector2i, mat: int = build_mat) -> bool:
 	return true
 
 
-## Plan a straight line of beams from a to b, cut into pieces of about `plen` metres.
-## Pieces start and end on grid points that lie exactly on the line, so a drawn line
-## can be any length; only the step between neighbouring grid points must be <= MAX_LEN.
-## Returns {pieces: [[p, q], ...] still to build, why: "" or the reason it can't,
-## cost: of those pieces, short: true when the budget ran out part-way}.
+## Plan a straight line of beams from a to b, split into equal pieces no longer than `plen`
+## metres (a 7 m line in 2 m pieces = 4 x 1.75 m). Joints between pieces can sit anywhere on
+## the line, so any angle works. Returns {pieces: [[p, q], ...] still to build, why: "" or
+## the reason it can't, cost: of those pieces, short: true when the budget ran out part-way}.
 func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = build_mat) -> Dictionary:
 	var out := {"pieces": [], "why": "", "cost": 0.0, "short": false}
 	if a == b:
@@ -296,32 +328,48 @@ func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = buil
 		else:
 			out.why = "Start from an anchor or a joint"
 			return out
-	var d := b - a
-	var g := _gcd(absi(d.x), absi(d.y))
-	var step := d / g
-	var u := Vector2(step).length()
-	if u > MAX_LEN + 1e-6:
-		out.why = "No joint fits on that angle — max %.1f m per piece" % MAX_LEN
-		return out
-	var m := clampi(roundi(plen / u), 1, maxi(1, floori(MAX_LEN / u + 1e-6)))
-	for k in range(0, g + 1):
-		var p := a + step * k
-		if p.y == 0 and not is_anchor(p):
-			out.why = "Only anchors can touch the ground"
-			return out
+	# existing joints the line passes over become break points, so a line drawn over or
+	# across earlier work connects to it instead of overlapping it
+	var ab := Vector2(b - a)
+	var ab_len2 := ab.length_squared()
+	var stops := {0.0: a, 1.0: b}
+	for p in _all_nodes():
+		var t := Vector2(p - a).dot(ab) / ab_len2
+		if t <= 1e-6 or t >= 1.0 - 1e-6:
+			continue
+		if (Vector2(a) + ab * t).distance_to(Vector2(p)) <= 1.5:
+			stops[t] = p
+	var ts: Array = stops.keys()
+	ts.sort()
+	var segs: Array = []      # [p, q, already_built]
+	for i in ts.size() - 1:
+		var p0: Vector2i = stops[ts[i]]
+		var p1: Vector2i = stops[ts[i + 1]]
+		if beam_index(p0, p1) >= 0:
+			segs.append([p0, p1, true])
+			continue
+		var n := maxi(1, ceili(wpos(p0).distance_to(wpos(p1)) / float(plen) - 1e-6))
+		var prev := p0
+		for k in range(1, n + 1):
+			var f := float(k) / n
+			var q := p1 if k == n else Vector2i(roundi(p0.x + (p1.x - p0.x) * f), roundi(p0.y + (p1.y - p0.y) * f))
+			segs.append([prev, q, false])
+			prev = q
+	for sg in segs:
+		for p in [sg[0], sg[1]]:
+			if p.y == 0 and not is_anchor(p):
+				out.why = "Only anchors can touch the ground"
+				return out
 	var unit_cost := float(Sim.MATS[mat].cost)
 	var left := money_left()
 	var any_new := false
-	var k := 0
-	while k < g:
-		var k2 := mini(k + m, g)
-		var p := a + step * k
-		var q := a + step * k2
-		k = k2
-		if beam_index(p, q) >= 0:
+	for sg in segs:
+		var p: Vector2i = sg[0]
+		var q: Vector2i = sg[1]
+		if sg[2] or beam_index(p, q) >= 0 or _covered(p, q):
 			continue
 		any_new = true
-		var c := Vector2(p).distance_to(Vector2(q)) * unit_cost
+		var c := wpos(p).distance_to(wpos(q)) * unit_cost
 		if out.cost + c > left + 1e-6:
 			out.short = true
 			break
@@ -332,14 +380,6 @@ func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = buil
 	elif out.pieces.is_empty():
 		out.why = "Not enough budget"
 	return out
-
-
-static func _gcd(x: int, y: int) -> int:
-	while y != 0:
-		var t := y
-		y = x % y
-		x = t
-	return maxi(x, 1)
 
 
 ## Build a planned line as one undo step. Returns how many pieces were added.
@@ -462,7 +502,7 @@ func built_height(d: Array = design) -> float:
 	for b in d:
 		if att.has(b.a):
 			h = maxi(h, maxi(b.a.y, b.b.y))
-	return h
+	return h / float(U)
 
 
 # ------------------------------------------------------------------ quake run
@@ -472,7 +512,7 @@ func run() -> void:
 		return
 	selected = Vector2i(-1, -1)
 	sim = Sim.new()
-	sim.setup(design, anchors, quake)
+	sim.setup(design, anchors, quake, 1.0 / U)
 	sim_acc = 0.0
 	fast = false
 	flashes.clear()
@@ -592,7 +632,7 @@ func _design_from_json(arr) -> Array:
 
 
 func _save_path() -> String:
-	return "user://quake_%s.json" % date
+	return "user://quake2_%s.json" % date   # v2: build points in centimetres
 
 
 func _save_state() -> void:
@@ -971,11 +1011,11 @@ func _apply_camera() -> void:
 
 ## Pointer released on the board: finish a drag, or handle a tap.
 func _release(p: Vector2) -> void:
-	if dragging and drag_from.x >= 0:
-		if drag_to.x >= 0:
+	if dragging:
+		if drag_from.x >= 0 and drag_to.x >= 0:
 			add_chain(drag_from, drag_to)
-		selected = Vector2i(-1, -1)
-		return
+			selected = Vector2i(-1, -1)
+		return   # a drag that didn't start on a joint does nothing
 	tap_world(snap(p), screen_to_world(p))
 
 
@@ -1003,9 +1043,8 @@ func tap_world(g: Vector2i, w: Vector2) -> void:
 	if g.x >= 0 and is_node(g):
 		selected = g
 		return
-	var bi := beam_at(w)
-	if bi >= 0:
-		remove_beam(bi)
+	if beam_at(w) >= 0:
+		_toast("To remove pieces, use Erase")
 		return
 	if g.x >= 0:
 		_toast("Start at an anchor or a joint")
@@ -1016,8 +1055,8 @@ func beam_at(w: Vector2, whole := false) -> int:
 	var best_d := maxf(0.28, 14.0 / ppm) if not whole else maxf(0.35, 18.0 / ppm)
 	for i in design.size():
 		var b: Dictionary = design[i]
-		var a := Vector2(b.a)
-		var c := Vector2(b.b)
+		var a := wpos(b.a)
+		var c := wpos(b.b)
 		var q := Geometry2D.get_closest_point_to_segment(w, a, c)
 		var d := q.distance_to(w)
 		if d < best_d and (whole or (q.distance_to(a) > 0.2 and q.distance_to(c) > 0.2)):
@@ -1035,10 +1074,22 @@ func world_to_screen(w: Vector2) -> Vector2:
 
 
 ## Nearest grid point to a screen position, or (-1, -1) when too far from any.
+## Nearest build point to a screen position: an existing joint (they can sit between dots)
+## if one is close, else the nearest grid dot; (-1, -1) when nothing is near.
 func snap(p: Vector2) -> Vector2i:
 	var w := screen_to_world(p)
-	var g := Vector2i(roundi(w.x), roundi(w.y))
-	if not in_grid(g) or Vector2(g).distance_to(w) > 0.48:
+	var best := Vector2i(-1, -1)
+	var best_d := maxf(0.3, 16.0 / ppm)
+	for b in design:
+		for k in [b.a, b.b]:
+			var d := wpos(k).distance_to(w)
+			if d < best_d:
+				best_d = d
+				best = k
+	if best.x >= 0:
+		return best
+	var g := dot(roundi(w.x), roundi(w.y))
+	if not in_grid(g) or wpos(g).distance_to(w) > 0.48:
 		return Vector2i(-1, -1)
 	return g
 
@@ -1065,7 +1116,7 @@ func dev_reset_all() -> void:
 	var dir := DirAccess.open("user://")
 	if dir:
 		for f in dir.get_files():
-			if f.begins_with("quake_") and f.ends_with(".json"):
+			if (f.begins_with("quake_") or f.begins_with("quake2_")) and f.ends_with(".json"):
 				_wipe_file("user://" + f)
 				n += 1
 	_wipe_file(TUT_FLAG)
@@ -1365,10 +1416,10 @@ func _draw_board() -> void:
 		var focus := selected if selected.x >= 0 else drag_from
 		for gy in range(1, GH + 1):
 			for gx2 in range(0, GW + 1):
-				var p := Vector2i(gx2, gy)
-				var s := world_to_screen(Vector2(p))
+				var p := dot(gx2, gy)
+				var s := world_to_screen(wpos(p))
 				if focus.x >= 0 and _reach(focus).has(p):
-					draw_circle(s, maxf(2.5, ppm * 0.09), Color(C_DOT_REACH, 0.85))
+					draw_circle(s, maxf(2.0, ppm * 0.07), Color(C_DOT_REACH, 0.45))
 				else:
 					draw_circle(s, maxf(1.5, ppm * 0.05), C_DOT)
 		# height ruler
@@ -1378,10 +1429,10 @@ func _draw_board() -> void:
 	# ghost of the built design after a run
 	if (phase == Phase.RESULT or phase == Phase.FINAL) and show_try >= 0:
 		for b in _design_from_json(tries[show_try].design):
-			draw_line(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), C_GHOST, maxf(2.0, ppm * 0.1))
+			draw_line(world_to_screen(wpos(b.a)), world_to_screen(wpos(b.b)), C_GHOST, maxf(2.0, ppm * 0.1))
 	# anchors
 	for a in anchors:
-		var s := world_to_screen(Vector2(a) + Vector2(g.x, g.y))
+		var s := world_to_screen(wpos(a) + Vector2(g.x, g.y))
 		var w := maxf(10.0, ppm * 0.42)
 		draw_rect(Rect2(s.x - w, s.y, w * 2, maxf(8.0, ppm * 0.3)), Color("6f747a"))
 		draw_colored_polygon(PackedVector2Array([s + Vector2(-w * 0.75, 2), s + Vector2(w * 0.75, 2), s + Vector2(0, -w * 0.9)]), C_ANCHOR)
@@ -1440,9 +1491,9 @@ func _draw_design() -> void:
 	var att := attached_points()
 	for b in design:
 		if att.has(b.a):
-			_draw_beam(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), int(b.m))
+			_draw_beam(world_to_screen(wpos(b.a)), world_to_screen(wpos(b.b)), int(b.m))
 		else:   # floating piece: not attached to any anchor, it'll just fall
-			_draw_beam(world_to_screen(Vector2(b.a)), world_to_screen(Vector2(b.b)), int(b.m), Color(C_DANGER, 0.5), 0.45)
+			_draw_beam(world_to_screen(wpos(b.a)), world_to_screen(wpos(b.b)), int(b.m), Color(C_DANGER, 0.5), 0.45)
 		joints[b.a] = true
 		joints[b.b] = true
 	var plan_pts: Array = []
@@ -1450,27 +1501,27 @@ func _draw_design() -> void:
 		var plan := plan_chain(drag_from, drag_to)
 		if plan.why == "":
 			for pq in plan.pieces:
-				_draw_beam(world_to_screen(Vector2(pq[0])), world_to_screen(Vector2(pq[1])), build_mat, Color(0, 0, 0, 0), 0.65)
+				_draw_beam(world_to_screen(wpos(pq[0])), world_to_screen(wpos(pq[1])), build_mat, Color(0, 0, 0, 0), 0.65)
 				plan_pts.append(pq[1])
 			var n_p: int = plan.pieces.size()
 			_draw_drag_label("%d piece%s · $%d%s" % [n_p, "" if n_p == 1 else "s", ceili(plan.cost), " (budget!)" if plan.short else ""])
 		elif plan.why != "same":
-			_draw_beam(world_to_screen(Vector2(drag_from)), world_to_screen(Vector2(drag_to)), build_mat, Color(C_DANGER, 0.85), 0.5)
+			_draw_beam(world_to_screen(wpos(drag_from)), world_to_screen(wpos(drag_to)), build_mat, Color(C_DANGER, 0.85), 0.5)
 			_draw_drag_label(plan.why)
 	for p in joints:
-		_draw_joint(world_to_screen(Vector2(p)), is_anchor(p))
+		_draw_joint(world_to_screen(wpos(p)), is_anchor(p))
 	for a in anchors:
-		_draw_joint(world_to_screen(Vector2(a)), true)
+		_draw_joint(world_to_screen(wpos(a)), true)
 	for p in plan_pts:
-		_draw_joint(world_to_screen(Vector2(p)), false)
+		_draw_joint(world_to_screen(wpos(p)), false)
 	if selected.x >= 0:
-		var s := world_to_screen(Vector2(selected))
+		var s := world_to_screen(wpos(selected))
 		draw_arc(s, ppm * 0.32 + 2.0 * sin(anim_t * 6.0), 0, TAU, 28, C_DOT_REACH, 3.0)
 
 
 ## Small pill near the drag end saying what the line will build.
 func _draw_drag_label(text: String) -> void:
-	var s := world_to_screen(Vector2(drag_to)) + Vector2(0, -ppm * 0.6 - 18)
+	var s := world_to_screen(wpos(drag_to)) + Vector2(0, -ppm * 0.6 - 18)
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 20
 	var r := Rect2(s.x - tw / 2.0, s.y - 16, tw, 30)
 	r.position.x = clampf(r.position.x, board_rect.position.x + 4, board_rect.end.x - tw - 4)
@@ -1492,7 +1543,7 @@ func _reach(focus: Vector2i) -> Dictionary:
 	_reach_set = {}
 	for gy in range(0, GH + 1):
 		for gx in range(0, GW + 1):
-			var p := Vector2i(gx, gy)
+			var p := dot(gx, gy)
 			if p != focus and plan_chain(focus, p).why == "":
 				_reach_set[p] = true
 	return _reach_set
@@ -1573,7 +1624,7 @@ func _draw_panel() -> void:
 	var lines: Array = []
 	match phase:
 		Phase.BUILD:
-			var hint := "Pick a piece length, then drag a line from an anchor or joint — it's built from pieces of that length. Tap a beam to remove it."
+			var hint := "Drag a line from an anchor or joint to any dot — it's split into equal pieces up to the chosen length. Use Erase to remove pieces."
 			if erasing:
 				hint = "Erasing: tap or swipe across pieces to remove them. Tap Erase again to build."
 			elif selected.x >= 0:
@@ -1703,7 +1754,7 @@ func _draw_tutorial() -> void:
 	y = _para("How Earthquake Test works", x, y, tw, 32, C_INK) + 14
 	var rows := [
 		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
-		["beam", "Pick a piece length (1, 2 or 3 m), then drag a line from an anchor or joint. It's built from pieces of that length, with a joint between each. Erase removes single pieces."],
+		["beam", "Pick a max piece length (1, 2 or 3 m), then drag a line from an anchor or joint to any dot, at any angle. It's split into equal pieces no longer than that. Only the Erase tool removes pieces."],
 		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
 		["quake", "Start the quake: today's exact seismogram hits your build. Overloaded beams snap."],
 		["height", "Score = height still standing (attached to an anchor) when the shaking stops."],
@@ -1776,7 +1827,7 @@ func _text_r(s: String, right: Vector2, size: int, col: Color) -> void:
 func get_agent_state() -> Dictionary:
 	return {
 		"phase": Phase.keys()[phase], "date": date, "quake_no": quake_no, "budget": budget,
-		"money_left": money_left(), "anchors": anchors.map(func(a): return a.x),
+		"money_left": money_left(), "anchors": anchors.map(func(a): return a.x / U),
 		"beams": design.size(), "built_height": built_height(), "build_mat": build_mat,
 		"selected": [selected.x, selected.y],
 		"quake": quake.describe() if quake else "",

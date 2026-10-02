@@ -45,13 +45,13 @@ func test_site_is_sane():
 func test_build_rules():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
-	assert_false(main.add_beam(a + Vector2i(0, 3), a + Vector2i(0, 4)), "must start at an anchor or joint")
-	assert_false(main.add_beam(a, a + Vector2i(3, 2)), "too long (3.6 m)")
-	assert_false(main.add_beam(a, a + Vector2i(0, 4)), "longer than MAX_LEN as one beam")
-	assert_false(main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 0)), "ground points must be anchors")
-	assert_true(main.add_beam(a, a + Vector2i(0, 1)), "post from anchor")
-	assert_false(main.add_beam(a + Vector2i(0, 1), a), "no duplicate beams")
-	assert_true(main.add_beam(a + Vector2i(0, 1), a + Vector2i(0, 3)), "build up from a joint")
+	assert_false(main.add_beam(a + main.dot(0, 3), a + main.dot(0, 4)), "must start at an anchor or joint")
+	assert_false(main.add_beam(a, a + main.dot(3, 2)), "too long (3.6 m)")
+	assert_false(main.add_beam(a, a + main.dot(0, 4)), "longer than MAX_LEN as one beam")
+	assert_false(main.add_beam(a + main.dot(0, 1), a + main.dot(1, 0)), "ground points must be anchors")
+	assert_true(main.add_beam(a, a + main.dot(0, 1)), "post from anchor")
+	assert_false(main.add_beam(a + main.dot(0, 1), a), "no duplicate beams")
+	assert_true(main.add_beam(a + main.dot(0, 1), a + main.dot(0, 3)), "build up from a joint")
 	assert_eq(main.design.size(), 2, "two beams")
 	main.remove_beam(0)
 	assert_eq(main.design.size(), 1, "removing one piece removes only that piece")
@@ -67,7 +67,7 @@ func test_budget_is_enforced():
 	var y := 0
 	var built := 0
 	while y < main.GH:
-		if not main.add_beam(Vector2i(a.x, y), Vector2i(a.x, y + 1)):
+		if not main.add_beam(Vector2i(a.x, y * 100), Vector2i(a.x, (y + 1) * 100)):
 			break
 		built += 1
 		y += 1
@@ -79,15 +79,21 @@ func test_budget_is_enforced():
 func test_taps_build_and_remove():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
-	main.tap_world(a, Vector2(a))
+	main.tap_world(a, main.wpos(a))
 	assert_eq(main.selected, a, "tap an anchor selects it")
-	main.tap_world(a + Vector2i(1, 1), Vector2(a + Vector2i(1, 1)))
+	main.tap_world(a + main.dot(1, 1), main.wpos(a + main.dot(1, 1)))
 	assert_eq(main.design.size(), 1, "tap a dot builds a beam")
-	assert_eq(main.selected, a + Vector2i(1, 1), "selection follows the new joint")
-	main.tap_world(a + Vector2i(1, 1), Vector2(a + Vector2i(1, 1)))
+	assert_eq(main.selected, a + main.dot(1, 1), "selection follows the new joint")
+	main.tap_world(a + main.dot(1, 1), main.wpos(a + main.dot(1, 1)))
 	assert_eq(main.selected, Vector2i(-1, -1), "tap again deselects")
-	main.tap_world(Vector2i(-1, -1), Vector2(a) + Vector2(0.5, 0.5))
-	assert_eq(main.design.size(), 0, "tap a beam removes it")
+	main.tap_world(Vector2i(-1, -1), main.wpos(a) + Vector2(0.5, 0.5))
+	assert_eq(main.design.size(), 1, "tapping a beam does NOT remove it (only Erase does)")
+	main._release(main.world_to_screen(main.wpos(a) + Vector2(0.5, 0.5)))
+	assert_eq(main.design.size(), 1, "releasing a tap on a beam doesn't remove it either")
+	main.dragging = true
+	main._release(main.world_to_screen(main.wpos(a) + Vector2(0.5, 0.5)))
+	main.dragging = false
+	assert_eq(main.design.size(), 1, "a drag that didn't start on a joint does nothing")
 
 
 func test_quake_is_deterministic():
@@ -96,12 +102,12 @@ func test_quake_is_deterministic():
 	var a: Vector2i = ab[0]
 	var b: Vector2i = ab[1]
 	# a braced 2-level frame between the two anchors (if they're 2 apart; else a lean-to)
-	main.add_beam(a, a + Vector2i(0, 1))
-	main.add_beam(a + Vector2i(0, 1), a + Vector2i(0, 2))
-	main.add_beam(a + Vector2i(0, 2), a + Vector2i(1, 3))
-	main.add_beam(a, a + Vector2i(1, 2))
-	main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 2))
-	main.add_beam(a + Vector2i(1, 2), a + Vector2i(1, 3))
+	main.add_beam(a, a + main.dot(0, 1))
+	main.add_beam(a + main.dot(0, 1), a + main.dot(0, 2))
+	main.add_beam(a + main.dot(0, 2), a + main.dot(1, 3))
+	main.add_beam(a, a + main.dot(1, 2))
+	main.add_beam(a + main.dot(0, 1), a + main.dot(1, 2))
+	main.add_beam(a + main.dot(1, 2), a + main.dot(1, 3))
 	var design: Array = main.design.duplicate(true)
 	var r1: Dictionary = main.run_instant()
 	assert_eq(main.phase, main.Phase.RESULT, "one try used")
@@ -117,7 +123,7 @@ func test_triangle_survives():
 	var ab := _two_anchors(main)
 	var a: Vector2i = ab[0]
 	var b: Vector2i = ab[1]
-	var apex := Vector2i((a.x + b.x) / 2, 1)
+	var apex := Vector2i(roundi((a.x + b.x) / 200.0) * 100, 100)
 	assert_true(main.add_beam(a, apex), "left leg")
 	assert_true(main.add_beam(b, apex), "right leg")
 	var r: Dictionary = main.run_instant()
@@ -132,9 +138,9 @@ func test_tries_final_share_and_save():
 		if main.phase == main.Phase.RESULT:
 			main.back_to_build()
 		if main.design.is_empty():
-			main.add_beam(a, a + Vector2i(1, 1))
-			main.add_beam(a, a + Vector2i(0, 1))
-			main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 1))
+			main.add_beam(a, a + main.dot(1, 1))
+			main.add_beam(a, a + main.dot(0, 1))
+			main.add_beam(a + main.dot(0, 1), a + main.dot(1, 1))
 		main.run_instant()
 	assert_eq(main.phase, main.Phase.FINAL, "final after the last try")
 	assert_eq(main.tries.size(), main.MAX_TRIES, "three tries")
@@ -151,11 +157,11 @@ func test_tries_final_share_and_save():
 func test_finish_early_and_resume_design():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
-	main.add_beam(a, a + Vector2i(0, 1))
+	main.add_beam(a, a + main.dot(0, 1))
 	main.load_day(DAY)
 	assert_eq(main.design.size(), 1, "design in progress survives a reload")
-	main.add_beam(a, a + Vector2i(1, 1))
-	main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 1))
+	main.add_beam(a, a + main.dot(1, 1))
+	main.add_beam(a + main.dot(0, 1), a + main.dot(1, 1))
 	main.run_instant()
 	main.finish()
 	assert_eq(main.phase, main.Phase.FINAL, "finish ends the day")
@@ -165,9 +171,9 @@ func test_finish_early_and_resume_design():
 func test_live_run_advances():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
-	main.add_beam(a, a + Vector2i(1, 1))
-	main.add_beam(a, a + Vector2i(0, 1))
-	main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 1))
+	main.add_beam(a, a + main.dot(1, 1))
+	main.add_beam(a, a + main.dot(0, 1))
+	main.add_beam(a + main.dot(0, 1), a + main.dot(1, 1))
 	main.run()
 	assert_eq(main.phase, main.Phase.RUN, "running")
 	main.skip()
@@ -182,9 +188,9 @@ func test_live_run_advances():
 func test_dev_menu_from_title_taps():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
-	main.add_beam(a, a + Vector2i(0, 1))
-	main.add_beam(a, a + Vector2i(1, 1))
-	main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 1))
+	main.add_beam(a, a + main.dot(0, 1))
+	main.add_beam(a, a + main.dot(1, 1))
+	main.add_beam(a + main.dot(0, 1), a + main.dot(1, 1))
 	main.run_instant()
 	assert_eq(main.tries.size(), 1, "one try used")
 	for k in 4:
@@ -212,7 +218,7 @@ func test_slow_title_taps_do_nothing():
 func _lens(main) -> Array:
 	var out: Array = []
 	for b in main.design:
-		out.append(snappedf(Vector2(b.a).distance_to(Vector2(b.b)), 0.01))
+		out.append(snappedf(main.wpos(b.a).distance_to(main.wpos(b.b)), 0.01))
 	return out
 
 
@@ -220,43 +226,52 @@ func test_drawn_line_is_cut_into_pieces():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
 	main.set_piece_len(2)
-	assert_eq(main.add_chain(a, a + Vector2i(0, 7)), 4, "7 m up in 2 m pieces = 2+2+2+1")
-	assert_eq(_lens(main), [2.0, 2.0, 2.0, 1.0], "piece lengths")
+	assert_eq(main.add_chain(a, a + main.dot(0, 7)), 4, "7 m in pieces up to 2 m = 4 equal pieces")
+	assert_eq(_lens(main), [1.75, 1.75, 1.75, 1.75], "equal piece lengths")
 	main.undo()
 	assert_eq(main.design.size(), 0, "a whole line undoes in one step")
 	main.set_piece_len(3)
-	assert_eq(main.add_chain(a, a + Vector2i(0, 9)), 3, "9 m in 3 m pieces")
+	assert_eq(main.add_chain(a, a + main.dot(0, 9)), 3, "9 m in 3 m pieces")
 	main.set_piece_len(1)
-	assert_eq(main.add_chain(a + Vector2i(0, 9), a + Vector2i(2, 9)), 2, "1 m pieces across the top")
-	assert_true(main.is_node(a + Vector2i(1, 9)), "a joint between pieces")
+	assert_eq(main.add_chain(a + main.dot(0, 9), a + main.dot(2, 9)), 2, "1 m pieces across the top")
+	assert_true(main.is_node(a + main.dot(1, 9)), "a joint between pieces")
+	main.set_piece_len(2)
+	assert_eq(main.add_chain(a + main.dot(0, 9), a + main.dot(0, 4)), 0, "drawing over an existing line adds nothing")
+	var n_before: int = main.design.size()
+	assert_eq(main.add_chain(a, a + main.dot(0, 11)), 1, "extending a line reuses its joints: only the 2 m on top is new")
+	assert_eq(main.design.size(), n_before + 1, "no overlapping beams")
 
 
 func test_diagonal_lines_and_bad_angles():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
 	main.set_piece_len(2)
-	assert_eq(main.add_chain(a, a + Vector2i(4, 4)), 4, "45° steps are 1.41 m, so 2 m pieces round to one step")
+	assert_eq(main.add_chain(a, a + main.dot(4, 4)), 3, "5.66 m diagonal in pieces up to 2 m = 3 pieces")
 	main.undo()
 	main.set_piece_len(3)
-	assert_eq(main.add_chain(a, a + Vector2i(4, 4)), 2, "3 m pieces on 45° = two 2.83 m beams")
+	assert_eq(main.add_chain(a, a + main.dot(4, 4)), 2, "3 m pieces on 45° = two 2.83 m beams")
 	main.undo()
-	var plan: Dictionary = main.plan_chain(a, a + Vector2i(3, 5))
-	assert_ne(plan.why, "", "no grid points on a 3:5 line within reach")
-	assert_eq(main.add_chain(a + Vector2i(0, 4), a), 2, "drawing towards an anchor works too (3 m + 1 m)")
+	assert_eq(main.add_chain(a, a + main.dot(3, 5)), 2, "any angle works: a 3:5 line")
+	var mid: Vector2i = main.design[0].b
+	assert_true(mid.x % 100 != 0 or mid.y % 100 != 0, "the joint between pieces sits off the grid")
+	assert_true(main.is_node(mid), "and you can build from it")
+	assert_eq(main.add_chain(mid, mid + main.dot(2, 0)), 1, "a line from the off-grid joint")
+	main.set_erasing(false)
+	assert_eq(main.add_chain(a + main.dot(0, 4), a), 2, "drawing towards an anchor works too (3 m + 1 m)")
 
 
 func test_existing_pieces_are_skipped_and_budget_truncates():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
 	main.set_piece_len(1)
-	main.add_chain(a, a + Vector2i(0, 2))
-	assert_eq(main.add_chain(a, a + Vector2i(0, 4)), 2, "only the new part is built")
+	main.add_chain(a, a + main.dot(0, 2))
+	assert_eq(main.add_chain(a, a + main.dot(0, 4)), 2, "only the new part is built")
 	assert_eq(main.design.size(), 4, "no duplicates")
 	main.set_mat(1)
-	assert_eq(main.add_chain(a + Vector2i(0, 4), a + Vector2i(0, 18)), 14, "14 steel pieces")
+	assert_eq(main.add_chain(a + main.dot(0, 4), a + main.dot(0, 18)), 14, "14 steel pieces")
 	var left: float = main.money_left()
 	var b: Vector2i = main.anchors[1]
-	var n: int = main.add_chain(b, b + Vector2i(0, 18))
+	var n: int = main.add_chain(b, b + main.dot(0, 18))
 	assert_eq(n, floori(left / 3.0), "the line stops where the budget runs out")
 	assert_true(main.money_left() >= 0.0, "never overspend")
 
@@ -275,17 +290,17 @@ func test_erase_tool_removes_single_pieces():
 	var main = await _fresh()
 	var a: Vector2i = main.anchors[0]
 	main.set_piece_len(1)
-	main.add_chain(a, a + Vector2i(0, 4))
+	main.add_chain(a, a + main.dot(0, 4))
 	main.set_erasing(true)
-	assert_true(main.erase_at(Vector2(a) + Vector2(0.05, 2.5)), "erase the third piece")
+	assert_true(main.erase_at(main.wpos(a) + Vector2(0.05, 2.5)), "erase the third piece")
 	assert_eq(main.design.size(), 3, "only that piece goes")
 	main.erase_stroke = false
 	main.undo()
 	assert_eq(main.design.size(), 4, "undo brings it back")
 	# a swipe erases several pieces as one undo step
 	main.erase_stroke = false
-	main.erase_at(Vector2(a) + Vector2(0, 1.5))
-	main.erase_at(Vector2(a) + Vector2(0, 3.5))
+	main.erase_at(main.wpos(a) + Vector2(0, 1.5))
+	main.erase_at(main.wpos(a) + Vector2(0, 3.5))
 	assert_eq(main.design.size(), 2, "two pieces erased in one stroke")
 	main.erase_stroke = false
 	main.undo()

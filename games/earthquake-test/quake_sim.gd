@@ -65,7 +65,8 @@ var start_height := 0.0
 
 
 ## design: Array of {a: Vector2i, b: Vector2i, m: int}; anchors: Array of Vector2i (y == 0).
-func setup(design: Array, anchors: Array, q) -> void:
+## unit: metres per design coordinate (the game builds in centimetres, so 0.01).
+func setup(design: Array, anchors: Array, q, unit := 1.0) -> void:
 	quake = q
 	total_time = SETTLE + q.duration + AFTER
 	var index := {}
@@ -93,7 +94,7 @@ func setup(design: Array, anchors: Array, q) -> void:
 		var a: int = index[bdef.a]
 		var b: int = index[bdef.b]
 		var mat: Dictionary = MATS[int(bdef.m)]
-		var len := Vector2(bdef.a).distance_to(Vector2(bdef.b))
+		var len := (Vector2(bdef.a) * unit).distance_to(Vector2(bdef.b) * unit)
 		ba[i] = a
 		bb[i] = b
 		b_rest[i] = len
@@ -109,14 +110,14 @@ func setup(design: Array, anchors: Array, q) -> void:
 		masses[b] += mat.density * len * 0.5
 	for j in n:
 		var p: Vector2i = grid_pts[j]
-		px[j] = p.x
-		py[j] = p.y
-		ox[j] = p.x
-		oy[j] = p.y
+		px[j] = p.x * unit
+		py[j] = p.y * unit
+		ox[j] = px[j]
+		oy[j] = py[j]
 		vx[j] = 0.0
 		vy[j] = 0.0
-		rest_x[j] = p.x
-		rest_y[j] = p.y
+		rest_x[j] = px[j]
+		rest_y[j] = py[j]
 		anchor[j] = 1 if (p.y == 0 and anchors.has(p)) else 0
 		inv_m[j] = 0.0 if anchor[j] == 1 else 1.0 / masses[j]
 	t = 0.0
