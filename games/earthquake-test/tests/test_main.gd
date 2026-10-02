@@ -323,3 +323,51 @@ func test_zoom_keeps_point_under_pointer():
 	assert_lt(right.x, main.GW + main.VIEW_PAD + 0.01, "panning stops at the edge of the site")
 	main.zoom_reset()
 	assert_near(main.zoom, 1.0, 0.001, "reset")
+
+
+func test_auto_lock_snaps_to_nearby_joints():
+	var main = await _fresh()
+	await wait_frames(2)
+	assert_true(main.auto_lock, "auto-lock defaults to on")
+	var a: Vector2i = main.anchors[0]
+	main.add_chain(a, a + main.dot(3, 5), 3)   # 5.83 m in 2 pieces: joint at (+1.5, +2.5), off the grid
+	var mid: Vector2i = main.design[0].b
+	assert_eq(mid, a + Vector2i(150, 250), "off-grid joint where expected")
+	var w: Vector2 = main.wpos(mid) + Vector2(0.3, 0.3)     # 0.42 m from the joint, 0.28 m from dot (+2, +3)
+	var sp: Vector2 = main.world_to_screen(w)
+	assert_eq(main.snap(sp), mid, "lock on: the nearby joint wins")
+	main.auto_lock = false
+	assert_eq(main.snap(sp), a + main.dot(2, 3), "lock off: the nearest dot wins")
+	main.auto_lock = true
+	assert_ne(main.snap(main.world_to_screen(main.wpos(mid)), mid), mid, "the drag's own start joint is excluded")
+	# a joint more than the lock reach away doesn't grab the pointer
+	var far: Vector2 = main.world_to_screen(main.wpos(a) + Vector2(-1.0, 6.0))
+	assert_eq(main.snap(far), a + main.dot(-1, 6), "far from joints: plain dot")
+
+
+func test_lock_toggle_is_saved():
+	var main = await _fresh()
+	main.set_auto_lock(false)
+	main.auto_lock = true
+	main._load_prefs()
+	assert_false(main.auto_lock, "off persists")
+	main.set_auto_lock(true)
+	main._load_prefs()
+	assert_true(main.auto_lock, "on persists")
+
+
+func test_loupe_sits_above_the_finger():
+	var main = await _fresh()
+	await wait_frames(2)
+	var vs: Vector2 = main.get_viewport_rect().size
+	main.drag_pointer = Vector2(vs.x / 2.0, vs.y * 0.8)
+	var r: Rect2 = main.loupe_rect()
+	assert_lt(r.end.y, main.drag_pointer.y, "above the finger")
+	assert_true(Rect2(Vector2.ZERO, vs).encloses(r), "on screen")
+	main.drag_pointer = Vector2(20, 30)
+	r = main.loupe_rect()
+	assert_true(Rect2(Vector2.ZERO, vs).encloses(r), "on screen near the top-left corner")
+	assert_false(r.has_point(main.drag_pointer), "not under the finger")
+	var seg: Array = main._clip_seg(Vector2(-10, 5), Vector2(10, 5), Rect2(0, 0, 4, 10))
+	assert_eq(seg, [Vector2(0, 5), Vector2(4, 5)], "segment clipped to the loupe")
+	assert_eq(main._clip_seg(Vector2(-10, 50), Vector2(10, 50), Rect2(0, 0, 4, 10)), [], "outside")

@@ -95,6 +95,12 @@ var gesture := false                   # two-finger gesture active: ignore the e
 var origin := Vector2()               # screen position of world (0, 0)
 var drag_from := Vector2i(-1, -1)
 var drag_to := Vector2i(-1, -1)
+var drag_pointer := Vector2()          # where the finger/mouse actually is while dragging (screen)
+var auto_lock := true                  # snap drag ends onto nearby joints (toggle, saved)
+const LOCK_RADIUS := 0.9               # metres: how far the lock reaches for a joint...
+const LOCK_PX := 44.0                  # ...or this many screen pixels, whichever is larger
+const LOCK_BIAS := 0.45                # a joint wins over a closer grid dot by up to this much (m)
+const PREFS := "user://quake_prefs.json"
 var press_pos := Vector2()
 var dragging := false
 var toast := ""
@@ -128,6 +134,7 @@ func _ready() -> void:
 	var s := String(url.get("s", ""))
 	target_score = int(s) if s.is_valid_int() else 0
 	load_day(want)
+	_load_prefs()
 	if not dev_open and not tutorial_seen():
 		tut_open = true
 
@@ -850,6 +857,7 @@ func _input(ev: InputEvent) -> void:
 				return
 			press_pos = p
 			pan_last = p
+			drag_pointer = p
 			dragging = false
 			drag_to = Vector2i(-1, -1)
 			drag_from = Vector2i(-1, -1)
@@ -879,6 +887,7 @@ func _input(ev: InputEvent) -> void:
 		if (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
 			return
 		var p: Vector2 = make_input_local(ev).position
+		drag_pointer = p
 		if p.distance_to(press_pos) > 12.0:
 			dragging = true
 		if erasing and phase == Phase.BUILD and board_rect.has_point(press_pos):
@@ -896,7 +905,7 @@ func _input(ev: InputEvent) -> void:
 			pan_last = p
 			return
 		if drag_from.x >= 0 and dragging:
-			var g := snap(p)
+			var g := snap(p, drag_from)
 			drag_to = g if g.x >= 0 and g != drag_from else Vector2i(-1, -1)
 
 
@@ -1074,24 +1083,53 @@ func world_to_screen(w: Vector2) -> Vector2:
 
 
 ## Nearest grid point to a screen position, or (-1, -1) when too far from any.
-## Nearest build point to a screen position: an existing joint (they can sit between dots)
-## if one is close, else the nearest grid dot; (-1, -1) when nothing is near.
-func snap(p: Vector2) -> Vector2i:
+## Nearest build point to a screen position. With auto-lock on, existing joints (and anchors)
+## pull the pointer in from up to LOCK_RADIUS / LOCK_PX away and beat a slightly closer grid
+## dot; with it off, the nearest dot or joint under the pointer wins. `exclude` is skipped
+## (the joint a drag started from). Returns (-1, -1) when nothing is near.
+func snap(p: Vector2, exclude := Vector2i(-1, -1)) -> Vector2i:
 	var w := screen_to_world(p)
-	var best := Vector2i(-1, -1)
-	var best_d := maxf(0.3, 16.0 / ppm)
-	for b in design:
-		for k in [b.a, b.b]:
-			var d := wpos(k).distance_to(w)
-			if d < best_d:
-				best_d = d
-				best = k
-	if best.x >= 0:
-		return best
+	var node := Vector2i(-1, -1)
+	var dn := INF
+	for k in _all_nodes():
+		if k == exclude:
+			continue
+		var d := wpos(k).distance_to(w)
+		if d < dn:
+			dn = d
+			node = k
 	var g := dot(roundi(w.x), roundi(w.y))
-	if not in_grid(g) or wpos(g).distance_to(w) > 0.48:
-		return Vector2i(-1, -1)
-	return g
+	var dd := wpos(g).distance_to(w)
+	var dot_ok := in_grid(g) and g != exclude and dd <= 0.48
+	if auto_lock:
+		var reach := maxf(LOCK_RADIUS, LOCK_PX / ppm)
+		if node.x >= 0 and dn <= reach and (not dot_ok or dn <= dd + LOCK_BIAS):
+			return node
+	elif node.x >= 0 and dn <= maxf(0.3, 16.0 / ppm) and (not dot_ok or dn <= dd):
+		return node
+	return g if dot_ok else Vector2i(-1, -1)
+
+
+## True when the drag end is locked onto an existing joint rather than a free grid dot.
+func is_locked_target(p: Vector2i) -> bool:
+	return p.x >= 0 and is_node(p)
+
+
+func set_auto_lock(on: bool) -> void:
+	auto_lock = on
+	var f := FileAccess.open(PREFS, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"auto_lock": on}))
+		f.close()
+	_toast("Auto-lock " + ("on: lines snap to nearby joints" if on else "off: lines go to the nearest dot"))
+
+
+func _load_prefs() -> void:
+	if not FileAccess.file_exists(PREFS):
+		return
+	var d = JSON.parse_string(FileAccess.get_file_as_string(PREFS))
+	if d is Dictionary:
+		auto_lock = bool(d.get("auto_lock", true))
 
 
 ## One tap on the title; five within 0.6 s of each other opens the dev menu.
@@ -1138,6 +1176,7 @@ func _press_button(p: Vector2) -> bool:
 					"steel": set_mat(Sim.Mat.STEEL)
 					"erase": set_erasing(not erasing)
 					"zoom_in": zoom_at(board_rect.get_center(), 1.5)
+					"lock": set_auto_lock(not auto_lock)
 					"zoom_out":
 						if zoom / 1.5 <= 1.01:
 							zoom_reset()
@@ -1282,6 +1321,8 @@ func _build_buttons() -> void:
 	var zy := board_rect.position.y + 8
 	buttons.append({"id": "zoom_in", "label": "+", "primary": false, "enabled": zoom < ZOOM_MAX - 0.01, "rect": Rect2(zx, zy, zs, zs), "kind": "zoom"})
 	buttons.append({"id": "zoom_out", "label": "-", "primary": false, "enabled": zoom > 1.01, "rect": Rect2(zx, zy + zs + 6, zs, zs), "kind": "zoom"})
+	if phase == Phase.BUILD:
+		buttons.append({"id": "lock", "label": "LOCK", "primary": auto_lock, "enabled": true, "rect": Rect2(zx - 14, zy + (zs + 6) * 2, zs + 14, zs), "kind": "zoom"})
 
 
 # ------------------------------------------------------------------ drawing
@@ -1304,6 +1345,8 @@ func _draw() -> void:
 		_text_c("Reset saved progress for #%d (%s)" % [quake_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 136), 20, C_MUTED)
 	for b in buttons:
 		_draw_button(b)
+	if loupe_active():
+		_draw_loupe()
 	if toast_t > 0.0 and toast != "":
 		var a := clampf(toast_t * 2.0, 0.0, 1.0)
 		var vs := get_viewport_rect().size
@@ -1470,8 +1513,8 @@ func _beam_width(mat: int) -> float:
 	return maxf(3.0, ppm * (0.17 if mat == Sim.Mat.WOOD else 0.13))
 
 
-func _draw_beam(a: Vector2, b: Vector2, mat: int, tint := Color(0, 0, 0, 0), alpha := 1.0) -> void:
-	var w := _beam_width(mat)
+func _draw_beam(a: Vector2, b: Vector2, mat: int, tint := Color(0, 0, 0, 0), alpha := 1.0, width := -1.0) -> void:
+	var w := _beam_width(mat) if width < 0.0 else width
 	var base: Color = C_WOOD if mat == Sim.Mat.WOOD else C_STEEL
 	var edge: Color = C_WOOD_DK if mat == Sim.Mat.WOOD else C_STEEL_DK
 	if tint.a > 0.0:
@@ -1497,6 +1540,7 @@ func _draw_design() -> void:
 		joints[b.a] = true
 		joints[b.b] = true
 	var plan_pts: Array = []
+	loupe_caption = ""
 	if drag_from.x >= 0 and drag_to.x >= 0:
 		var plan := plan_chain(drag_from, drag_to)
 		if plan.why == "":
@@ -1517,10 +1561,15 @@ func _draw_design() -> void:
 	if selected.x >= 0:
 		var s := world_to_screen(wpos(selected))
 		draw_arc(s, ppm * 0.32 + 2.0 * sin(anim_t * 6.0), 0, TAU, 28, C_DOT_REACH, 3.0)
+	if drag_to.x >= 0 and is_locked_target(drag_to):
+		draw_arc(world_to_screen(wpos(drag_to)), maxf(10.0, ppm * 0.3), 0, TAU, 28, C_OK, 3.0)
 
 
 ## Small pill near the drag end saying what the line will build.
 func _draw_drag_label(text: String) -> void:
+	loupe_caption = text
+	if loupe_active():
+		return
 	var s := world_to_screen(wpos(drag_to)) + Vector2(0, -ppm * 0.6 - 18)
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 20
 	var r := Rect2(s.x - tw / 2.0, s.y - 16, tw, 30)
@@ -1683,6 +1732,13 @@ func _countdown() -> String:
 
 
 func _draw_button(b: Dictionary) -> void:
+	if b.id == "lock":
+		var on: bool = b.primary
+		_box(b.rect, Color(C_DOT_REACH, 0.9) if on else Color(0.1, 0.09, 0.08, 0.8), 12, Color(C_INK, 0.25))
+		var ink := Color("1b1917") if on else C_MUTED
+		_text_c("LOCK", b.rect.get_center() + Vector2(0, -2), 14, ink)
+		_text_c("ON" if on else "OFF", b.rect.get_center() + Vector2(0, 15), 13, ink)
+		return
 	if b.get("kind", "") == "zoom":
 		_box(b.rect, Color(0.1, 0.09, 0.08, 0.8 if b.enabled else 0.4), 12, Color(C_INK, 0.25))
 		var c: Vector2 = b.rect.get_center()
@@ -1740,6 +1796,141 @@ func _title_size() -> int:
 	return sz
 
 
+# ------------------------------------------------------------------ magnifier (loupe)
+
+const LOUPE_SIZE := 230.0
+const LOUPE_ZOOM := 2.6               # loupe magnification relative to the board
+const LOUPE_LIFT := 110.0             # gap between the finger and the loupe
+var loupe_caption := ""
+
+
+## The loupe shows while a finger/mouse is held on a joint to draw a line.
+func loupe_active() -> bool:
+	return phase == Phase.BUILD and drag_from.x >= 0 and not erasing and not gesture
+
+
+## Where the loupe sits: above the finger (the hand covers below it), or beside it near the top.
+func loupe_rect() -> Rect2:
+	var vs := get_viewport_rect().size
+	var L := minf(LOUPE_SIZE, minf(vs.x, vs.y) * 0.42)
+	var f := drag_pointer
+	var r := Rect2(f.x - L / 2.0, f.y - LOUPE_LIFT - L, L, L)
+	if r.position.y < 8.0:
+		r.position.y = clampf(f.y - L / 2.0, 8.0, vs.y - L - 8.0)
+		r.position.x = f.x + LOUPE_LIFT * 0.8 if f.x < vs.x / 2.0 else f.x - LOUPE_LIFT * 0.8 - L
+	r.position.x = clampf(r.position.x, 8.0, vs.x - L - 8.0)
+	return r
+
+
+func _draw_loupe() -> void:
+	var R := loupe_rect()
+	var lppm := maxf(ppm * LOUPE_ZOOM, 90.0)
+	var wc := screen_to_world(drag_pointer)
+	var c := R.get_center()
+	var inner := R.grow(-3)
+	var ls := func(w: Vector2) -> Vector2: return c + Vector2(w.x - wc.x, -(w.y - wc.y)) * lppm
+	_box(R.grow(3), Color(0, 0, 0, 0.45), 18)
+	_box(R, C_SKY, 16, Color(C_INK, 0.5))
+	# ground
+	var gy: float = ls.call(Vector2(0, 0)).y
+	if gy < inner.end.y:
+		var top := maxf(gy, inner.position.y)
+		draw_rect(Rect2(inner.position.x, top, inner.size.x, inner.end.y - top), C_GROUND)
+		if gy >= inner.position.y:
+			draw_line(Vector2(inner.position.x, gy), Vector2(inner.end.x, gy), C_GROUND_HI, 3.0)
+	# grid dots
+	var half := R.size.x / 2.0 / lppm
+	for gx in range(floori(wc.x - half), ceili(wc.x + half) + 1):
+		for gyi in range(floori(wc.y - half), ceili(wc.y + half) + 1):
+			var d := dot(gx, gyi)
+			if not in_grid(d) or gyi == 0:
+				continue
+			var sp: Vector2 = ls.call(wpos(d))
+			if inner.grow(-4).has_point(sp):
+				draw_circle(sp, 3.0, Color(1, 1, 1, 0.22))
+	# beams + preview
+	var att := attached_points()
+	for b in design:
+		var seg := _clip_seg(ls.call(wpos(b.a)), ls.call(wpos(b.b)), inner)
+		if not seg.is_empty():
+			var w := lppm * (0.17 if int(b.m) == Sim.Mat.WOOD else 0.13)
+			_draw_beam(seg[0], seg[1], int(b.m), Color(0, 0, 0, 0) if att.has(b.a) else Color(C_DANGER, 0.5), 1.0 if att.has(b.a) else 0.45, w)
+	var plan_ok := false
+	var pts: Array = []
+	if drag_to.x >= 0:
+		var plan := plan_chain(drag_from, drag_to)
+		plan_ok = plan.why == ""
+		if plan_ok:
+			for pq in plan.pieces:
+				var seg := _clip_seg(ls.call(wpos(pq[0])), ls.call(wpos(pq[1])), inner)
+				if not seg.is_empty():
+					_draw_beam(seg[0], seg[1], build_mat, Color(0, 0, 0, 0), 0.7, lppm * 0.15)
+				pts.append(pq[1])
+		elif plan.why != "same":
+			var seg := _clip_seg(ls.call(wpos(drag_from)), ls.call(wpos(drag_to)), inner)
+			if not seg.is_empty():
+				_draw_beam(seg[0], seg[1], build_mat, Color(C_DANGER, 0.85), 0.55, lppm * 0.12)
+	# joints + anchors
+	var jr := maxf(5.0, lppm * 0.09)
+	for k in _all_nodes() + pts:
+		var sp: Vector2 = ls.call(wpos(k))
+		if inner.grow(-jr).has_point(sp):
+			draw_circle(sp, jr + 1.5, Color(0, 0, 0, 0.5))
+			draw_circle(sp, jr, C_ANCHOR if is_anchor(k) else C_JOINT)
+	# start joint and target
+	var s0: Vector2 = ls.call(wpos(drag_from))
+	if inner.has_point(s0):
+		draw_arc(s0, jr + 6, 0, TAU, 24, C_DOT_REACH, 2.5)
+	if drag_to.x >= 0:
+		var st: Vector2 = ls.call(wpos(drag_to))
+		if inner.grow(-6).has_point(st):
+			var locked := is_locked_target(drag_to)
+			draw_arc(st, jr + 8, 0, TAU, 28, C_OK if locked else (C_DOT_REACH if plan_ok else C_DANGER), 3.0)
+	# crosshair where the finger actually is
+	var cc := Color(C_INK, 0.75)
+	draw_line(c + Vector2(-14, 0), c + Vector2(-5, 0), cc, 2.0)
+	draw_line(c + Vector2(5, 0), c + Vector2(14, 0), cc, 2.0)
+	draw_line(c + Vector2(0, -14), c + Vector2(0, -5), cc, 2.0)
+	draw_line(c + Vector2(0, 5), c + Vector2(0, 14), cc, 2.0)
+	# caption
+	var cap := loupe_caption
+	if drag_to.x >= 0 and is_locked_target(drag_to) and plan_ok:
+		cap = "locked · " + cap
+	if cap == "":
+		cap = "drag to a dot or joint"
+	var csz := 16
+	while csz > 11 and font.get_string_size(cap, HORIZONTAL_ALIGNMENT_LEFT, -1, csz).x > R.size.x - 20:
+		csz -= 1
+	var cr := Rect2(R.position.x + 6, R.end.y - 30, R.size.x - 12, 24)
+	_box(cr, Color(0.06, 0.05, 0.05, 0.85), 10)
+	_text_c(cap, cr.get_center() + Vector2(0, csz * 0.36), csz, C_INK)
+
+
+## Clip segment a-b to rect r (Liang-Barsky). Returns [a', b'] or [] when outside.
+func _clip_seg(a: Vector2, b: Vector2, r: Rect2) -> Array:
+	var t0 := 0.0
+	var t1 := 1.0
+	var d := b - a
+	var ps := [-d.x, d.x, -d.y, d.y]
+	var qs := [a.x - r.position.x, r.end.x - a.x, a.y - r.position.y, r.end.y - a.y]
+	for i in 4:
+		var pp: float = ps[i]
+		var qq: float = qs[i]
+		if absf(pp) < 1e-9:
+			if qq < 0.0:
+				return []
+		else:
+			var t := qq / pp
+			if pp < 0.0:
+				t0 = maxf(t0, t)
+			else:
+				t1 = minf(t1, t)
+			if t0 > t1:
+				return []
+	return [a + d * t0, a + d * t1]
+
+
+
 func _draw_tutorial() -> void:
 	var vs := get_viewport_rect().size
 	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.03, 0.02, 0.02, 0.84))
@@ -1785,7 +1976,7 @@ func _draw_tutorial() -> void:
 		if y > bottom:
 			break
 	if y + 60 < bottom:
-		_para("Pinch, scroll or use the + and - buttons to zoom; drag empty space to pan. Triangles are your friend.", x, y + 6, tw, 18, C_MUTED)
+		_para("While you draw, a magnifier above your finger shows where the line will land, and LOCK (on by default) snaps it onto nearby joints. Pinch or use + and - to zoom.", x, y + 6, tw, 18, C_MUTED)
 
 
 func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:
