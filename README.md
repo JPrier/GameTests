@@ -8,6 +8,7 @@ Small Godot games that run in the browser (desktop and mobile).
 |---|---|
 | Kitchen Crawl: a restaurant-sim roguelike | [`games/kitchen-crawl`](games/kitchen-crawl) |
 | Bloom: a daily Game of Life puzzle | [`games/bloom`](games/bloom) |
+| Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/earthquake-test`](games/earthquake-test) |
 
 ## How deploys work
 
