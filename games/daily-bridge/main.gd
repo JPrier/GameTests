@@ -13,6 +13,8 @@ const BUILD_MIN_X := -2
 const BUILD_MIN_Y := -5
 const BUILD_MAX_Y := 4
 const MAX_HISTORY := 60
+## Room above the cheapest known crossing, so several designs fit and saving material still scores.
+const BUDGET_SLACK := 1.25
 const TUT_FLAG := "user://daily_bridge_tutorial_seen"
 
 ## Cheapest known crossing (BridgeSim.candidates) per "pillar-gap-vehicle".
@@ -188,7 +190,7 @@ func generate(d: String) -> void:
 	if pillar_h > 0:
 		anchors.append(Vector2i(gap / 2, pillar_h))
 	var best: int = BEST_KNOWN.get("%d-%d-%d" % [pillar_h, gap, vehicle_i], 999)
-	budget = ceili((best + 8) / 10.0) * 10
+	budget = ceili(best * BUDGET_SLACK / 10.0) * 10
 
 
 func level() -> Dictionary:

@@ -194,3 +194,19 @@ func test_three_attempts_max():
 	main.skip()
 	assert_eq(main.tries.size(), 3, "replay doesn't use an attempt")
 	main.wipe_save()
+
+
+## The budget must leave room to experiment: the sturdy 2 m-deep truss fits and crosses on every level.
+func test_budget_leaves_room():
+	var main = await _fresh()
+	for key: String in main.BEST_KNOWN:
+		var parts := key.split("-")
+		main.pillar_h = int(parts[0])
+		main.gap = int(parts[1])
+		main.vehicle_i = int(parts[2])
+		main.anchors = [Vector2i(0, 0), Vector2i(main.gap, 0)]
+		var budget := ceili(int(main.BEST_KNOWN[key]) * main.BUDGET_SLACK / 10.0) * 10
+		var sturdy := BridgeSim.reference_design(main.level(), 2)
+		assert_true(BridgeSim.design_cost(sturdy) <= budget, key + ": deep truss fits the budget")
+		assert_true(main.simulate(sturdy).crossed, key + ": deep truss crosses")
+		assert_gt(budget - int(main.BEST_KNOWN[key]), 40, key + ": real slack over the cheapest bridge")

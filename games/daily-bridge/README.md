@@ -16,7 +16,7 @@ Each day picks a gap (8, 10 or 12 m), a vehicle (hatchback 320 kg, camper van 48
 ## How it works
 
 - `bridge_sim.gd` is a small deterministic physics engine: beams are XPBD distance constraints with a stiffness, a weight and a breaking force; the vehicle is two wheels on a rigid chassis that roll on road beams and push load into the joints they touch. Fixed timestep and solve order mean the same bridge plays out identically everywhere (the browser and headless runs match exactly).
-- The daily budget comes from `BEST_KNOWN` in `main.gd`: the cheapest of a few reference bridges that crosses each level, plus a sliver. `tests/test_main.gd` re-runs the physics to keep that table honest, so every day is solvable within budget.
+- The daily budget comes from `BEST_KNOWN` in `main.gd`: the cheapest of a few reference bridges that crosses each level, plus 25%, so a few different designs fit and there is room to experiment. `tests/test_main.gd` re-runs the physics to keep that table honest, so every day is solvable within budget.
 - Progress is saved per day in browser storage, so a reload keeps your attempts and your half-built bridge.
 
 Dev menu (hidden): tap the **Daily Bridge** title 5 times quickly, or open with `?dev=1`. It can reset today, reset every day plus the tutorial, or load the reference bridge.
