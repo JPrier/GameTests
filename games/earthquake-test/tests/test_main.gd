@@ -175,3 +175,33 @@ func test_live_run_advances():
 		guard += 1
 	assert_eq(main.phase, main.Phase.RESULT, "fast-forward reaches the result")
 	main.wipe_save()
+
+
+func test_dev_menu_from_title_taps():
+	var main = await _fresh()
+	var a: Vector2i = main.anchors[0]
+	main.add_beam(a, a + Vector2i(0, 1))
+	main.add_beam(a, a + Vector2i(1, 1))
+	main.add_beam(a + Vector2i(0, 1), a + Vector2i(1, 1))
+	main.run_instant()
+	assert_eq(main.tries.size(), 1, "one try used")
+	for k in 4:
+		main._dev_tap()
+	assert_false(main.dev_open, "four taps don't open it")
+	main._dev_tap()
+	assert_true(main.dev_open, "the fifth quick tap opens the dev menu")
+	main.dev_reset_today()
+	assert_false(main.dev_open, "menu closes after resetting")
+	assert_eq(main.tries.size(), 0, "today's tries are gone")
+	assert_eq(main.design.size(), 0, "today's design is gone")
+	assert_eq(main.phase, main.Phase.BUILD, "back to building")
+	main.load_day(main.date)
+	assert_eq(main.tries.size(), 0, "the reset persists across a reload")
+
+
+func test_slow_title_taps_do_nothing():
+	var main = await _fresh()
+	for k in 5:
+		main._dev_tap()
+		main.anim_t += 1.0
+	assert_false(main.dev_open, "taps spaced out by a second don't count")

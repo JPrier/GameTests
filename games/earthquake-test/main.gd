@@ -93,6 +93,7 @@ var dev_taps := 0
 var dev_last_tap := -10.0
 var tut_open := false
 var help_rect := Rect2()
+var title_rect := Rect2()             # tap 5x quickly to open the dev menu
 var font: Font
 
 
@@ -651,7 +652,7 @@ func _input(ev: InputEvent) -> void:
 			if help_rect.grow(10).has_point(p):
 				tut_open = true
 				return
-			if Rect2(head_rect.position, Vector2(200, 100)).has_point(p):
+			if title_rect.grow(8).has_point(p):
 				_dev_tap()
 				return
 			if _press_button(p):
@@ -760,12 +761,14 @@ func snap(p: Vector2) -> Vector2i:
 	return g
 
 
+## One tap on the title; five within 0.6 s of each other opens the dev menu.
 func _dev_tap() -> void:
 	dev_taps = dev_taps + 1 if anim_t - dev_last_tap < 0.6 else 1
 	dev_last_tap = anim_t
 	if dev_taps >= 5:
 		dev_taps = 0
 		dev_open = true
+		selected = Vector2i(-1, -1)
 
 
 func dev_reset_today() -> void:
@@ -929,8 +932,8 @@ func _draw() -> void:
 	if dev_open:
 		var vs := get_viewport_rect().size
 		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
-		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 140), 32, C_ACCENT)
-		_text_c("Saved progress for #%d (%s)" % [quake_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 180), 20, C_MUTED)
+		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 172), 32, C_ACCENT)
+		_text_c("Reset saved progress for #%d (%s)" % [quake_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 136), 20, C_MUTED)
 	for b in buttons:
 		_draw_button(b)
 	if toast_t > 0.0 and toast != "":
@@ -1274,6 +1277,7 @@ func _draw_button(b: Dictionary) -> void:
 func _draw_help_button() -> void:
 	var title_sz := _title_size()
 	var tw := font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_sz).x
+	title_rect = Rect2(head_rect.position, Vector2(tw, 56))
 	help_rect = Rect2(head_rect.position + Vector2(tw + 14, 14), Vector2(38, 38))
 	draw_circle(help_rect.get_center(), 18, C_BTN)
 	draw_arc(help_rect.get_center(), 18, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
