@@ -5,8 +5,8 @@ extends Node2D
 ## Impact = every cell your colony ever touched, plus a bonus for each star it reached.
 ## Three tries per day; your best counts. Share sends your score and a link to the same map.
 
-const W := 28
-const H := 28
+const W := 56
+const H := 56
 const GENS := 150
 const MAX_TRIES := 3
 const STAR_BONUS := 5
@@ -143,18 +143,18 @@ func generate(d: String) -> void:
 	date = d
 	puzzle_no = day_number(d)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = ("bloom:" + d).hash()
+	rng.seed = ("bloom2:" + d).hash()   # bump the salt when generation rules change
 	tiles = PackedByteArray()
 	tiles.resize(W * H)
-	budget = rng.randi_range(8, 14)
-	var zw := rng.randi_range(6, 8)
-	var zh := rng.randi_range(6, 8)
-	zone = Rect2i(rng.randi_range(2, W - zw - 2), rng.randi_range(2, H - zh - 2), zw, zh)
-	var guard := zone.grow(2)
+	budget = rng.randi_range(16, 28)
+	var zw := rng.randi_range(10, 14)
+	var zh := rng.randi_range(10, 14)
+	zone = Rect2i(rng.randi_range(4, W - zw - 4), rng.randi_range(4, H - zh - 4), zw, zh)
+	var guard := zone.grow(3)
 	# wall segments
-	for i in rng.randi_range(5, 8):
+	for i in rng.randi_range(18, 28):
 		var horiz := rng.randf() < 0.5
-		var length := rng.randi_range(4, 12)
+		var length := rng.randi_range(5, 18)
 		var x := rng.randi_range(0, W - 1)
 		var y := rng.randi_range(0, H - 1)
 		for k in length:
@@ -164,16 +164,16 @@ func generate(d: String) -> void:
 			if not guard.has_point(p):
 				tiles[p.y * W + p.x] = Cell.WALL
 	# scattered pillars
-	for i in rng.randi_range(8, 16):
+	for i in rng.randi_range(30, 56):
 		var p := Vector2i(rng.randi_range(0, W - 1), rng.randi_range(0, H - 1))
 		if not guard.has_point(p):
 			tiles[p.y * W + p.x] = Cell.WALL
 	# bonus stars, kept away from the zone
 	star_total = 0
-	var want_stars := rng.randi_range(8, 12)
-	var far := zone.grow(3)
+	var want_stars := rng.randi_range(16, 24)
+	var far := zone.grow(5)
 	var attempts := 0
-	while star_total < want_stars and attempts < 2000:
+	while star_total < want_stars and attempts < 5000:
 		attempts += 1
 		var p := Vector2i(rng.randi_range(0, W - 1), rng.randi_range(0, H - 1))
 		var i := p.y * W + p.x
@@ -206,27 +206,29 @@ func _start_sim(cells: Array) -> void:
 
 
 func step() -> void:
+	# Count neighbours by visiting live cells only (boards are mostly empty).
+	var counts := PackedByteArray()
+	counts.resize(W * H)
+	for i in W * H:
+		if alive[i] == 0:
+			continue
+		var x := i % W
+		var y := i / W
+		for dy in range(-1, 2):
+			var yy := y + dy
+			if yy < 0 or yy >= H:
+				continue
+			for dx in range(-1, 2):
+				var xx := x + dx
+				if (dx != 0 or dy != 0) and xx >= 0 and xx < W:
+					counts[yy * W + xx] += 1
 	var nxt := PackedByteArray()
 	nxt.resize(W * H)
-	for y in H:
-		for x in W:
-			var i := y * W + x
-			if tiles[i] == Cell.WALL:
-				continue
-			var n := 0
-			for dy in range(-1, 2):
-				var yy := y + dy
-				if yy < 0 or yy >= H:
-					continue
-				for dx in range(-1, 2):
-					if dx == 0 and dy == 0:
-						continue
-					var xx := x + dx
-					if xx >= 0 and xx < W:
-						n += alive[yy * W + xx]
-			if n == 3 or (n == 2 and alive[i] == 1):
-				nxt[i] = 1
-				touched[i] = 1
+	for i in W * H:
+		var n := counts[i]
+		if (n == 3 or (n == 2 and alive[i] == 1)) and tiles[i] != Cell.WALL:
+			nxt[i] = 1
+			touched[i] = 1
 	alive = nxt
 	gen += 1
 
@@ -343,7 +345,7 @@ func best_score() -> int:
 # ------------------------------------------------------------------ saving (user:// is IndexedDB on the web)
 
 func _save_path() -> String:
-	return "user://bloom_%s.json" % date
+	return "user://bloom2_%s.json" % date   # bloom2: 56x56 maps (old bloom_ saves used 28x28)
 
 
 func _save_state() -> void:
@@ -507,6 +509,8 @@ func _process(delta: float) -> void:
 	anim_t += delta
 	if tut_open:
 		_tut_process(delta)
+	elif pg_open and not dev_open:
+		_pg_process(delta)
 	if toast_t > 0.0:
 		toast_t -= delta
 	if share_pending:
@@ -521,18 +525,23 @@ func _process(delta: float) -> void:
 	if tut_open:
 		if Input.is_action_just_pressed("run"):
 			tut_next()
+	elif pg_open:
+		pass
 	elif Input.is_action_just_pressed("run"):
 		match phase:
 			Phase.PLAN: run()
 			Phase.RUN: skip()
 			Phase.RESULT: try_again()
-	if Input.is_action_just_pressed("clear") and not tut_open:
+	if Input.is_action_just_pressed("clear") and not tut_open and not pg_open:
 		clear_seeds()
 	_layout()
 	queue_redraw()
 
 
 func _input(ev: InputEvent) -> void:
+	if pg_open and not tut_open and not dev_open:
+		_pg_input(ev)
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
@@ -542,7 +551,10 @@ func _input(ev: InputEvent) -> void:
 			if help_rect.grow(10).has_point(p):
 				open_tutorial()
 				return
-			if Rect2(head_rect.position, Vector2(170, 100)).has_point(p):
+			if pg_entry_rect.has_area() and pg_entry_rect.grow(6).has_point(p):
+				open_playground()
+				return
+			if Rect2(head_rect.position, Vector2(170, 60)).has_point(p):
 				_dev_tap()
 				return
 			if _press_button(p):
@@ -592,7 +604,7 @@ func dev_reset_all() -> void:
 	var dir := DirAccess.open("user://")
 	if dir:
 		for f in dir.get_files():
-			if f.begins_with("bloom_") and f.ends_with(".json"):
+			if f.begins_with("bloom") and f.ends_with(".json"):
 				_wipe_file("user://" + f)
 				n += 1
 	_wipe_file(TUT_FLAG)
@@ -662,6 +674,12 @@ func _press_button(p: Vector2) -> bool:
 					"tut_skip": close_tutorial()
 					"tut_next": tut_next()
 					"tut_back": tut_back()
+					"pg_play": pg_toggle_play()
+					"pg_step":
+						pg_running = false
+						pg_step()
+					"pg_reset": pg_reset()
+					"pg_clear": pg_clear()
 			return true
 	return false
 
@@ -669,6 +687,12 @@ func _press_button(p: Vector2) -> bool:
 # ------------------------------------------------------------------ layout + drawing
 
 func _layout() -> void:
+	if pg_open:
+		buttons.clear()
+		_pg_layout()
+		if tut_open or dev_open:
+			_build_buttons()   # overlay buttons replace the playground controls
+		return
 	var vs := get_viewport_rect().size
 	var m := 20.0
 	var portrait := vs.y >= vs.x * 1.05
@@ -746,24 +770,27 @@ func _build_buttons() -> void:
 func _draw() -> void:
 	if buttons.is_empty() and phase != Phase.RUN:
 		_layout()
-	_draw_header()
-	_draw_board(grid_rect, main_region, phase == Phase.PLAN or phase == Phase.RESULT)
-	if mini_rect.has_area():
-		var full := Rect2i(0, 0, W, H)
-		var mini_region: Rect2i = plant_region() if not zoomed else full
-		var mr := mini_rect
-		mr.size = Vector2(mini_region.size) * _board_cell_px(mini_rect, mini_region)
-		_draw_board(mr, mini_region, true)
-		if zoomed:
-			# outline the part of the map the big view shows
-			var cp := _board_cell_px(mr, full)
-			var pr := plant_region()
-			draw_rect(Rect2(mr.position + Vector2(pr.position) * cp, Vector2(pr.size) * cp), C_INK, false, 2.0)
-		_box(mr.grow(6), Color(0, 0, 0, 0), 10, Color(C_INK, 0.25))
-		var hint := "Tap: full map" if zoomed else "Tap: zoom in"
-		_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
-	_draw_panel()
-	_draw_help_button()
+	if pg_open:
+		_pg_draw()
+	else:
+		_draw_header()
+		_draw_board(grid_rect, main_region, phase == Phase.PLAN or phase == Phase.RESULT)
+		if mini_rect.has_area():
+			var full := Rect2i(0, 0, W, H)
+			var mini_region: Rect2i = plant_region() if not zoomed else full
+			var mr := mini_rect
+			mr.size = Vector2(mini_region.size) * _board_cell_px(mini_rect, mini_region)
+			_draw_board(mr, mini_region, true)
+			if zoomed:
+				# outline the part of the map the big view shows
+				var cp := _board_cell_px(mr, full)
+				var pr := plant_region()
+				draw_rect(Rect2(mr.position + Vector2(pr.position) * cp, Vector2(pr.size) * cp), C_INK, false, 2.0)
+			_box(mr.grow(6), Color(0, 0, 0, 0), 10, Color(C_INK, 0.25))
+			var hint := "Tap: full map" if zoomed else "Tap: zoom in"
+			_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
+		_draw_panel()
+		_draw_help_button()
 	if tut_open and not dev_open:
 		_draw_tutorial()
 	if dev_open:
@@ -830,7 +857,8 @@ func _draw_board(rect: Rect2, region: Rect2i, show_zone: bool) -> void:
 			var t := tiles[i]
 			if t == Cell.WALL:
 				draw_rect(cr.grow(-inset * 0.5), C_WALL)
-				draw_rect(Rect2(cr.position + Vector2(inset * 0.5, inset * 0.5), Vector2(cr.size.x - inset, inset * 1.5)), C_WALL_HI)
+				if cp >= 8.0:
+					draw_rect(Rect2(cr.position + Vector2(inset * 0.5, inset * 0.5), Vector2(cr.size.x - inset, inset * 1.5)), C_WALL_HI)
 				continue
 			var was_hit := have_sim and touched[i] == 1
 			var is_alive := have_sim and alive[i] == 1
@@ -842,7 +870,10 @@ func _draw_board(rect: Rect2, region: Rect2i, show_zone: bool) -> void:
 				var col := C_ALIVE
 				if phase == Phase.PLAN and seeds.has(i):
 					col = C_SEED
-				_box(cr.grow(-inset), col, cp * 0.22)
+				if cp >= 14.0:
+					_box(cr.grow(-inset), col, cp * 0.22)
+				else:
+					draw_rect(cr.grow(-inset), col)   # cheaper for small cells on the big map
 	if show_zone and zr.has_area():
 		draw_rect(zrect, C_ZONE_EDGE, false, 2.0)
 
@@ -866,16 +897,16 @@ func _draw_panel() -> void:
 	match phase:
 		Phase.PLAN:
 			lines.append(["Plant up to %d seeds in the green zone." % budget, 26, C_INK])
-			lines.append(["Life runs %d generations. Impact = cells touched, +%d per gold star." % [GENS, STAR_BONUS], 22, C_MUTED])
+			lines.append(["Press Run to play %d steps. Score = squares your life reaches, +%d per gold star." % [GENS, STAR_BONUS], 22, C_MUTED])
 			lines.append(["Try %d of %d" % [tries.size() + 1, MAX_TRIES] + ("  ·  " + _tries_line() if not tries.is_empty() else ""), 22, C_MUTED])
 		Phase.RUN:
 			var s := current_score()
-			lines.append(["Generation %d / %d" % [gen, GENS], 28, C_INK])
-			lines.append(["%d cells touched · %d/%d stars · %d alive" % [s.touched, s.stars, star_total, s.alive], 22, C_MUTED])
+			lines.append(["Step %d of %d" % [gen, GENS], 28, C_INK])
+			lines.append(["%d squares reached · %d/%d stars · %d alive now" % [s.touched, s.stars, star_total, s.alive], 22, C_MUTED])
 		Phase.RESULT:
 			var t: Dictionary = tries[-1]
 			lines.append(["Impact %d" % t.score, 32, C_ACCENT])
-			lines.append(["%d cells + %d stars × %d" % [t.touched, t.stars, STAR_BONUS], 22, C_MUTED])
+			lines.append(["%d squares reached + %d stars × %d" % [t.touched, t.stars, STAR_BONUS], 22, C_MUTED])
 			lines.append([_tries_line(), 22, C_MUTED])
 			lines.append(["Tap the board to tweak your seeds.", 22, C_MUTED])
 		Phase.FINAL:
@@ -936,18 +967,128 @@ func _text_c(s: String, center: Vector2, size: int, col: Color) -> void:
 	draw_string(font, Vector2(center.x - w / 2.0, center.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 
 
+# ------------------------------------------------------------------ shared mini-board helpers
+
+## One Life step on a small standalone grid (used by the tutorial demos and the playground).
+static func life_step(cells: PackedByteArray, w: int, h: int, wrap: bool) -> PackedByteArray:
+	var counts := PackedByteArray()
+	counts.resize(w * h)
+	for i in w * h:
+		if cells[i] == 0:
+			continue
+		var x := i % w
+		var y := i / w
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if dx == 0 and dy == 0:
+					continue
+				var xx := x + dx
+				var yy := y + dy
+				if wrap:
+					xx = posmod(xx, w)
+					yy = posmod(yy, h)
+				elif xx < 0 or yy < 0 or xx >= w or yy >= h:
+					continue
+				counts[yy * w + xx] += 1
+	var nxt := PackedByteArray()
+	nxt.resize(w * h)
+	for i in w * h:
+		var n := counts[i]
+		if n == 3 or (n == 2 and cells[i] == 1):
+			nxt[i] = 1
+	return nxt
+
+
+## Draw a small w x h board of cells into rect (square cells, centred).
+func _draw_cells(rect: Rect2, cells: PackedByteArray, w: int, h: int, col := C_ALIVE) -> Rect2:
+	var cp: float = min(rect.size.x / w, rect.size.y / h)
+	var r := Rect2(rect.position + (rect.size - Vector2(w, h) * cp) / 2.0, Vector2(w, h) * cp)
+	_box(r.grow(4), C_GRID_BG, 8)
+	if cp >= 6.0:
+		for k in range(1, w):
+			draw_line(Vector2(r.position.x + k * cp, r.position.y), Vector2(r.position.x + k * cp, r.end.y), C_LINE)
+		for k in range(1, h):
+			draw_line(Vector2(r.position.x, r.position.y + k * cp), Vector2(r.end.x, r.position.y + k * cp), C_LINE)
+	for i in w * h:
+		if cells[i] == 1:
+			var cr := Rect2(r.position + Vector2(i % w, i / w) * cp, Vector2(cp, cp)).grow(-max(0.5, cp * 0.08))
+			if cp >= 14.0:
+				_box(cr, col, cp * 0.22)
+			else:
+				draw_rect(cr, col)
+	return r
+
+
+# ------------------------------------------------------------------ shape library
+
+const KIND_COL := {
+	"Stays still": Color("8fb3ff"), "Blinks": Color("ffcf5a"), "Travels": Color("7cf2b0"),
+	"Grows": Color("ff8fb8"), "Factory": Color("ffa25a"),
+}
+const SHAPES := [
+	{"name": "Block", "kind": "Stays still", "rows": ["OO", "OO"],
+		"desc": "4 squares in a square. Each one has exactly 3 neighbours, so nothing ever changes."},
+	{"name": "Beehive", "kind": "Stays still", "rows": [".OO.", "O..O", ".OO."],
+		"desc": "Another perfectly balanced shape. It just sits there forever."},
+	{"name": "Blinker", "kind": "Blinks", "rows": ["OOO"],
+		"desc": "3 in a row. It flips between lying flat and standing up, forever."},
+	{"name": "Toad", "kind": "Blinks", "rows": [".OOO", "OOO."],
+		"desc": "Two offset rows that wobble back and forth every step."},
+	{"name": "Beacon", "kind": "Blinks", "rows": ["OO..", "OO..", "..OO", "..OO"],
+		"desc": "Two blocks touching at a corner. The middle corners flash on and off."},
+	{"name": "Pulsar", "kind": "Blinks", "rows": [
+		"..OOO...OOO..", ".............", "O....O.O....O", "O....O.O....O", "O....O.O....O",
+		"..OOO...OOO..", ".............", "..OOO...OOO..", "O....O.O....O", "O....O.O....O",
+		"O....O.O....O", ".............", "..OOO...OOO.."],
+		"desc": "A big, symmetric shape that cycles through 3 different looks."},
+	{"name": "Glider", "kind": "Travels", "rows": [".O.", "..O", "OOO"],
+		"desc": "Only 5 squares, but it walks diagonally: one square every 4 steps, until it hits something."},
+	{"name": "Spaceship", "kind": "Travels", "rows": [".O..O", "O....", "O...O", "OOOO."],
+		"desc": "A bigger traveller that moves sideways across the board."},
+	{"name": "R-pentomino", "kind": "Grows", "rows": [".OO", "OO.", ".O."],
+		"desc": "Just 5 squares that explode into a huge, messy colony for over 1,000 steps. Great for spreading!"},
+	{"name": "Acorn", "kind": "Grows", "rows": [".O.....", "...O...", "OO..OOO"],
+		"desc": "7 squares that keep growing and spreading for thousands of steps."},
+	{"name": "Glider gun", "kind": "Factory", "rows": [
+		"........................O...........", "......................O.O...........",
+		"............OO......OO............OO", "...........O...O....OO............OO",
+		"OO........O.....O...OO..............", "OO........O...O.OO....O.O...........",
+		"..........O.....O.........O.........", "...........O...O....................",
+		"............OO......................"],
+		"desc": "A machine that builds and fires a new glider every 30 steps."},
+]
+
+
+static func shape_cells(idx: int) -> Array:
+	var out: Array = []
+	var rows: Array = SHAPES[idx].rows
+	for y in rows.size():
+		var row: String = rows[y]
+		for x in row.length():
+			if row[x] == "O":
+				out.append(Vector2i(x, y))
+	return out
+
+
+static func shape_size(idx: int) -> Vector2i:
+	var rows: Array = SHAPES[idx].rows
+	return Vector2i(String(rows[0]).length(), rows.size())
+
+
 # ------------------------------------------------------------------ tutorial modal
 
 const TUT_FLAG := "user://bloom_tutorial_seen"
-const TUT_PAGES := 2
-const DEMO_N := 10                  # demo board is DEMO_N x DEMO_N, wrapping at the edges
-const DEMO_STEP := 0.35             # seconds per demo generation
+const TUT_PAGES := 4
+const DEMO_STEP := 0.7              # seconds per step in the tutorial animations
+const DEMO_N := 7                   # each demo board is DEMO_N x DEMO_N, wrapping at the edges
+const DEMOS := [["Block", "Stays still"], ["Blinker", "Flips back and forth"], ["Glider", "Walks away"]]
 
 var tut_open := false
 var tut_page := 0
 var tut_rect := Rect2()
 var help_rect := Rect2()            # the "?" button in the header
-var demo := PackedByteArray()
+var pg_entry_rect := Rect2()        # the "Playground" chip in the header
+var demos: Array = []               # PackedByteArray per demo board
 var demo_t := 0.0
 var demo_gen := 0
 
@@ -973,41 +1114,50 @@ func tutorial_seen() -> bool:
 func tut_next() -> void:
 	if tut_page < TUT_PAGES - 1:
 		tut_page += 1
+		_demo_reset()
 	else:
 		close_tutorial()
 
 
 func tut_back() -> void:
 	tut_page = max(tut_page - 1, 0)
+	_demo_reset()
+
+
+func _shape_index(name: String) -> int:
+	for i in SHAPES.size():
+		if SHAPES[i].name == name:
+			return i
+	return -1
 
 
 func _demo_reset() -> void:
-	demo = PackedByteArray()
-	demo.resize(DEMO_N * DEMO_N)
-	for c in [Vector2i(2, 1), Vector2i(3, 2), Vector2i(1, 3), Vector2i(2, 3), Vector2i(3, 3)]:  # glider
-		demo[c.y * DEMO_N + c.x] = 1
+	demos.clear()
+	for d in DEMOS:
+		var cells := PackedByteArray()
+		cells.resize(DEMO_N * DEMO_N)
+		var idx := _shape_index(d[0])
+		var sz := shape_size(idx)
+		var off := Vector2i((DEMO_N - sz.x) / 2, (DEMO_N - sz.y) / 2)
+		if d[0] == "Glider":
+			off = Vector2i(1, 1)
+		for c in shape_cells(idx):
+			var p: Vector2i = c + off
+			cells[p.y * DEMO_N + p.x] = 1
+		demos.append(cells)
 	demo_t = 0.0
 	demo_gen = 0
 
 
 func _demo_step() -> void:
-	var nxt := PackedByteArray()
-	nxt.resize(DEMO_N * DEMO_N)
-	for y in DEMO_N:
-		for x in DEMO_N:
-			var n := 0
-			for dy in range(-1, 2):
-				for dx in range(-1, 2):
-					if dx != 0 or dy != 0:
-						n += demo[posmod(y + dy, DEMO_N) * DEMO_N + posmod(x + dx, DEMO_N)]
-			var i := y * DEMO_N + x
-			if n == 3 or (n == 2 and demo[i] == 1):
-				nxt[i] = 1
-	demo = nxt
+	for i in demos.size():
+		demos[i] = life_step(demos[i], DEMO_N, DEMO_N, true)
 	demo_gen += 1
 
 
 func _tut_process(delta: float) -> void:
+	if tut_page != 2:
+		return
 	demo_t += delta
 	while demo_t >= DEMO_STEP:
 		demo_t -= DEMO_STEP
@@ -1024,12 +1174,10 @@ func _tut_layout() -> void:
 	var y := tut_rect.end.y - pad - bh
 	var bw := (tut_rect.size.x - pad * 2 - 12) / 2.0
 	var x0 := tut_rect.position.x + pad
-	if tut_page == 0:
-		buttons.append({"id": "tut_skip", "label": "Skip", "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
-		buttons.append({"id": "tut_next", "label": "Next", "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
-	else:
-		buttons.append({"id": "tut_back", "label": "Back", "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
-		buttons.append({"id": "tut_next", "label": "Let's play", "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
+	var left := ["tut_skip", "Skip"] if tut_page == 0 else ["tut_back", "Back"]
+	var right := "Let's play" if tut_page == TUT_PAGES - 1 else "Next"
+	buttons.append({"id": left[0], "label": left[1], "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
+	buttons.append({"id": "tut_next", "label": right, "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
 
 
 ## Draws wrapped text at y and returns the y below it.
@@ -1046,56 +1194,73 @@ func _draw_tutorial() -> void:
 	var x := tut_rect.position.x + pad
 	var w := tut_rect.size.x - pad * 2
 	var y := tut_rect.position.y + pad
-	var bottom: float = tut_rect.end.y - 24.0 - 64.0 - 24.0   # above the button row
-	# page dots
+	var bottom: float = tut_rect.end.y - 24.0 - 64.0 - 20.0   # above the button row
 	for i in TUT_PAGES:
 		draw_circle(Vector2(tut_rect.end.x - pad - (TUT_PAGES - 1 - i) * 22, y + 12), 6, C_ACCENT if i == tut_page else Color(C_INK, 0.25))
-	if tut_page == 0:
-		_tut_page_life(x, y, w, bottom)
-	else:
-		_tut_page_bloom(x, y, w, bottom)
+	_text_c("%d / %d" % [tut_page + 1, TUT_PAGES], Vector2(tut_rect.end.x - pad - (TUT_PAGES - 1) * 11, y + 44), 16, C_MUTED)
+	match tut_page:
+		0: _tut_page_board(x, y, w, bottom)
+		1: _tut_page_rules(x, y, w, bottom)
+		2: _tut_page_watch(x, y, w, bottom)
+		_: _tut_page_bloom(x, y, w, bottom)
 
 
-func _tut_page_life(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("Conway's Game of Life", x, y, w - 60, 34, C_INK) + 12
-	y = _para("A grid of cells, each alive or dead. Every generation, all cells update at once by counting their 8 neighbours. Nobody plays it — you set up the start and watch what grows.", x, y, w, 22, C_MUTED) + 18
-	# three rules, each shown as before -> after on a 3x3 patch
+func _tut_page_board(x: float, y: float, w: float, bottom: float) -> void:
+	y = _para("How life works here", x, y, w - 110, 34, C_INK) + 14
+	y = _para("Bloom is built on a famous puzzle called the Game of Life. The board is a field of little squares:", x, y, w, 22, C_MUTED) + 14
+	# legend
+	var lg := 30.0
+	_box(Rect2(x, y, lg, lg), C_ALIVE, 7)
+	_para("green = alive", x + lg + 10, y + 2, 200, 22, C_INK)
+	_box(Rect2(x + 230, y, lg, lg), C_GRID_BG, 7, Color(C_INK, 0.2))
+	_para("dark = empty", x + 230 + lg + 10, y + 2, 200, 22, C_INK)
+	y += lg + 22
+	# neighbour diagram: 5x5, centre square and its 8 neighbours
+	var cell: float = clamp((bottom - y - 200) / 5.0, 26.0, 44.0)
+	var side := cell * 5
+	var at := Vector2(x + (w - side) / 2.0, y)
+	_box(Rect2(at, Vector2(side, side)).grow(4), C_GRID_BG, 8)
+	draw_rect(Rect2(at + Vector2(cell, cell), Vector2(cell * 3, cell * 3)), Color(C_STAR, 0.10))
+	for k in range(1, 5):
+		draw_line(at + Vector2(k * cell, 0), at + Vector2(k * cell, side), C_LINE)
+		draw_line(at + Vector2(0, k * cell), at + Vector2(side, k * cell), C_LINE)
+	for c in [Vector2i(2, 2), Vector2i(1, 1), Vector2i(3, 2), Vector2i(2, 3), Vector2i(0, 4), Vector2i(4, 0)]:
+		_box(Rect2(at + Vector2(c) * cell, Vector2(cell, cell)).grow(-cell * 0.1), C_ALIVE, cell * 0.2)
+	draw_rect(Rect2(at + Vector2(cell, cell), Vector2(cell * 3, cell * 3)), C_STAR, false, 2.0)
+	draw_rect(Rect2(at + Vector2(cell * 2, cell * 2), Vector2(cell, cell)), C_INK, false, 3.0)
+	y += side + 16
+	y = _para("The 8 squares touching a square (sides and corners, inside the gold box) are its neighbours. The middle square here has 3 living neighbours.", x, y, w, 20, C_MUTED) + 16
+	y = _para("Life moves in steps. At every step, each square counts its living neighbours, and that number decides if it lives, dies, or is born. You don't steer it: you only choose where life starts.", x, y, w, 22, C_INK)
+
+
+func _tut_page_rules(x: float, y: float, w: float, bottom: float) -> void:
+	y = _para("The 4 rules", x, y, w - 110, 34, C_INK) + 8
+	y = _para("Every step, every square checks its neighbours:", x, y, w, 22, C_MUTED) + 18
 	var rules := [
-		["Birth", "empty + exactly 3", [1, 2, 3], false, true],
-		["Survive", "alive + 2 or 3", [0, 5], true, true],
-		["Die", "alive + <2 or >3", [2], true, false],
+		["Too lonely", "A living square with 0 or 1 living neighbours dies.", [2], true, false, Color("ff8f8f")],
+		["Just right", "A living square with 2 or 3 living neighbours stays alive.", [0, 4], true, true, C_ACCENT],
+		["Too crowded", "A living square with 4 or more living neighbours dies.", [0, 2, 4, 6], true, false, Color("ff8f8f")],
+		["New life", "An empty square with exactly 3 living neighbours comes alive.", [0, 2, 5], false, true, C_STAR],
 	]
-	var col_w := w / 3.0
-	var cell: float = clamp((col_w - 44) / 6.0, 10.0, 24.0)
+	var row_h: float = (bottom - y - 50) / 4.0
+	var cell: float = clamp((row_h - 16) / 3.0, 14.0, 26.0)
 	var patch := cell * 3
-	for r in rules.size():
-		var rule: Array = rules[r]
-		var cx := x + col_w * r + col_w / 2.0
-		var gapw := 30.0
-		var left := cx - (patch * 2 + gapw) / 2.0
-		_draw_patch(Vector2(left, y), cell, rule[2], rule[3])
+	var gap := 34.0
+	var diag_w := patch * 2 + gap
+	_text_c("before", Vector2(x + patch / 2.0, y - 4), 16, C_MUTED)
+	_text_c("after", Vector2(x + patch * 1.5 + gap, y - 4), 16, C_MUTED)
+	y += 10
+	for rule in rules:
+		_draw_patch(Vector2(x, y), cell, rule[2], rule[3])
 		var ay := y + patch / 2.0
-		var ax := left + patch + gapw / 2.0
-		draw_colored_polygon(PackedVector2Array([Vector2(ax - 7, ay - 7), Vector2(ax + 6, ay), Vector2(ax - 7, ay + 7)]), C_MUTED)
-		_draw_patch(Vector2(left + patch + gapw, y), cell, rule[2], rule[4], true)
-		_text_c(rule[0], Vector2(cx, y + patch + 30), 22, C_INK)
-		_text_c(rule[1], Vector2(cx, y + patch + 56), 18, C_MUTED)
-	y += patch + 76
-	# live demo: a glider walking across a wrapping board
-	var room: float = bottom - y - 34
-	var side: float = clamp(room, 120.0, 300.0)
-	var demo_rect := Rect2(x + (w - side) / 2.0, y, side, side)
-	if room >= 120.0:
-		var cp := side / DEMO_N
-		_box(demo_rect.grow(4), C_GRID_BG, 8)
-		for k in range(1, DEMO_N):
-			draw_line(Vector2(demo_rect.position.x + k * cp, demo_rect.position.y), Vector2(demo_rect.position.x + k * cp, demo_rect.end.y), C_LINE)
-			draw_line(Vector2(demo_rect.position.x, demo_rect.position.y + k * cp), Vector2(demo_rect.end.x, demo_rect.position.y + k * cp), C_LINE)
-		for i in DEMO_N * DEMO_N:
-			if demo[i] == 1:
-				var cr := Rect2(demo_rect.position + Vector2(i % DEMO_N, i / DEMO_N) * cp, Vector2(cp, cp))
-				_box(cr.grow(-cp * 0.08), C_ALIVE, cp * 0.22)
-		_text_c("Five cells that walk forever — a \"glider\" (gen %d)" % demo_gen, Vector2(x + w / 2.0, demo_rect.end.y + 28), 18, C_MUTED)
+		var ax := x + patch + gap / 2.0
+		draw_colored_polygon(PackedVector2Array([Vector2(ax - 8, ay - 8), Vector2(ax + 7, ay), Vector2(ax - 8, ay + 8)]), C_MUTED)
+		_draw_patch(Vector2(x + patch + gap, y), cell, rule[2], rule[4], true)
+		var tx := x + diag_w + 22
+		var ty := _para(rule[0], tx, y - 2, w - diag_w - 22, 24, rule[5])
+		_para(rule[1], tx, ty + 2, w - diag_w - 22, 20, C_INK)
+		y += max(row_h, patch + 14)
+	_para("The middle square (white outline) is the one being checked. All squares update at the same moment.", x, y, w, 18, C_MUTED)
 
 
 ## A 3x3 patch: centre cell plus the listed neighbour slots (0..7, clockwise from top-left) alive.
@@ -1103,27 +1268,48 @@ func _draw_patch(at: Vector2, cell: float, alive_n: Array, centre: bool, faded :
 	var slots := [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(2, 1), Vector2i(2, 2), Vector2i(1, 2), Vector2i(0, 2), Vector2i(0, 1)]
 	var r := Rect2(at, Vector2(cell * 3, cell * 3))
 	_box(r.grow(3), C_GRID_BG, 4)
+	for k in range(1, 3):
+		draw_line(at + Vector2(k * cell, 0), at + Vector2(k * cell, cell * 3), C_LINE)
+		draw_line(at + Vector2(0, k * cell), at + Vector2(cell * 3, k * cell), C_LINE)
 	for s in alive_n:
 		var p: Vector2i = slots[int(s)]
-		_box(Rect2(at + Vector2(p) * cell, Vector2(cell, cell)).grow(-1.5), Color(C_ALIVE, 0.45 if faded else 1.0), 3)
+		_box(Rect2(at + Vector2(p) * cell, Vector2(cell, cell)).grow(-1.5), Color(C_ALIVE, 0.35 if faded else 1.0), 3)
 	var c := Rect2(at + Vector2(cell, cell), Vector2(cell, cell))
 	if centre:
-		_box(c.grow(-1.5), C_SEED if faded else C_ALIVE, 3)
-	draw_rect(c, Color(C_STAR, 0.9), false, 1.5)
+		_box(c.grow(-1.5), C_ALIVE, 3)
+	draw_rect(c, C_INK, false, 2.0)
+
+
+func _tut_page_watch(x: float, y: float, w: float, bottom: float) -> void:
+	y = _para("Watch it happen", x, y, w - 110, 34, C_INK) + 8
+	y = _para("Same 4 rules, different starting shapes, and very different results:", x, y, w, 22, C_MUTED) + 22
+	var gap := 18.0
+	var bw := (w - gap * 2) / 3.0
+	for i in DEMOS.size():
+		var r := Rect2(x + i * (bw + gap), y, bw, bw)
+		_draw_cells(r, demos[i], DEMO_N, DEMO_N)
+		_text_c(DEMOS[i][0], Vector2(r.get_center().x, r.end.y + 32), 22, C_INK)
+		_text_c(DEMOS[i][1], Vector2(r.get_center().x, r.end.y + 58), 18, C_MUTED)
+	y += bw + 84
+	_text_c("Step %d" % demo_gen, Vector2(x + w / 2.0, y), 22, C_ACCENT)
+	y += 26
+	y = _para("Some shapes freeze, some blink, some travel, and some explode into big colonies. In Bloom, shapes that spread and travel reach the most squares.", x, y, w, 22, C_INK) + 14
+	if y + 30 < bottom:
+		_para("Want to experiment? Tap \"Playground\" at the top of the game any time.", x, y, w, 20, C_MUTED)
 
 
 func _tut_page_bloom(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("Today's puzzle", x, y, w - 60, 34, C_INK) + 16
+	y = _para("Today's puzzle", x, y, w - 110, 34, C_INK) + 16
 	var icon := 28.0
 	var tx := x + icon + 18
 	var tw := w - icon - 18
 	var rows := [
-		["zone", "Plant up to %d seeds inside the green zone. Tap a seed again to remove it." % budget],
-		["play", "Hit Run. Life plays out for %d generations on the whole map." % GENS],
-		["touch", "Impact = every cell your colony ever touched."],
-		["star", "Reach a gold star for +%d bonus." % STAR_BONUS],
-		["wall", "Walls are always dead — nothing grows through them."],
-		["tries", "%d tries a day; your best counts. Then share your score — the link gives friends the same map." % MAX_TRIES],
+		["zone", "You get %d seeds (living squares). Tap squares inside the green box to plant them. Tap again to remove." % budget],
+		["play", "Press Run. The 4 rules play out for %d steps across the whole map." % GENS],
+		["touch", "Your score (Impact) counts every square your life ever reached, even if it died later."],
+		["star", "Gold stars give +%d bonus each when your life reaches them." % STAR_BONUS],
+		["wall", "Grey walls always stay empty. Life can't grow through them."],
+		["tries", "You have %d tries a day and your best one counts. Everyone gets the same map, so you can compare scores." % MAX_TRIES],
 	]
 	for row in rows:
 		var ir := Rect2(x, y + 2, icon, icon)
@@ -1144,12 +1330,12 @@ func _tut_page_bloom(x: float, y: float, w: float, bottom: float) -> void:
 				draw_rect(Rect2(ir.position + Vector2(2, 2), Vector2(ir.size.x - 4, 5)), C_WALL_HI)
 			"tries":
 				_text_c(str(MAX_TRIES), ir.get_center() + Vector2(0, 9), 26, C_ACCENT)
-		var ny := _para(row[1], tx, y, tw, 22, C_INK)
-		y = max(ny, y + icon + 4) + 16
+		var ny := _para(row[1], tx, y, tw, 21, C_INK)
+		y = max(ny, y + icon + 4) + 14
 		if y > bottom:
 			break
 	if y + 40 < bottom:
-		_para("Tip: tap the small map to see the whole board while planting.", x, y + 8, w, 18, C_MUTED)
+		_para("Tip: start with a shape that grows or travels, then try small changes between tries.", x, y + 6, w, 19, C_MUTED)
 
 
 func _draw_help_button() -> void:
@@ -1158,6 +1344,247 @@ func _draw_help_button() -> void:
 	draw_circle(help_rect.get_center(), 19, C_BTN)
 	draw_arc(help_rect.get_center(), 19, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
 	_text_c("?", help_rect.get_center() + Vector2(0, 9), 26, C_INK)
+	# "Playground" chip on the date line
+	var dw := font.get_string_size("#%d · %s" % [puzzle_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
+	var label := "Playground"
+	var cw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 28
+	pg_entry_rect = Rect2(head_rect.position + Vector2(dw + 16, 66), Vector2(cw, 34))
+	if phase == Phase.RUN:
+		pg_entry_rect = Rect2()
+		return
+	_box(pg_entry_rect, C_BTN, 17, Color(C_ACCENT, 0.5))
+	_text_c(label, pg_entry_rect.get_center() + Vector2(0, 6), 18, C_ACCENT)
+
+
+# ------------------------------------------------------------------ playground
+
+const PG_N := 40
+const PG_SPEED := 8.0               # steps per second while playing
+
+var pg_open := false
+var pg_cells := PackedByteArray()
+var pg_start := PackedByteArray()   # board as it was when Play/Step was last started from step 0
+var pg_gen := 0
+var pg_running := false
+var pg_acc := 0.0
+var pg_shape := -1                  # -1 = draw mode, otherwise index into SHAPES
+var pg_paint := -1
+var pg_chips: Array = []            # [{rect, idx}]
+var pg_back_rect := Rect2()
+
+
+func open_playground() -> void:
+	pg_open = true
+	if pg_cells.size() != PG_N * PG_N:
+		pg_cells.resize(PG_N * PG_N)
+		# start with a few examples so Play shows something straight away
+		pg_stamp(_shape_index("Block"), Vector2i(8, 8))
+		pg_stamp(_shape_index("Blinker"), Vector2i(20, 8))
+		pg_stamp(_shape_index("Glider"), Vector2i(31, 7))
+		pg_stamp(_shape_index("R-pentomino"), Vector2i(20, 26))
+		pg_start = pg_cells.duplicate()
+		pg_select(_shape_index("Glider"))
+
+
+func close_playground() -> void:
+	pg_open = false
+	pg_running = false
+
+
+func pg_select(idx: int) -> void:
+	pg_shape = idx
+
+
+func pg_stamp(idx: int, center: Vector2i) -> void:
+	var sz := shape_size(idx)
+	var off := center - sz / 2
+	for c in shape_cells(idx):
+		var p: Vector2i = c + off
+		if p.x >= 0 and p.y >= 0 and p.x < PG_N and p.y < PG_N:
+			pg_cells[p.y * PG_N + p.x] = 1
+
+
+func pg_toggle_play() -> void:
+	if not pg_running and pg_gen == 0:
+		pg_start = pg_cells.duplicate()
+	pg_running = not pg_running
+	pg_acc = 1.0   # take the first step right away
+
+
+func pg_step() -> void:
+	if pg_gen == 0:
+		pg_start = pg_cells.duplicate()
+	pg_cells = life_step(pg_cells, PG_N, PG_N, false)
+	pg_gen += 1
+
+
+func pg_reset() -> void:
+	pg_running = false
+	if pg_start.size() == PG_N * PG_N:
+		pg_cells = pg_start.duplicate()
+	pg_gen = 0
+
+
+func pg_clear() -> void:
+	pg_running = false
+	pg_cells = PackedByteArray()
+	pg_cells.resize(PG_N * PG_N)
+	pg_start = pg_cells.duplicate()
+	pg_gen = 0
+
+
+func _pg_process(delta: float) -> void:
+	if pg_running:
+		pg_acc += delta * PG_SPEED
+		if pg_acc >= 1.0:
+			pg_acc = min(pg_acc - 1.0, 1.0)
+			pg_step()
+	if Input.is_action_just_pressed("run"):
+		pg_toggle_play()
+
+
+func _pg_layout() -> void:
+	var vs := get_viewport_rect().size
+	var m := 20.0
+	var portrait := vs.y >= vs.x * 1.05
+	if portrait:
+		head_rect = Rect2(m, m, vs.x - m * 2, 110)
+		var g: float = min(vs.x - m * 2, vs.y - head_rect.end.y - 380)
+		g = max(g, 200.0)
+		grid_rect = Rect2((vs.x - g) / 2.0, head_rect.end.y + 8, g, g)
+		panel_rect = Rect2(m, grid_rect.end.y + 22, vs.x - m * 2, vs.y - grid_rect.end.y - 22 - m)
+	else:
+		var g: float = min(vs.y - m * 2, vs.x * 0.56)
+		grid_rect = Rect2(m * 1.5, (vs.y - g) / 2.0, g, g)
+		var px := grid_rect.end.x + 28
+		head_rect = Rect2(px, grid_rect.position.y, vs.x - px - m * 1.5, 110)
+		panel_rect = Rect2(px, head_rect.end.y + 8, head_rect.size.x, grid_rect.end.y - head_rect.end.y - 8)
+	cell_px = floor(grid_rect.size.x / PG_N * 100.0) / 100.0
+	grid_rect.size = Vector2(PG_N, PG_N) * cell_px
+	# shape chips, flowing left to right
+	pg_chips.clear()
+	var fs := 18
+	var ch := 40.0
+	var x := panel_rect.position.x
+	var y := panel_rect.position.y
+	var names: Array = ["Draw"]
+	for s in SHAPES:
+		names.append(s.name)
+	for i in names.size():
+		var cw: float = font.get_string_size(names[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 30
+		if x + cw > panel_rect.end.x and x > panel_rect.position.x:
+			x = panel_rect.position.x
+			y += ch + 8
+		pg_chips.append({"rect": Rect2(x, y, cw, ch), "idx": i - 1, "label": names[i]})
+		x += cw + 8
+	# controls
+	var bh := 60.0
+	var gap := 10.0
+	var by := panel_rect.end.y - bh
+	var labels := [["pg_play", "Pause" if pg_running else "Play", true], ["pg_step", "Step", false], ["pg_reset", "Reset", false], ["pg_clear", "Clear", false]]
+	var bw := (panel_rect.size.x - gap * 3) / 4.0
+	for i in labels.size():
+		buttons.append({"id": labels[i][0], "label": labels[i][1], "primary": labels[i][2], "enabled": true,
+			"rect": Rect2(panel_rect.position.x + i * (bw + gap), by, bw, bh)})
+
+
+func _pg_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		var p: Vector2 = make_input_local(ev).position
+		if not ev.pressed:
+			pg_paint = -1
+			return
+		if pg_back_rect.grow(6).has_point(p):
+			close_playground()
+			return
+		if help_rect.grow(10).has_point(p):
+			open_tutorial()
+			return
+		if _press_button(p):
+			return
+		for chip in pg_chips:
+			if chip.rect.has_point(p):
+				pg_select(chip.idx)
+				return
+		var c := _pg_cell_at(p)
+		if c < 0:
+			return
+		if pg_shape >= 0:
+			pg_stamp(pg_shape, Vector2i(c % PG_N, c / PG_N))
+			if pg_gen > 0 and not pg_running:
+				pg_gen = 0   # edited after running: the next Play starts a fresh run from here
+		else:
+			pg_paint = 0 if pg_cells[c] == 1 else 1
+			pg_cells[c] = pg_paint
+	elif ev is InputEventMouseMotion and pg_paint >= 0:
+		var c := _pg_cell_at(make_input_local(ev).position)
+		if c >= 0:
+			pg_cells[c] = pg_paint
+
+
+func _pg_cell_at(p: Vector2) -> int:
+	if not grid_rect.has_point(p):
+		return -1
+	var x := int((p.x - grid_rect.position.x) / cell_px)
+	var y := int((p.y - grid_rect.position.y) / cell_px)
+	if x < 0 or y < 0 or x >= PG_N or y >= PG_N:
+		return -1
+	return y * PG_N + x
+
+
+func _pg_draw() -> void:
+	var r := head_rect
+	draw_string(font, r.position + Vector2(0, 52), "Playground", HORIZONTAL_ALIGNMENT_LEFT, -1, 46, C_INK)
+	var tw := font.get_string_size("Playground", HORIZONTAL_ALIGNMENT_LEFT, -1, 46).x
+	help_rect = Rect2(head_rect.position + Vector2(tw + 16, 16), Vector2(40, 40))
+	draw_circle(help_rect.get_center(), 19, C_BTN)
+	draw_arc(help_rect.get_center(), 19, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
+	_text_c("?", help_rect.get_center() + Vector2(0, 9), 26, C_INK)
+	var back := "Back to puzzle"
+	var bw := font.get_string_size(back, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 28
+	pg_back_rect = Rect2(r.position + Vector2(0, 66), Vector2(bw, 34))
+	_box(pg_back_rect, C_BTN, 17, Color(C_ACCENT, 0.5))
+	_text_c(back, pg_back_rect.get_center() + Vector2(0, 6), 18, C_ACCENT)
+	var big := str(pg_gen)
+	var lw := font.get_string_size("STEP", HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+	draw_string(font, Vector2(r.end.x - lw, r.position.y + 14), "STEP", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, C_MUTED)
+	var bigw := font.get_string_size(big, HORIZONTAL_ALIGNMENT_LEFT, -1, 52).x
+	draw_string(font, Vector2(r.end.x - bigw, r.position.y + 62), big, HORIZONTAL_ALIGNMENT_LEFT, -1, 52, C_ACCENT)
+	var al := "%d alive" % pg_cells.count(1)
+	var aw := font.get_string_size(al, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+	draw_string(font, Vector2(r.end.x - aw, r.position.y + 92), al, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_MUTED)
+	_draw_cells(grid_rect, pg_cells, PG_N, PG_N)
+	# chips
+	for chip in pg_chips:
+		var sel: bool = chip.idx == pg_shape
+		var kc: Color = C_INK if chip.idx < 0 else KIND_COL[SHAPES[chip.idx].kind]
+		_box(chip.rect, Color(kc, 0.22) if sel else C_BTN, 20, kc if sel else Color(kc, 0.35))
+		_text_c(chip.label, chip.rect.get_center() + Vector2(0, 6), 18, C_INK if sel else Color(C_INK, 0.8))
+	# description of the selected tool
+	var top: float = pg_chips[-1].rect.end.y + 18
+	var bottom: float = panel_rect.end.y - 60.0 - 12.0
+	var x := panel_rect.position.x
+	var w := panel_rect.size.x
+	if pg_shape < 0:
+		var y := _para("Draw", x, top, w, 24, C_INK) + 4
+		_para("Tap or drag on the board to add or remove living squares. Pick a shape above to drop in a famous pattern instead.", x, y, w, 20, C_MUTED)
+	else:
+		var s: Dictionary = SHAPES[pg_shape]
+		var sz := shape_size(pg_shape)
+		var pv: float = min(110.0, bottom - top - 10)
+		var tx := x
+		if pv >= 60.0:
+			var cells := PackedByteArray()
+			cells.resize((sz.x + 2) * (sz.y + 2))
+			for c in shape_cells(pg_shape):
+				cells[(c.y + 1) * (sz.x + 2) + c.x + 1] = 1
+			_draw_cells(Rect2(x + 4, top + 4, pv, pv), cells, sz.x + 2, sz.y + 2, KIND_COL[s.kind])
+			tx = x + pv + 22
+		var y := _para(s.name, tx, top, w - (tx - x), 24, C_INK)
+		y = _para(s.kind.to_upper(), tx, y + 2, w - (tx - x), 16, KIND_COL[s.kind]) + 6
+		y = _para(s.desc, tx, y, w - (tx - x), 20, C_MUTED) + 6
+		if y + 24 < bottom:
+			_para("Tap the board to place it, then press Play.", tx, y, w - (tx - x), 18, C_ACCENT)
 
 
 # ------------------------------------------------------------------ agent hooks
@@ -1167,6 +1594,6 @@ func get_agent_state() -> Dictionary:
 	return {
 		"phase": Phase.keys()[phase], "date": date, "puzzle": puzzle_no, "budget": budget,
 		"seeds": seeds.size(), "zone": [zone.position.x, zone.position.y, zone.size.x, zone.size.y],
-		"gen": gen, "score": sc, "zoomed": zoomed, "tutorial": tut_open, "tut_page": tut_page, "tries": tries.map(func(t): return t.score), "best": best_score(),
+		"gen": gen, "score": sc, "zoomed": zoomed, "tutorial": tut_open, "tut_page": tut_page, "playground": pg_open, "pg_gen": pg_gen, "pg_alive": pg_cells.count(1), "tries": tries.map(func(t): return t.score), "best": best_score(),
 		"stars": star_total, "target": target_score, "share": share_text() if not tries.is_empty() else "",
 	}

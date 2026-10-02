@@ -37,7 +37,7 @@ func test_same_date_same_map():
 
 func test_map_is_sane():
 	var main = await _fresh()
-	assert_true(main.budget >= 8 and main.budget <= 14, "budget range")
+	assert_true(main.budget >= 16 and main.budget <= 28, "budget range")
 	assert_gt(main.star_total, 5, "stars placed")
 	var z: Rect2i = main.zone
 	for y in range(z.position.y, z.end.y):
@@ -198,16 +198,17 @@ func test_tutorial_on_first_visit():
 	var main = await load_scene("res://main.tscn")
 	await wait_frames(2)
 	assert_true(main.tut_open, "tutorial opens on first visit")
-	assert_eq(main.tut_page, 0, "starts on the Game of Life page")
+	assert_eq(main.tut_page, 0, "starts on the board page")
+	main.tut_next()
+	main.tut_next()
+	assert_eq(main.tut_page, 2, "third page has the animations")
 	var g: int = main.demo_gen
-	await wait_seconds(0.8)
-	assert_gt(main.demo_gen, g, "glider demo animates")
-	main.tut_next()
-	assert_eq(main.tut_page, 1, "second page explains the puzzle")
+	await wait_seconds(1.6)
+	assert_gt(main.demo_gen, g, "demos animate")
 	main.tut_back()
-	assert_eq(main.tut_page, 0, "back works")
-	main.tut_next()
-	main.tut_next()
+	assert_eq(main.tut_page, 1, "back works")
+	for i in main.TUT_PAGES:
+		main.tut_next()
 	assert_false(main.tut_open, "last Next closes it")
 	assert_true(main.tutorial_seen(), "seen flag saved")
 	var again = await load_scene("res://main.tscn")
@@ -218,10 +219,59 @@ func test_tutorial_on_first_visit():
 	again.close_tutorial()
 
 
-func test_glider_demo_moves():
+func test_demo_boards():
 	var main = await _fresh()
 	main._demo_reset()
+	var glider_start: PackedByteArray = main.demos[2]
+	var block_start: PackedByteArray = main.demos[0]
+	var blinker_start: PackedByteArray = main.demos[1]
 	for i in 4:
 		main._demo_step()
-	assert_eq(main.demo.count(1), 5, "glider keeps 5 cells")
-	assert_eq(main.demo[2 * main.DEMO_N + 3], 1, "glider moved one cell diagonally after 4 gens")
+	assert_eq(main.demos[0], block_start, "block stays still")
+	assert_eq(main.demos[1], blinker_start, "blinker returns after an even number of steps")
+	assert_eq(main.demos[2].count(1), 5, "glider keeps 5 cells")
+	assert_ne(main.demos[2], glider_start, "glider has moved")
+
+
+func test_shape_library():
+	var main = await _fresh()
+	for i in main.SHAPES.size():
+		assert_gt(main.shape_cells(i).size(), 0, "shape %s has cells" % main.SHAPES[i].name)
+		var sz: Vector2i = main.shape_size(i)
+		assert_true(sz.x <= main.PG_N and sz.y <= main.PG_N, "shape %s fits the playground" % main.SHAPES[i].name)
+		assert_true(main.KIND_COL.has(main.SHAPES[i].kind), "shape kind has a colour")
+	assert_eq(main.shape_cells(main._shape_index("Glider")).size(), 5, "glider is 5 cells")
+	assert_eq(main.shape_cells(main._shape_index("Glider gun")).size(), 36, "gosper gun is 36 cells")
+
+
+func test_playground():
+	var main = await _fresh()
+	main.open_playground()
+	await wait_frames(1)
+	assert_true(main.pg_open, "playground opens")
+	main.pg_clear()
+	main.pg_stamp(main._shape_index("Glider"), Vector2i(10, 10))
+	assert_eq(main.pg_cells.count(1), 5, "glider stamped")
+	var before: PackedByteArray = main.pg_cells.duplicate()
+	for i in 4:
+		main.pg_step()
+	assert_eq(main.pg_cells.count(1), 5, "glider survives")
+	assert_ne(main.pg_cells, before, "glider moved")
+	assert_eq(main.pg_gen, 4, "step counter")
+	main.pg_reset()
+	assert_eq(main.pg_cells, before, "reset restores the starting board")
+	assert_eq(main.pg_gen, 0, "reset zeroes steps")
+	main.pg_clear()
+	main.pg_stamp(main._shape_index("Glider gun"), Vector2i(20, 12))
+	var n0: int = main.pg_cells.count(1)
+	for i in 60:
+		main.pg_step()
+	assert_gt(main.pg_cells.count(1), n0, "gun has fired gliders")
+	main.pg_toggle_play()
+	assert_true(main.pg_running, "play starts")
+	var g: int = main.pg_gen
+	await wait_seconds(0.5)
+	assert_gt(main.pg_gen, g, "playing advances steps")
+	main.close_playground()
+	assert_false(main.pg_open, "back to the puzzle")
+	assert_false(main.pg_running, "closing pauses it")
