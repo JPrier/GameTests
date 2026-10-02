@@ -7,6 +7,9 @@ config/name="Daily Bridge"
 config/description="A daily bridge-building physics puzzle"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0.4902, 0.7176, 0.8784, 1)
+boot_splash/minimum_display_time=0
 
 [autoload]
 

@@ -3,17 +3,19 @@ extends RefCounted
 ## Deterministic 2D bridge physics: an XPBD truss (beams = distance constraints that report
 ## their force and snap when it exceeds the material's strength) plus a two-wheeled vehicle
 ## that rolls on road beams and loads the joints it touches.
-## Units: metres, kilograms, seconds. +y is down. The deck level and both cliff tops are y = 0.
-## Fixed timestep and fixed solve order, so the same design gives the same run everywhere.
+## Units: metres, kilograms, seconds. +y is down. The left bank's top is y = 0; the right
+## bank's top is y = dy. Build points are integer centimetres (Vector2i), so joints can sit
+## between grid dots. Fixed timestep and solve order: the same design runs the same everywhere.
 
+const U := 100                 # build points are centimetres
 const G := 9.81
 const FRAME_DT := 1.0 / 60.0
 const SUBSTEPS := 24
 const H := FRAME_DT / SUBSTEPS
 const DAMPING := 0.35          # per second, keeps a broken bridge from swinging forever
-const WATER_Y := 6.0
+const WATER_Y := 6.5
 const MAX_TIME := 30.0
-const MAX_LEN := 4.0           # longest single beam, in metres (grid units)
+const MAX_LEN := 4.0           # longest single beam, in metres
 const BUCKLE_LEN := 2.3        # beams longer than this lose compression strength (Euler: ~1/L²)
 const JOINT_MASS := 1.5
 
@@ -21,7 +23,7 @@ enum Mat { ROAD, WOOD }
 const MAT_NAME := ["Road", "Wood"]
 const DENSITY := [12.0, 5.0]          # kg per metre
 const STIFFNESS := [2.5e6, 2.0e6]     # EA in newtons; beam stiffness k = EA / length
-const STRENGTH := [11000.0, 13500.0]   # newtons of tension or compression before it snaps
+const STRENGTH := [11000.0, 13500.0]  # newtons of tension or compression before it snaps
 const COST := [15, 10]                # material per metre
 
 const VEHICLES := [
@@ -29,9 +31,11 @@ const VEHICLES := [
 	{"name": "Camper van", "mass": 800.0, "base": 1.9, "r": 0.38, "speed": 4.0, "color": "4aa3e8"},
 	{"name": "Pickup truck", "mass": 1050.0, "base": 2.2, "r": 0.42, "speed": 3.6, "color": "f2b33d"},
 ]
+const MAX_GAP := [13, 12, 11]         # longest gap each vehicle gets
 
 # level
 var gap := 10
+var dy := 0
 var vehicle: Dictionary = {}
 var statics: Array = []        # [Vector2, Vector2] terrain segments
 
@@ -41,7 +45,7 @@ var py := PackedFloat64Array()
 var ox := PackedFloat64Array()
 var oy := PackedFloat64Array()
 var inv := PackedFloat64Array()
-var node_grid: Array = []      # Vector2i per bridge node (grid position at build time)
+var node_grid: Array = []      # Vector2i (cm) per bridge node at build time
 
 # beams
 var ba := PackedInt32Array()
@@ -71,16 +75,24 @@ var done := false
 var crossed := false
 var outcome := ""              # "crossed", "splash", "stuck"
 var first_break := -1.0
-var progress := -99.0          # furthest the front wheel got, metres past the left edge
+var progress := -99.0          # furthest the front wheel got
 var progress_t := 0.0          # when progress last moved on
 
 
-## level: {gap:int, anchors:Array[Vector2i], pillar_h:int, vehicle:int}
-## design: Array of {p:Vector2i, q:Vector2i, m:int}
+static func wpos(p: Vector2i) -> Vector2:
+	return Vector2(p) / U
+
+
+static func cm(v: Vector2) -> Vector2i:
+	return Vector2i(roundi(v.x * U), roundi(v.y * U))
+
+
+## level: see make_level(). design: Array of {p:Vector2i cm, q:Vector2i cm, m:int}
 func setup(level: Dictionary, design: Array) -> void:
 	gap = int(level.gap)
+	dy = int(level.dy)
 	vehicle = VEHICLES[int(level.vehicle)]
-	_build_statics(level)
+	statics = terrain_segments(level)
 	var index := {}
 	for a in level.anchors:
 		_add_node(a, true, index)
@@ -91,9 +103,7 @@ func setup(level: Dictionary, design: Array) -> void:
 		var i: int = index[b.p]
 		var j: int = index[b.q]
 		var m: int = b.m
-		var gp: Vector2i = b.p
-		var gq: Vector2i = b.q
-		var L := Vector2(gp).distance_to(Vector2(gq))
+		var L := wpos(b.p).distance_to(wpos(b.q))
 		ba.append(i)
 		bb.append(j)
 		rest.append(L)
@@ -109,7 +119,7 @@ func setup(level: Dictionary, design: Array) -> void:
 		for n: int in [i, j]:
 			if inv[n] > 0.0:
 				inv[n] = 1.0 / (1.0 / inv[n] + half)
-	# vehicle: rear wheel w0, front wheel w1, resting on the left cliff
+	# vehicle: rear wheel w0, front wheel w1, resting on the left bank
 	wheel_r = float(vehicle.r)
 	wheelbase = float(vehicle.base)
 	target_speed = float(vehicle.speed)
@@ -126,7 +136,8 @@ func _add_node(g: Vector2i, fixed: bool, index: Dictionary) -> void:
 		return
 	index[g] = px.size()
 	node_grid.append(g)
-	_push_node(float(g.x), float(g.y), 0.0 if fixed else 1.0 / JOINT_MASS)
+	var w := wpos(g)
+	_push_node(w.x, w.y, 0.0 if fixed else 1.0 / JOINT_MASS)
 
 
 func _push_node(x: float, y: float, w: float) -> int:
@@ -142,23 +153,73 @@ func bridge_node_count() -> int:
 	return node_grid.size()
 
 
+# ------------------------------------------------------------------ levels
+
+## Today's level, seeded from the date. Poly Bridge-style variety: gap width, uneven banks,
+## anchors down the cliff faces, sometimes a rock ledge jutting out or a pillar mid-gap.
+static func make_level(d: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("daily-bridge:v2:" + d)
+	var v := rng.randi_range(0, VEHICLES.size() - 1)
+	var g := rng.randi_range(7, int(MAX_GAP[v]))
+	var ddy: int = [-2, -1, 0, 0, 1, 2][rng.randi_range(0, 5)]
+	var anchors: Array = [Vector2i(0, 0), Vector2i(g * U, ddy * U)]
+	var rocks: Array = []           # Rect2 in metres (solid)
+	# anchors down each cliff face
+	for side in 2:
+		var top := 0 if side == 0 else ddy
+		var x := 0 if side == 0 else g
+		var depths: Array = [1, 2, 3, 4]
+		var n := rng.randi_range(1, 2)
+		for k in n:
+			var dd: int = depths.pop_at(rng.randi_range(0, depths.size() - 1))
+			if top + dd < WATER_Y - 1.0:
+				anchors.append(Vector2i(x * U, (top + dd) * U))
+	# a ledge jutting out from one face, or a pillar mid-gap (or neither)
+	var feature := rng.randi_range(0, 9)
+	if feature <= 2 and g >= 8:
+		var side := rng.randi_range(0, 1)
+		var top := 0 if side == 0 else ddy
+		var depth := top + rng.randi_range(2, 3)
+		var out := rng.randi_range(1, 2)
+		var x0 := 0 if side == 0 else g - out
+		rocks.append(Rect2(x0, depth, out, 1))
+		anchors.append(Vector2i((out if side == 0 else g - out) * U, depth * U))
+	elif feature <= 5 and g >= 8:
+		var cx := rng.randi_range(3, g - 3)
+		var deck_y := ddy * float(cx) / g
+		var ptop := int(ceil(deck_y)) + rng.randi_range(2, 3)
+		rocks.append(Rect2(cx - 0.5, ptop, 1.0, 20.0))
+		anchors.append(Vector2i(cx * U, ptop * U))
+	return {"gap": g, "dy": ddy, "vehicle": v, "anchors": anchors, "rocks": rocks}
+
+
+## Is world point w (metres) inside rock? Points on a surface count as rock unless `surface_ok`.
+static func in_rock(level: Dictionary, w: Vector2, surface_ok := false) -> bool:
+	var e := 0.01 if surface_ok else -0.01     # e > 0 shrinks the rock: surface points stay outside
+	var g := float(level.gap)
+	if w.x <= 0.0 - e and w.y >= 0.0 + e:
+		return true
+	if w.x >= g + e and w.y >= float(level.dy) + e:
+		return true
+	for r: Rect2 in level.get("rocks", []):
+		if r.grow(-e).has_point(w):
+			return true
+	return false
+
+
 static func terrain_segments(level: Dictionary) -> Array:
 	var g := float(level.gap)
+	var d := float(level.dy)
 	var s: Array = [
-		[Vector2(-40, 0), Vector2(0, 0)], [Vector2(0, 0), Vector2(0, 12)],
-		[Vector2(g, 0), Vector2(g + 40, 0)], [Vector2(g, 12), Vector2(g, 0)],
+		[Vector2(-40, 0), Vector2(0, 0)], [Vector2(0, 0), Vector2(0, 20)],
+		[Vector2(g, d), Vector2(g + 40, d)], [Vector2(g, 20), Vector2(g, d)],
 	]
-	var h := float(level.get("pillar_h", 0))
-	if h > 0.0:
-		var c := g * 0.5
-		s.append([Vector2(c - 0.5, h), Vector2(c + 0.5, h)])
-		s.append([Vector2(c - 0.5, 12), Vector2(c - 0.5, h)])
-		s.append([Vector2(c + 0.5, h), Vector2(c + 0.5, 12)])
+	for r: Rect2 in level.get("rocks", []):
+		s.append([r.position, Vector2(r.end.x, r.position.y)])
+		s.append([Vector2(r.position.x, r.end.y), r.position])
+		s.append([Vector2(r.end.x, r.position.y), r.end])
 	return s
-
-
-func _build_statics(level: Dictionary) -> void:
-	statics = terrain_segments(level)
 
 
 # ------------------------------------------------------------------ stepping
@@ -357,89 +418,137 @@ func vehicle_angle() -> float:
 
 # ------------------------------------------------------------------ reference designs
 
+## A beam between two build points (centimetres).
 static func beam(p: Vector2i, q: Vector2i, m: int) -> Dictionary:
 	return {"p": p, "q": q, "m": m}
 
 
-## A plain Warren truss over the deck: 2 m road panels, a 2 m deep top chord.
-## The daily budget is derived from its cost, so every day is solvable.
-static func reference_design(level: Dictionary, height := 2) -> Array:
-	var g := int(level.gap)
+## A beam between two world points (metres).
+static func mbeam(p: Vector2, q: Vector2, m: int) -> Dictionary:
+	return beam(cm(p), cm(q), m)
+
+
+## Deck joints from the left bank to the right, in ~2 m panels (metres).
+static func deck_points(level: Dictionary, panel := 2.0) -> Array:
+	var a := Vector2(0, 0)
+	var b := Vector2(float(level.gap), float(level.dy))
+	var n := maxi(2, roundi(a.distance_to(b) / panel))
+	var pts: Array = []
+	for i in n + 1:
+		pts.append(wpos(cm(a.lerp(b, float(i) / n))))
+	return pts
+
+
+static func _deck(pts: Array) -> Array:
 	var d: Array = []
-	var x := 0
-	while x < g:
-		d.append(beam(Vector2i(x, 0), Vector2i(x + 2, 0), Mat.ROAD))
-		var top := Vector2i(x + 1, -height)
-		d.append(beam(Vector2i(x, 0), top, Mat.WOOD))
-		d.append(beam(top, Vector2i(x + 2, 0), Mat.WOOD))
-		if x + 2 < g:
-			d.append(beam(top, Vector2i(x + 3, -height), Mat.WOOD))
-		x += 2
+	for i in pts.size() - 1:
+		d.append(mbeam(pts[i], pts[i + 1], Mat.ROAD))
 	return d
 
 
-## Pillar days (pillar top 2 m below the deck, mid-gap): props from the pillar up to the deck,
-## optionally with a truss on top as well.
-static func pillar_design(level: Dictionary, truss_h := 0) -> Array:
-	var g := int(level.gap)
-	var c := g / 2
+## Warren truss along the deck: offset h metres above (h > 0) or below (h < 0) the road.
+static func _truss(pts: Array, h: float) -> Array:
 	var d: Array = []
-	if truss_h > 0:
-		d = reference_design(level, truss_h)
-	else:
-		var x := 0
-		while x < g:
-			d.append(beam(Vector2i(x, 0), Vector2i(x + 2, 0), Mat.ROAD))
-			x += 2
-	var top := Vector2i(c, 2)
-	if c % 2 == 0:
-		d.append(beam(top, Vector2i(c, 0), Mat.WOOD))
-	else:
-		d.append(beam(top, Vector2i(c - 1, 0), Mat.WOOD))
-		d.append(beam(top, Vector2i(c + 1, 0), Mat.WOOD))
+	var a: Vector2 = pts[0]
+	var b: Vector2 = pts[pts.size() - 1]
+	var up := Vector2((b - a).y, -(b - a).x).normalized()
+	if up.y > 0.0:
+		up = -up
+	var prev := Vector2.INF
+	for i in pts.size() - 1:
+		var p: Vector2 = pts[i]
+		var q: Vector2 = pts[i + 1]
+		var t := wpos(cm((p + q) * 0.5 + up * h))
+		d.append(mbeam(p, t, Mat.WOOD))
+		d.append(mbeam(t, q, Mat.WOOD))
+		if prev != Vector2.INF:
+			d.append(mbeam(prev, t, Mat.WOOD))
+		prev = t
 	return d
 
 
-## The candidate designs the daily budget is measured against.
-## A Warren truss hung under the deck (h metres deep).
-static func under_design(level: Dictionary, h := 2) -> Array:
-	var g := int(level.gap)
+## Props from every non-deck anchor (faces, ledge, pillar) to the nearest deck joint in reach.
+static func _props(level: Dictionary, pts: Array) -> Array:
 	var d: Array = []
-	var x := 0
-	while x < g:
-		d.append(beam(Vector2i(x, 0), Vector2i(x + 2, 0), Mat.ROAD))
-		var lo := Vector2i(x + 1, h)
-		d.append(beam(Vector2i(x, 0), lo, Mat.WOOD))
-		d.append(beam(lo, Vector2i(x + 2, 0), Mat.WOOD))
-		if x + 2 < g:
-			d.append(beam(lo, Vector2i(x + 3, h), Mat.WOOD))
-		x += 2
+	var deck_a := [Vector2i(0, 0), Vector2i(int(level.gap) * U, int(level.dy) * U)]
+	for a: Vector2i in level.anchors:
+		if deck_a.has(a):
+			continue
+		var w := wpos(a)
+		var order: Array = []
+		for i in range(1, pts.size() - 1):
+			order.append([w.distance_to(pts[i]), i])
+		order.sort_custom(func(x, y): return float(x[0]) < float(y[0]))
+		var used := 0
+		for o in order:
+			if float(o[0]) <= MAX_LEN and used < 2:
+				d.append(mbeam(w, pts[int(o[1])], Mat.WOOD))
+				used += 1
 	return d
 
 
-## Trusses above and below the deck, sharing the road.
-static func double_design(level: Dictionary, top := 2, below := 2) -> Array:
-	var d := reference_design(level, top)
-	for b in under_design(level, below):
-		if int(b.m) == Mat.WOOD:
-			d.append(b)
+static func reference_design(level: Dictionary, height := 2.0) -> Array:
+	var pts := deck_points(level)
+	return _deck(pts) + _truss(pts, height)
+
+
+static func under_design(level: Dictionary, h := 2.0) -> Array:
+	var pts := deck_points(level)
+	return _deck(pts) + _truss(pts, -h)
+
+
+static func double_design(level: Dictionary, top := 2.0, below := 2.0) -> Array:
+	var pts := deck_points(level)
+	return _deck(pts) + _truss(pts, top) + _truss(pts, -below)
+
+
+static func props_design(level: Dictionary, top := 0.0) -> Array:
+	var pts := deck_points(level)
+	var d := _deck(pts) + _props(level, pts)
+	if top > 0.0:
+		d += _truss(pts, top)
 	return d
 
 
+## True when every beam fits the rules (length, no joints inside rock, no duplicates).
+static func design_valid(level: Dictionary, design: Array) -> bool:
+	var seen := {}
+	var anchors: Array = level.anchors
+	for b in design:
+		var L := wpos(b.p).distance_to(wpos(b.q))
+		if L < 0.05 or L > MAX_LEN + 0.001:
+			return false
+		for p: Vector2i in [b.p, b.q]:
+			if not anchors.has(p) and in_rock(level, wpos(p)):
+				return false
+		var k := [b.p, b.q] if b.p < b.q else [b.q, b.p]
+		if seen.has(k):
+			return false
+		seen[k] = true
+	return true
+
+
+## Candidate bridges the ideal is measured against, cheapest first.
 static func candidates(level: Dictionary) -> Array:
-	var c: Array = [reference_design(level, 1), reference_design(level, 2), under_design(level, 1),
-		under_design(level, 2), double_design(level, 1, 1), double_design(level, 2, 1), double_design(level, 2, 2)]
-	if int(level.get("pillar_h", 0)) > 0:
-		c.append(pillar_design(level, 0))
-		c.append(pillar_design(level, 1))
-		c.append(pillar_design(level, 2))
-	return c
+	var c: Array = []
+	for h in [1.0, 1.5, 2.0, 2.5]:
+		c.append(reference_design(level, h))
+		c.append(under_design(level, h))
+	for hh in [[1.0, 1.0], [1.5, 1.5], [2.0, 1.5], [2.0, 2.0], [2.5, 2.5]]:
+		c.append(double_design(level, hh[0], hh[1]))
+	if level.anchors.size() > 2:
+		for t in [0.0, 1.0, 1.5, 2.0]:
+			c.append(props_design(level, t))
+	var ok: Array = []
+	for d in c:
+		if design_valid(level, d):
+			ok.append(d)
+	ok.sort_custom(func(x, y): return design_cost(x) < design_cost(y))
+	return ok
 
 
 static func beam_cost(b: Dictionary) -> int:
-	var p: Vector2i = b.p
-	var q: Vector2i = b.q
-	return roundi(Vector2(p).distance_to(Vector2(q)) * float(COST[int(b.m)]))
+	return roundi(wpos(b.p).distance_to(wpos(b.q)) * float(COST[int(b.m)]))
 
 
 static func design_cost(design: Array) -> int:
@@ -447,3 +556,51 @@ static func design_cost(design: Array) -> int:
 	for b in design:
 		c += beam_cost(b)
 	return c
+
+
+## Finds today's ideal: runs the candidates cheapest-first until one crosses.
+## step() spreads the work over frames so the game stays responsive.
+class IdealSearch:
+	extends RefCounted
+	var level: Dictionary
+	var queue: Array = []
+	var idx := 0
+	var sim: BridgeSim
+	var done := false
+	var cost := -1
+	var design: Array = []
+
+	func _init(lv: Dictionary) -> void:
+		level = lv
+		queue = BridgeSim.candidates(lv)
+
+	## Advance up to `frames` physics frames. Returns true when finished.
+	func step(frames: int) -> bool:
+		while frames > 0 and not done:
+			if sim == null:
+				if idx >= queue.size():
+					done = true
+					break
+				sim = BridgeSim.new()
+				sim.setup(level, queue[idx])
+			sim.step_frame()
+			frames -= 1
+			if sim.first_break >= 0.0 and not sim.done:
+				sim.done = true              # the ideal must cross without snapping anything
+			if sim.done:
+				if sim.crossed and sim.first_break < 0.0:
+					design = queue[idx]
+					cost = BridgeSim.design_cost(design)
+					done = true
+				else:
+					idx += 1
+				sim = null
+		return done
+
+	func run() -> void:
+		while not step(1 << 20):
+			pass
+
+	## Index of the ideal in candidates(level), or -1.
+	func index() -> int:
+		return idx if cost > 0 else -1

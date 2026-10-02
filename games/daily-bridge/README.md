@@ -1,25 +1,33 @@
 # Daily Bridge
 
-Build a bridge, then watch one vehicle try to cross. Everyone gets the same canyon, anchors and vehicle each day, and three attempts. Your score compares the material you used with today's ideal bridge: 100 matches it, more material drifts toward 0, and beating it scores over 100.
+Build a bridge, then watch one vehicle try to cross. Everyone gets the same canyon and vehicle each day, and three attempts. Your score compares the material you used with today's ideal bridge: 100 matches it, more material drifts toward 0, and beating it scores over 100.
 
 **Play:** https://jprier.github.io/GameTests/daily-bridge/
 
 ## How it plays
 
-- Pick a piece length (1–4 m), then drag from a joint as far as you like: the line snaps to the 1 m grid and is split into pieces of that length, with joints between them (one undo step per drag). Tapping a joint and then a point does the same. Red joints are anchored to the rock.
-- Long pieces save joints but buckle: beyond 2.3 m a piece's compression strength falls off roughly with 1/length² (tension is unaffected).
-- **Road** (15 per metre) is the only thing the vehicle drives on. **Wood** (10 per metre) is lighter and cheaper; use it to brace the road into triangles.
-- Press **Go** to send the vehicle. Beams glow red as they strain and snap when overloaded. After a failed attempt the bridge is kept, with snapped beams marked ×, so you can repair it.
-- Score = 100 × ideal ÷ material used, on your best crossing; a bridge that falls scores 0. The material bar shows the ideal and your projected score as you build. **Share result** sends your score with a link (`?d=<date>&s=<score>`) that opens the same day's bridge, with your score shown as the one to beat.
+- **Drawing:** pick a piece length (1–4 m), then drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than that (a 7.6 m line in 2 m pieces = 4 × 1.9 m), so joints between pieces can sit between grid dots. Lines that pass over existing joints connect through them, and drawing over existing beams doesn't duplicate them. Or tap a joint, then tap where to go. One Undo per line. Red joints are anchored to the rock.
+- **Erase** removes what you tap or swipe across (one Undo per swipe).
+- **Zoom:** pinch, mouse wheel / trackpad, the + / − buttons, or the `=` / `-` keys; drag empty space (or two fingers) to pan.
+- **Materials:** **Road** (15 per metre) is the only thing the vehicle drives on. **Wood** (10 per metre) is lighter and cheaper; brace the road into triangles. Beyond 2.3 m a piece's compression strength falls off roughly with 1/length² (tension is unaffected), so long pieces buckle.
+- Press **Go**. Beams glow red as they strain and snap when overloaded. After a failed attempt the bridge is kept, with snapped beams marked ×, so you can repair it.
+- **Score** = 100 × ideal ÷ material used, on your best crossing; a bridge that falls scores 0. The material bar shows the ideal and your projected score as you build.
+- **End screen:** replay your best bridge, flip to **Ideal bridge** to see (and replay) the reference bridge that scores 100, and **Share** your score with a link (`?day=<date>&s=<score>`) that opens the same day, with your score as the one to beat.
 
-Each day picks a gap (8, 10 or 12 m), a vehicle (hatchback 550 kg, camper van 800 kg or pickup truck 1050 kg), lower anchors on both cliff faces, and sometimes a rock pillar mid-gap. Puzzle #1 is 2026-10-02.
+## Each day
+
+Seeded from the date (`BridgeSim.make_level()`), Poly Bridge-style: a 7–13 m gap, the far bank up to 2 m higher or lower than the near one, one or two anchors down each cliff face, and sometimes a rock ledge jutting out from a face or a pillar mid-gap with an anchor on top. The vehicle is a hatchback (550 kg), camper van (800 kg) or pickup truck (1050 kg); heavier vehicles get shorter gaps. Puzzle #1 is 2026-10-02.
 
 ## How it works
 
-- `bridge_sim.gd` is a small deterministic physics engine: beams are XPBD distance constraints with a stiffness, a weight and a breaking force; the vehicle is two wheels on a rigid chassis that roll on road beams and push load into the joints they touch. Fixed timestep and solve order mean the same bridge plays out identically everywhere (the browser and headless runs match exactly).
-- The ideal comes from `BEST_KNOWN` in `main.gd`: the cheapest of a few reference bridges that crosses each level. `tests/test_main.gd` re-runs the physics to keep that table honest, so 100 is always reachable.
+- `bridge_sim.gd` is a small deterministic physics engine: beams are XPBD distance constraints with a stiffness, a weight and a breaking force; the vehicle is two wheels on a rigid chassis that roll on road beams and push load into the joints they touch. Build points are integer centimetres. Fixed timestep and solve order mean the same bridge plays out identically everywhere.
+- **The ideal** is the cheapest of ~17 reference bridges (trusses above, below or both sides of the deck at several depths, plus props from the extra anchors) that crosses without snapping anything. `ideals.json` holds the answer for each day through late 2027 (generated by `tools/precompute_ideals.gd`); later days are searched in-game in the background. Tests check the table against a fresh search and that every day is solvable.
 - Progress is saved per day in browser storage, so a reload keeps your attempts and your half-built bridge.
 
-Dev menu (hidden): tap the **Daily Bridge** title 5 times quickly, or open with `?dev=1`. It can reset today, reset every day plus the tutorial, or load the reference bridge.
+## Dev mode
+
+Open with `?dev=1` (a **DEV** button appears; the `` ` `` key toggles it), or tap the title 5 times. It shows the day, seed and level, and can jump to the previous/next/any random day (even future ones), go back to today, instant-win or instant-lose (to test the end screen and sharing), load the ideal bridge, or reset saved progress. Dev day-jumps and instant results are never saved.
+
+After changing the physics or the reference bridges, regenerate the table: `godot --headless --path . --script tools/precompute_ideals.gd -- 2026-10-02 420`.
 
 Tests: `gck test daily-bridge` (tests/test_main.gd, tests/test_sim.gd).

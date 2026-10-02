@@ -1,31 +1,23 @@
 extends Node2D
 ## Daily Bridge — a daily bridge-building physics puzzle.
-## Everyone gets the same canyon, anchors and vehicle each day.
-## Drag beams between joints (road for the vehicle to drive on, wood to brace it),
-## then press Go: one vehicle tries to cross. The physics is deterministic (bridge_sim.gd),
+## Everyone gets the same canyon (gap, bank heights, anchors, ledges or pillars) and the same
+## vehicle each day. Drag lines from joints (road for the vehicle to drive on, wood to brace
+## it), then press Go: one vehicle tries to cross. The physics is deterministic (bridge_sim.gd),
 ## so the same bridge always plays out the same way. Three attempts a day.
-## Score = 100 x ideal / material used: 100 matches the best known bridge, more material
-## drifts toward 0, beating the ideal goes over 100. A bridge that falls scores 0.
+## Score = 100 x ideal / material used, where the ideal is the cheapest reference bridge that
+## crosses today's level (found in-game by running the candidates through the physics).
 
 const EPOCH := "2026-10-02"           # puzzle #1
 const DEFAULT_URL := "https://jprier.github.io/GameTests/daily-bridge/"
 const MAX_TRIES := 3
-const BUILD_MIN_X := -2
-const BUILD_MIN_Y := -5
-const BUILD_MAX_Y := 4
 const MAX_HISTORY := 60
+const ZOOM_MAX := 3.5
+const U := BridgeSim.U
+const PIECE_LENGTHS := [1, 2, 3, 4]
 const TUT_FLAG := "user://daily_bridge_tutorial_seen"
-
-## Cheapest known crossing (BridgeSim.candidates) per "pillar-gap-vehicle".
-## tests/test_main.gd re-runs the physics to keep this table honest.
-const BEST_KNOWN := {
-	"0-8-0": 292, "0-8-1": 356, "0-8-2": 356,
-	"0-10-0": 450, "0-10-1": 450, "0-10-2": 450,
-	"0-12-0": 544, "0-12-1": 812, "0-12-2": 812,
-	"2-8-0": 292, "2-8-1": 312, "2-8-2": 312,
-	"2-10-0": 414, "2-10-1": 414, "2-10-2": 414,
-	"2-12-0": 468, "2-12-1": 468, "2-12-2": 468,
-}
+const SAVE_PREFIX := "bridge2_"       # v2 saves: centimetre build points
+const IDEAL_VERSION := "v2"           # bump when the physics or candidates change
+const NONE := Vector2i(1 << 30, 1 << 30)
 
 enum Phase { BUILD, RUN, RESULT, FINAL }
 enum Tool { ROAD, WOOD, ERASE }
@@ -54,30 +46,33 @@ const C_BTN_PRIMARY := Color("2e9b5f")
 const C_BAD := Color("d6453a")
 const C_GOOD := Color("2e9b5f")
 const C_DOT := Color(1, 1, 1, 0.55)
+const C_IDEAL := Color("7a4fd1")
 
 # puzzle
 var date := ""
 var today := ""
 var puzzle_no := 1
+var lv: Dictionary = {}               # BridgeSim.make_level()
 var gap := 10
+var dy := 0
 var vehicle_i := 0
-var pillar_h := 0
-var low_y := 2
-var anchors: Array = []
-var ideal := 300                    # material used by the best known bridge (scores 100)
+var anchors: Array = []               # Vector2i, centimetres
+var ideal := -1                       # material of the ideal bridge (scores 100); -1 while searching
+var ideal_design: Array = []
+var ideal_search: BridgeSim.IdealSearch
 
 # player
-var design: Array = []              # [{p:Vector2i, q:Vector2i, m:int}]
-var history: Array = []             # undo stack of designs
+var design: Array = []                # [{p:Vector2i cm, q:Vector2i cm, m:int}]
+var history: Array = []
 var tool: int = Tool.ROAD
-var piece_len := 2                  # metres per piece when a drag is split up
-const PIECE_LENGTHS := [1, 2, 3, 4]
-var tries: Array = []               # [{crossed, outcome, cost, score, snapped, design}]
+var piece_len := 2
+var tries: Array = []                 # [{crossed, outcome, cost, snapped, design}]
 var finished := false
 var phase: int = Phase.BUILD
-var target_score := -1              # score of whoever sent the link (?s=)
+var target_score := -1                # score of whoever sent the link (?s=)
 var base_url := DEFAULT_URL
-var last_loads := {}                # beam key -> {load, broken} from the previous attempt
+var last_loads := {}                  # beam key -> {load, broken} from the previous attempt
+var show_ideal := false               # final screen: show the ideal bridge instead of yours
 
 # run
 var sim: BridgeSim
@@ -86,6 +81,28 @@ var sim_acc := 0.0
 var fast := false
 var splash_t := -1.0
 var splash_at := Vector2.ZERO
+var _is_replay := false
+
+# camera: zoom 1 fits the whole canyon; cam_center is the world point at the view's centre
+var zoom := 1.0
+var fit_ppm := 30.0
+var ppm := 30.0
+var cam_center := Vector2.ZERO
+var origin := Vector2.ZERO
+var touches := {}                     # screen-touch index -> position (pinch zoom)
+var gesture := false
+
+# pointer
+var drag_from := NONE                 # joint a line is being dragged from
+var dragging := false                 # pointer moved far enough to count as a drag
+var pressed := false
+var press_empty := false              # press started on empty space (tap-to-build or pan)
+var panning := false
+var erase_stroke := false
+var pan_last := Vector2.ZERO
+var drag_pos := Vector2.ZERO
+var press_pos := Vector2.ZERO
+var selected := NONE                  # tap-tap building: where the next line starts
 
 # ui
 var buttons: Array = []
@@ -93,26 +110,20 @@ var view_rect := Rect2()
 var head_rect := Rect2()
 var panel_rect := Rect2()
 var help_rect := Rect2()
-var origin := Vector2.ZERO
-var ppm := 30.0                     # pixels per metre
-var drag_from := Vector2i(999, 999) # joint a beam is being dragged from
-var dragging := false
-var drag_pos := Vector2.ZERO
-var press_pos := Vector2.ZERO
-var selected := Vector2i(999, 999)  # tap-tap building: the joint the next beam starts at
+var dev_rect := Rect2()
 var toast := ""
 var toast_t := 0.0
 var share_pending := false
 var last_share_text := ""
 var anim_t := 0.0
 var tut_open := false
+var dev_mode := false                 # ?dev=1 or a debug build: shows the DEV button
 var dev_open := false
+var dev_sandbox := false              # after dev day-jumps / instant results: don't save
 var dev_taps := 0
 var dev_last_tap := -10.0
 var font: Font
-var ui := 1.0                       # UI scale: bigger on narrow (phone) screens
-
-const NONE := Vector2i(999, 999)
+var ui := 1.0                         # UI scale: bigger on narrow (phone) screens
 
 
 func _ready() -> void:
@@ -122,18 +133,24 @@ func _ready() -> void:
 	_add_key_action("tool_road", [KEY_1])
 	_add_key_action("tool_wood", [KEY_2])
 	_add_key_action("tool_erase", [KEY_3])
+	_add_key_action("zoom_in", [KEY_EQUAL, KEY_KP_ADD])
+	_add_key_action("zoom_out", [KEY_MINUS, KEY_KP_SUBTRACT])
+	_add_key_action("dev", [KEY_QUOTELEFT])
 	today = Time.get_date_string_from_system(false)
 	var want := today
 	var url := _read_url()
 	if String(url.get("base", "")) != "":
 		base_url = String(url.base)
-	if _valid_date(String(url.get("d", ""))):
-		want = String(url.d)
-	dev_open = String(url.get("dev", "")) == "1"
+	var d := String(url.get("day", ""))
+	if d == "":
+		d = String(url.get("d", ""))
+	if _valid_date(d):
+		want = d
+	dev_mode = String(url.get("dev", "")) == "1" or (OS.is_debug_build() and not OS.has_feature("web"))
 	var s := String(url.get("s", ""))
 	target_score = int(s) if s.is_valid_int() else -1
 	load_puzzle(want)
-	if not dev_open and not tutorial_seen():
+	if not tutorial_seen() and String(url.get("dev", "")) != "1":
 		open_tutorial()
 
 
@@ -172,34 +189,101 @@ func load_puzzle(d: String) -> void:
 	finished = false
 	last_loads = {}
 	selected = NONE
+	drag_from = NONE
 	dragging = false
+	show_ideal = false
 	sim = null
+	_is_replay = false
+	zoom = 1.0
+	cam_center = _fit_center()
 	_load_state()
+	_start_ideal_search()
 	phase = Phase.FINAL if finished else Phase.BUILD
 	if finished:
 		_show_best()
 
 
 func generate(d: String) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("daily-bridge:" + d)
-	gap = [8, 10, 10, 12][rng.randi_range(0, 3)]
-	vehicle_i = rng.randi_range(0, BridgeSim.VEHICLES.size() - 1)
-	pillar_h = 2 if rng.randf() < 0.3 else 0
-	low_y = rng.randi_range(2, 3)
-	anchors = [Vector2i(0, 0), Vector2i(gap, 0), Vector2i(0, low_y), Vector2i(gap, low_y)]
-	if pillar_h > 0:
-		anchors.append(Vector2i(gap / 2, pillar_h))
-	var best: int = BEST_KNOWN.get("%d-%d-%d" % [pillar_h, gap, vehicle_i], 999)
-	ideal = best
+	lv = BridgeSim.make_level(d)
+	gap = int(lv.gap)
+	dy = int(lv.dy)
+	vehicle_i = int(lv.vehicle)
+	anchors = lv.anchors
 
 
 func level() -> Dictionary:
-	return {"gap": gap, "vehicle": vehicle_i, "pillar_h": pillar_h, "anchors": anchors}
+	return lv
 
 
 func vehicle() -> Dictionary:
 	return BridgeSim.VEHICLES[vehicle_i]
+
+
+# ------------------------------------------------------------------ ideal bridge
+
+func _ideal_cache_path() -> String:
+	return "user://bridge_ideal_%s_%s.json" % [IDEAL_VERSION, date]
+
+
+func _start_ideal_search() -> void:
+	ideal = -1
+	ideal_design = []
+	ideal_search = null
+	var idx := ideal_index_for(date)
+	if idx >= 0:
+		var cands := BridgeSim.candidates(lv)
+		if idx < cands.size():
+			ideal_design = cands[idx]
+			ideal = BridgeSim.design_cost(ideal_design)
+			return
+	if FileAccess.file_exists(_ideal_cache_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_ideal_cache_path()))
+		if data is Dictionary and int(data.get("cost", -1)) > 0:
+			ideal = int(data.cost)
+			ideal_design = _unpack(data.get("design", []))
+			return
+	ideal_search = BridgeSim.IdealSearch.new(lv)
+
+
+static var _ideals := {}
+
+
+## Precomputed ideal for a day (index into BridgeSim.candidates), or -1 when not in the table.
+## tools/precompute_ideals.gd writes ideals.json; days past it are searched in-game.
+static func ideal_index_for(d: String) -> int:
+	if _ideals.is_empty() and FileAccess.file_exists("res://ideals.json"):
+		var data = JSON.parse_string(FileAccess.get_file_as_string("res://ideals.json"))
+		if data is Dictionary:
+			_ideals = data
+	return int(_ideals.get(d, -1))
+
+
+## Work on the ideal search for about `usec` microseconds (it runs in the background).
+func _advance_ideal(usec: int) -> void:
+	if ideal_search == null:
+		return
+	var t0 := Time.get_ticks_usec()
+	while Time.get_ticks_usec() - t0 < usec:
+		if ideal_search.step(3):
+			_ideal_found()
+			return
+
+
+func _ideal_found() -> void:
+	ideal = ideal_search.cost
+	ideal_design = ideal_search.design
+	ideal_search = null
+	if ideal > 0:
+		var f := FileAccess.open(_ideal_cache_path(), FileAccess.WRITE)
+		if f:
+			f.store_string(JSON.stringify({"cost": ideal, "design": _pack(ideal_design)}))
+
+
+## Finish the ideal search right now (tests, sharing).
+func ensure_ideal() -> void:
+	if ideal_search != null:
+		ideal_search.run()
+		_ideal_found()
 
 
 # ------------------------------------------------------------------ building
@@ -223,15 +307,12 @@ func joints() -> Array:
 
 
 func is_joint(g: Vector2i) -> bool:
-	return anchors.has(g) or _beam_count(g) > 0
-
-
-func _beam_count(g: Vector2i) -> int:
-	var n := 0
+	if anchors.has(g):
+		return true
 	for b in design:
 		if b.p == g or b.q == g:
-			n += 1
-	return n
+			return true
+	return false
 
 
 static func _key(p: Vector2i, q: Vector2i) -> String:
@@ -242,107 +323,125 @@ static func _key(p: Vector2i, q: Vector2i) -> String:
 	return "%d,%d,%d,%d" % [p.x, p.y, q.x, q.y]
 
 
+func beam_index(p: Vector2i, q: Vector2i) -> int:
+	var k := _key(p, q)
+	for i in design.size():
+		if _key(design[i].p, design[i].q) == k:
+			return i
+	return -1
+
+
+## True when segment p-q lies along an existing beam (building it would overlap).
+func _covered(p: Vector2i, q: Vector2i) -> bool:
+	for b in design:
+		var a := Vector2(b.p)
+		var c := Vector2(b.q)
+		if Geometry2D.get_closest_point_to_segment(Vector2(p), a, c).distance_to(Vector2(p)) <= 1.5 \
+				and Geometry2D.get_closest_point_to_segment(Vector2(q), a, c).distance_to(Vector2(q)) <= 1.5:
+			return true
+	return false
+
+
 ## Why a joint can't go at g ("" when it can).
 func point_problem(g: Vector2i) -> String:
 	if anchors.has(g):
 		return ""
-	if g.x < BUILD_MIN_X or g.x > gap - BUILD_MIN_X or g.y < BUILD_MIN_Y or g.y > BUILD_MAX_Y:
+	var w := BridgeSim.wpos(g)
+	if w.x < -2.0 or w.x > gap + 2.0 or w.y < -6.0 or w.y > BridgeSim.WATER_Y - 0.5:
 		return "Out of the build area"
-	if g.y >= 0 and (g.x <= 0 or g.x >= gap):
-		return "That's solid rock"
-	if pillar_h > 0 and g.y >= pillar_h and absi(g.x - gap / 2) <= 0:
+	if BridgeSim.in_rock(lv, w):
 		return "That's solid rock"
 	return ""
 
 
-## Why a beam p→q can't be built ("" when it can).
+## Why a single beam p→q can't be built ("" when it can).
 func beam_problem(p: Vector2i, q: Vector2i) -> String:
 	if p == q:
 		return "Pick a different point"
-	if Vector2(p).distance_to(Vector2(q)) > BridgeSim.MAX_LEN + 0.001:
+	if BridgeSim.wpos(p).distance_to(BridgeSim.wpos(q)) > BridgeSim.MAX_LEN + 0.001:
 		return "Too long — pieces reach %d m at most" % int(BridgeSim.MAX_LEN)
 	var pp := point_problem(p)
 	if pp == "":
 		pp = point_problem(q)
 	if pp != "":
 		return pp
-	var k := _key(p, q)
-	for b in design:
-		if _key(b.p, b.q) == k:
-			return "There's already a beam there"
+	if beam_index(p, q) >= 0:
+		return "There's already a beam there"
 	return ""
 
 
-## Grid points a drag from p to q is split into: pieces of up to piece_len metres along the
-## line, ending at q. Empty when the line can't be split onto the grid within MAX_LEN.
-func split_path(p: Vector2i, q: Vector2i, length := -1) -> Array:
-	var d := q - p
-	if d == Vector2i.ZERO:
-		return []
-	if length < 0:
-		length = piece_len
-	var g := _gcd(absi(d.x), absi(d.y))
-	var u := d / g                                  # smallest grid step along the line
-	var ul := Vector2(u).length()
-	if ul > BridgeSim.MAX_LEN + 0.001:
-		return []
-	var k := maxi(1, int(floor((length + 0.001) / ul)))
-	var pts: Array = [p]
-	var i := k
-	while i < g:
-		pts.append(p + u * i)
-		i += k
-	pts.append(q)
-	return pts
-
-
-static func _gcd(a: int, b: int) -> int:
-	while b != 0:
-		var t := a % b
+## Plan a straight line from a to b, split into equal pieces no longer than `plen` metres
+## (a 7 m line in 2 m pieces = 4 x 1.75 m), so any angle works and the joints between pieces
+## can sit between grid dots. Existing joints the line passes over become break points, and
+## stretches already built are skipped. Returns {pieces: [[p, q], ...], why: ""}.
+func plan_line(a: Vector2i, b: Vector2i, plen: int = -1) -> Dictionary:
+	if plen < 0:
+		plen = piece_len
+	var out := {"pieces": [], "why": ""}
+	if a == b:
+		out.why = "Pick a different point"
+		return out
+	if not is_joint(a) and is_joint(b):
+		var t := a
 		a = b
 		b = t
-	return a
-
-
-## Why a drag p→q can't be built ("" when it can).
-func path_problem(p: Vector2i, q: Vector2i) -> String:
-	if p == q:
-		return "Pick a different point"
-	var pts := split_path(p, q)
-	if pts.is_empty():
-		return "That angle needs a piece longer than %d m" % int(BridgeSim.MAX_LEN)
-	var fresh := 0
-	for i in pts.size() - 1:
-		var why := beam_problem(pts[i], pts[i + 1])
-		if why == "There's already a beam there":
+	var ab := Vector2(b - a)
+	var ab_len2 := ab.length_squared()
+	var stops := {0.0: a, 1.0: b}
+	for p in joints():
+		var t := Vector2(p - a).dot(ab) / ab_len2
+		if t <= 1e-6 or t >= 1.0 - 1e-6:
 			continue
-		if why != "":
-			return why
-		fresh += 1
-	return "" if fresh > 0 else "There's already a beam there"
+		if (Vector2(a) + ab * t).distance_to(Vector2(p)) <= 1.5:
+			stops[t] = p
+	var ts: Array = stops.keys()
+	ts.sort()
+	var any_new := false
+	for i in ts.size() - 1:
+		var p0: Vector2i = stops[ts[i]]
+		var p1: Vector2i = stops[ts[i + 1]]
+		if beam_index(p0, p1) >= 0:
+			continue
+		var n := maxi(1, ceili(BridgeSim.wpos(p0).distance_to(BridgeSim.wpos(p1)) / float(plen) - 1e-6))
+		var prev := p0
+		for k in range(1, n + 1):
+			var f := float(k) / n
+			var q := p1 if k == n else Vector2i(roundi(p0.x + (p1.x - p0.x) * f), roundi(p0.y + (p1.y - p0.y) * f))
+			if not _covered(prev, q):
+				for g: Vector2i in [prev, q]:
+					var why := point_problem(g)
+					if why != "":
+						out.why = why
+						out.pieces = []
+						return out
+				out.pieces.append([prev, q])
+				any_new = true
+			prev = q
+	if not any_new:
+		out.why = "There's already a beam there"
+	return out
 
 
-## Build a drag as pieces of piece_len (one undo step). Existing beams along the line are kept.
-func add_path(p: Vector2i, q: Vector2i, m: int) -> bool:
+func path_problem(a: Vector2i, b: Vector2i) -> String:
+	return plan_line(a, b).why
+
+
+## Build a line as pieces of up to piece_len metres (one undo step).
+func add_path(a: Vector2i, b: Vector2i, m: int) -> bool:
 	if phase != Phase.BUILD:
 		return false
-	var why := path_problem(p, q)
-	if why != "":
-		_toast(why)
+	var plan := plan_line(a, b)
+	if plan.why != "":
+		_toast(plan.why)
 		return false
 	_push_history()
-	var pts := split_path(p, q)
-	for i in pts.size() - 1:
-		if beam_problem(pts[i], pts[i + 1]) == "":
-			design.append(BridgeSim.beam(pts[i], pts[i + 1], m))
+	for pq in plan.pieces:
+		design.append(BridgeSim.beam(pq[0], pq[1], m))
 	_design_changed()
 	return true
 
 
-func set_piece_len(n: int) -> void:
-	piece_len = clampi(n, 1, int(BridgeSim.MAX_LEN))
-
-
+## Build a single beam (tests, dev tools).
 func add_beam(p: Vector2i, q: Vector2i, m: int) -> bool:
 	if phase != Phase.BUILD:
 		return false
@@ -356,6 +455,16 @@ func add_beam(p: Vector2i, q: Vector2i, m: int) -> bool:
 	return true
 
 
+## Grid dot (whole metres) as a build point.
+static func dot(x: int, y: int) -> Vector2i:
+	return Vector2i(x * U, y * U)
+
+
+func set_piece_len(n: int) -> void:
+	if PIECE_LENGTHS.has(n):
+		piece_len = n
+
+
 func remove_beam(i: int) -> void:
 	if i < 0 or i >= design.size() or phase != Phase.BUILD:
 		return
@@ -364,6 +473,23 @@ func remove_beam(i: int) -> void:
 	if not is_joint(selected):
 		selected = NONE
 	_design_changed()
+
+
+## Erase tool: remove the beam under screen point p. One undo step per stroke.
+func erase_at(p: Vector2) -> bool:
+	if phase != Phase.BUILD:
+		return false
+	var i := _beam_at(p)
+	if i < 0:
+		return false
+	if not erase_stroke:
+		_push_history()
+		erase_stroke = true
+	design.remove_at(i)
+	if not is_joint(selected):
+		selected = NONE
+	_design_changed()
+	return true
 
 
 func undo() -> void:
@@ -407,7 +533,7 @@ func set_tool(t: int) -> void:
 		selected = NONE
 
 
-# ------------------------------------------------------------------ attempts
+# ------------------------------------------------------------------ attempts + score
 
 func tries_left() -> int:
 	return MAX_TRIES - tries.size()
@@ -432,7 +558,7 @@ func go() -> void:
 func _start_sim(d: Array) -> void:
 	sim_design = d.duplicate(true)
 	sim = BridgeSim.new()
-	sim.setup(level(), sim_design)
+	sim.setup(lv, sim_design)
 	sim_acc = 0.0
 	splash_t = -1.0
 	phase = Phase.RUN
@@ -441,7 +567,7 @@ func _start_sim(d: Array) -> void:
 ## Run a design to the end without touching game state (tests, previews).
 func simulate(d: Array) -> Dictionary:
 	var s := BridgeSim.new()
-	s.setup(level(), d)
+	s.setup(lv, d)
 	return s.run_to_end()
 
 
@@ -469,10 +595,8 @@ func _finish_try() -> void:
 		phase = Phase.FINAL if finished else Phase.RESULT
 		return
 	var r := sim.summary()
-	var c := BridgeSim.design_cost(sim_design)
-	tries.append({"crossed": bool(r.crossed), "outcome": String(r.outcome), "cost": c,
-		"score": score_for(c) if r.crossed else 0, "snapped": int(r.snapped),
-		"design": _pack(sim_design)})
+	tries.append({"crossed": bool(r.crossed), "outcome": String(r.outcome),
+		"cost": BridgeSim.design_cost(sim_design), "snapped": int(r.snapped), "design": _pack(sim_design)})
 	last_loads = {}
 	for b in sim.ba.size():
 		var d: Dictionary = sim_design[b]
@@ -483,18 +607,25 @@ func _finish_try() -> void:
 	_save_state()
 
 
-var _is_replay := false
-
-
-## Watch the last (or best, once finished) run again. Doesn't use an attempt.
+## Watch a run again without using an attempt: the last attempt, or on the final screen
+## your best bridge or (when shown) the ideal one.
 func replay() -> void:
 	if phase != Phase.RESULT and phase != Phase.FINAL:
 		return
-	var t: Dictionary = best_try() if phase == Phase.FINAL else tries.back()
-	if t.is_empty():
+	var d: Array = []
+	if phase == Phase.FINAL:
+		if show_ideal:
+			d = ideal_design
+		elif not best_try().is_empty():
+			d = _unpack(best_try().design)
+		elif not tries.is_empty():
+			d = _unpack(tries.back().design)
+	elif not tries.is_empty():
+		d = _unpack(tries.back().design)
+	if d.is_empty():
 		return
 	_is_replay = true
-	_start_sim(_unpack(t.design))
+	_start_sim(d)
 
 
 ## Back to the drawing board after an attempt (the bridge is kept).
@@ -509,6 +640,7 @@ func finish() -> void:
 	finished = true
 	_save_state()
 	phase = Phase.FINAL
+	ensure_ideal()
 	_show_best()
 
 
@@ -521,22 +653,42 @@ func _show_best() -> void:
 		design = _unpack(t.design)
 
 
+## Final screen: flip between your best bridge and the ideal one.
+func toggle_ideal() -> void:
+	if phase != Phase.FINAL:
+		return
+	ensure_ideal()
+	show_ideal = not show_ideal and not ideal_design.is_empty()
+	sim = null
+
+
+func shown_design() -> Array:
+	return ideal_design if phase == Phase.FINAL and show_ideal else design
+
+
+## The crossing that used the least material.
 func best_try() -> Dictionary:
 	var best := {}
 	for t in tries:
-		if t.crossed and (best.is_empty() or int(t.score) > int(best.score)):
+		if t.crossed and (best.is_empty() or int(t.cost) < int(best.cost)):
 			best = t
 	return best
 
 
 ## 100 at the ideal bridge, toward 0 the more material you use, over 100 if you beat it.
 func score_for(material: int) -> int:
+	if ideal <= 0:
+		return -1
 	return roundi(100.0 * ideal / maxf(1.0, material))
+
+
+func try_score(t: Dictionary) -> int:
+	return score_for(int(t.cost)) if t.crossed else 0
 
 
 func best_score() -> int:
 	var b := best_try()
-	return int(b.score) if not b.is_empty() else 0
+	return try_score(b) if not b.is_empty() else 0
 
 
 func _pack(d: Array) -> Array:
@@ -559,10 +711,12 @@ func _unpack(a: Array) -> Array:
 # ------------------------------------------------------------------ saving (user:// is IndexedDB on the web)
 
 func _save_path() -> String:
-	return "user://bridge_%s.json" % date
+	return "user://%s%s.json" % [SAVE_PREFIX, date]
 
 
 func _save_state() -> void:
+	if dev_sandbox:
+		return
 	var f := FileAccess.open(_save_path(), FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"design": _pack(design), "tries": tries, "finished": finished}))
@@ -578,13 +732,11 @@ func _load_state() -> void:
 	for t in data.get("tries", []):
 		if t is Dictionary:
 			tries.append({"crossed": bool(t.get("crossed", false)), "outcome": String(t.get("outcome", "")),
-				"cost": int(t.get("cost", 0)),
-				"score": score_for(int(t.get("cost", 0))) if bool(t.get("crossed", false)) else 0,
-				"snapped": int(t.get("snapped", 0)), "design": t.get("design", [])})
+				"cost": int(t.get("cost", 0)), "snapped": int(t.get("snapped", 0)), "design": t.get("design", [])})
 	finished = bool(data.get("finished", false)) or tries.size() >= MAX_TRIES
 
 
-## Forget today's progress (used by tests).
+## Forget this day's progress (used by tests and dev).
 func wipe_save() -> void:
 	_wipe_file(_save_path())
 	_flush_storage()
@@ -610,10 +762,11 @@ func _flush_storage() -> void:
 # ------------------------------------------------------------------ sharing
 
 func share_link() -> String:
-	return "%s?d=%s&s=%d" % [base_url, date, best_score()]
+	return "%s?day=%s&s=%d" % [base_url, date, best_score()]
 
 
 func share_text() -> String:
+	ensure_ideal()
 	var lines := PackedStringArray()
 	lines.append("Daily Bridge #%d 🌉 %s" % [puzzle_no, date])
 	lines.append("%s across %d m" % [String(vehicle().name), gap])
@@ -622,7 +775,7 @@ func share_text() -> String:
 		marks.append("✅" if t.crossed else "💥")
 	var best := best_score()
 	if not best_try().is_empty():
-		lines.append("Score %d — %d material (ideal %d)" % [best, int(best_try().cost), ideal])
+		lines.append("Score %d" % best)
 	else:
 		lines.append("Score 0 — didn't make it across")
 	lines.append("Attempts: " + " ".join(marks))
@@ -674,7 +827,7 @@ func share() -> void:
 		share_pending = true
 	else:
 		DisplayServer.clipboard_set(last_share_text)
-		_toast("Result copied — paste it anywhere")
+		_toast("Copied! Paste it anywhere")
 
 
 func _poll_share() -> void:
@@ -683,7 +836,7 @@ func _poll_share() -> void:
 		return
 	share_pending = false
 	match r:
-		"copied": _toast("Result + link copied — paste it anywhere")
+		"copied": _toast("Copied! Result + link ready to paste")
 		"shared": _toast("Shared!")
 		"prompted", "cancelled": pass
 		"share_failed": _toast("Couldn't share — tap again to copy")
@@ -691,10 +844,11 @@ func _poll_share() -> void:
 
 
 func play_today() -> void:
-	if OS.has_feature("web"):
+	if OS.has_feature("web") and not dev_sandbox:
 		JavaScriptBridge.eval("location.href=%s" % JSON.stringify(base_url), true)
 	else:
 		target_score = -1
+		dev_sandbox = false
 		load_puzzle(today)
 
 
@@ -702,7 +856,7 @@ func _read_url() -> Dictionary:
 	if not OS.has_feature("web"):
 		return {}
 	var r = JavaScriptBridge.eval("""(function(){var p=new URLSearchParams(location.search);
-		return JSON.stringify({d:p.get('d')||'',s:p.get('s')||'',dev:p.get('dev')||'',base:location.origin+location.pathname});})()""", true)
+		return JSON.stringify({day:p.get('day')||'',d:p.get('d')||'',s:p.get('s')||'',dev:p.get('dev')||'',base:location.origin+location.pathname});})()""", true)
 	if typeof(r) != TYPE_STRING:
 		return {}
 	var d = JSON.parse_string(r)
@@ -736,14 +890,34 @@ func _dev_tap() -> void:
 	dev_last_tap = anim_t
 	if dev_taps >= 5:
 		dev_taps = 0
+		dev_mode = true
 		dev_open = true
 
 
+static func shift_date(d: String, days: int) -> String:
+	return Time.get_date_string_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00") + days * 86400)
+
+
+## Dev: jump to any day (past or future). Results from here on aren't saved.
+func dev_set_day(d: String) -> void:
+	dev_sandbox = true
+	load_puzzle(d)
+	dev_open = false
+	_toast("Dev: %s (results not saved)" % d)
+
+
+func dev_random_day() -> void:
+	dev_set_day(shift_date(EPOCH, randi_range(0, 730)))
+
+
 func dev_reset_today() -> void:
+	var sb := dev_sandbox
+	dev_sandbox = false
 	wipe_save()
+	dev_sandbox = sb
 	load_puzzle(date)
 	dev_open = false
-	_toast("Dev: today's progress reset")
+	_toast("Dev: this day's progress reset")
 
 
 func dev_reset_all() -> void:
@@ -751,27 +925,45 @@ func dev_reset_all() -> void:
 	var dir := DirAccess.open("user://")
 	if dir:
 		for f in dir.get_files():
-			if f.begins_with("bridge_") and f.ends_with(".json"):
+			if f.ends_with(".json") and (f.begins_with(SAVE_PREFIX) or f.begins_with("bridge_")):
 				_wipe_file("user://" + f)
 				n += 1
 	_wipe_file(TUT_FLAG)
 	_flush_storage()
 	load_puzzle(date)
 	dev_open = false
-	_toast("Dev: cleared %d saved day(s) + tutorial" % n)
+	_toast("Dev: cleared %d saved file(s) + tutorial" % n)
 
 
 func dev_load_reference() -> void:
 	dev_open = false
-	if phase != Phase.BUILD:
+	ensure_ideal()
+	if phase != Phase.BUILD or ideal_design.is_empty():
 		return
-	var best: Array = []
-	for c in BridgeSim.candidates(level()):
-		if simulate(c).crossed and (best.is_empty() or BridgeSim.design_cost(c) < BridgeSim.design_cost(best)):
-			best = c
 	_push_history()
-	set_design(best)
-	_toast("Dev: loaded the cheapest reference bridge")
+	set_design(ideal_design)
+	_toast("Dev: loaded the ideal bridge")
+
+
+## Dev: jump straight to the end screen with a crossing at the ideal (score 100). Not saved.
+func dev_win() -> void:
+	ensure_ideal()
+	dev_sandbox = true
+	dev_open = false
+	sim = null
+	tries = [{"crossed": true, "outcome": "crossed", "cost": ideal, "snapped": 0, "design": _pack(ideal_design)}]
+	finish()
+
+
+## Dev: jump to the end screen with three failed attempts. Not saved.
+func dev_lose() -> void:
+	dev_sandbox = true
+	dev_open = false
+	sim = null
+	tries = []
+	for i in MAX_TRIES:
+		tries.append({"crossed": false, "outcome": "splash", "cost": 0, "snapped": 0, "design": []})
+	finish()
 
 
 # ------------------------------------------------------------------ frame
@@ -793,6 +985,10 @@ func _process(delta: float) -> void:
 			n += 1
 		if n >= 16:
 			sim_acc = 0.0
+	else:
+		_advance_ideal(8000)
+	if Input.is_action_just_pressed("dev") and dev_mode:
+		dev_open = not dev_open
 	if not tut_open and not dev_open:
 		if Input.is_action_just_pressed("go"):
 			match phase:
@@ -801,6 +997,10 @@ func _process(delta: float) -> void:
 				Phase.RESULT:
 					if tries_left() > 0 and not (tries.back().crossed):
 						repair()
+		if Input.is_action_just_pressed("zoom_in"):
+			zoom_at(view_rect.get_center(), 1.4)
+		if Input.is_action_just_pressed("zoom_out"):
+			zoom_at(view_rect.get_center(), 1.0 / 1.4)
 		if phase == Phase.BUILD:
 			if Input.is_action_just_pressed("undo"):
 				undo()
@@ -816,7 +1016,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-# ------------------------------------------------------------------ input
+# ------------------------------------------------------------------ camera
 
 func w2s(v: Vector2) -> Vector2:
 	return origin + v * ppm
@@ -826,17 +1026,75 @@ func s2w(p: Vector2) -> Vector2:
 	return (p - origin) / ppm
 
 
-func _snap(p: Vector2) -> Vector2i:
+func gpos(g: Vector2i) -> Vector2:
+	return w2s(BridgeSim.wpos(g))
+
+
+func _world_min() -> Vector2:
+	return Vector2(-4.5, -6.2)
+
+
+func _world_max() -> Vector2:
+	return Vector2(gap + 4.5, BridgeSim.WATER_Y + 1.0)
+
+
+func _fit_center() -> Vector2:
+	return (_world_min() + _world_max()) * 0.5
+
+
+func zoom_at(p: Vector2, factor: float) -> void:
 	var w := s2w(p)
-	return Vector2i(roundi(w.x), roundi(w.y))
+	zoom = clampf(zoom * factor, 1.0, ZOOM_MAX)
+	ppm = fit_ppm * zoom
+	var c := view_rect.get_center()
+	cam_center = w - (p - c) / ppm          # keep world point w under the pointer
+	_clamp_camera()
+	_apply_camera()
+
+
+func zoom_reset() -> void:
+	zoom = 1.0
+	cam_center = _fit_center()
+	_apply_camera()
+
+
+func _pan_by(screen_delta: Vector2) -> void:
+	cam_center -= screen_delta / ppm
+	_clamp_camera()
+	_apply_camera()
+
+
+func _clamp_camera() -> void:
+	var hw := view_rect.size.x / (2.0 * ppm)
+	var hh := view_rect.size.y / (2.0 * ppm)
+	var a := _world_min()
+	var b := _world_max()
+	cam_center.x = (a.x + b.x) / 2.0 if hw * 2.0 >= b.x - a.x - 1e-6 else clampf(cam_center.x, a.x + hw, b.x - hw)
+	cam_center.y = (a.y + b.y) / 2.0 if hh * 2.0 >= b.y - a.y - 1e-6 else clampf(cam_center.y, a.y + hh, b.y - hh)
+
+
+func _apply_camera() -> void:
+	ppm = fit_ppm * zoom
+	origin = view_rect.get_center() - cam_center * ppm
+
+
+# ------------------------------------------------------------------ input
+
+## Where a line ends for a pointer at p: a nearby joint, else the nearest grid dot.
+func _snap(p: Vector2) -> Vector2i:
+	var j := _joint_at(p)
+	if j != NONE:
+		return j
+	var w := s2w(p)
+	return dot(roundi(w.x), roundi(w.y))
 
 
 ## Nearest joint to a screen point, within a finger's reach.
 func _joint_at(p: Vector2) -> Vector2i:
 	var best := NONE
-	var bd := maxf(26.0 * ui, ppm * 0.45)
+	var bd := maxf(24.0 * ui, ppm * 0.35)
 	for g in joints():
-		var d := w2s(Vector2(g)).distance_to(p)
+		var d := gpos(g).distance_to(p)
 		if d < bd:
 			bd = d
 			best = g
@@ -845,12 +1103,10 @@ func _joint_at(p: Vector2) -> Vector2i:
 
 func _beam_at(p: Vector2) -> int:
 	var best := -1
-	var bd := maxf(18.0 * ui, ppm * 0.3)
+	var bd := maxf(16.0 * ui, ppm * 0.25)
 	for i in design.size():
 		var b: Dictionary = design[i]
-		var a := w2s(Vector2(b.p))
-		var c := w2s(Vector2(b.q))
-		var d := p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, c))
+		var d := p.distance_to(Geometry2D.get_closest_point_to_segment(p, gpos(b.p), gpos(b.q)))
 		if d < bd:
 			bd = d
 			best = i
@@ -858,69 +1114,166 @@ func _beam_at(p: Vector2) -> int:
 
 
 func _input(ev: InputEvent) -> void:
+	if _camera_input(ev):
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
-			_on_press(p)
+			if not gesture:
+				_on_press(p)
 		else:
+			if gesture:
+				if touches.is_empty():
+					gesture = false
+				_end_pointer()
+				return
 			_on_release(p)
-	elif ev is InputEventMouseMotion:
-		drag_pos = make_input_local(ev).position
+	elif ev is InputEventMouseMotion and not gesture:
+		var p: Vector2 = make_input_local(ev).position
+		drag_pos = p
+		if not pressed or (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
+			return
+		if p.distance_to(press_pos) > 12.0:
+			dragging = true
+		if erase_stroke or (tool == Tool.ERASE and phase == Phase.BUILD and view_rect.has_point(press_pos)):
+			# swipe: erase everything the pointer crosses
+			var a := pan_last
+			var steps := maxi(1, ceili(a.distance_to(p) / 6.0))
+			for k in steps + 1:
+				erase_at(a.lerp(p, float(k) / steps))
+			pan_last = p
+			return
+		if press_empty and dragging and zoom > 1.01:
+			panning = true
+		if panning:
+			_pan_by(p - pan_last)
+		pan_last = p
+
+
+## Zoom/pan input: mouse wheel, trackpad pinch/scroll, two-finger touch. True when consumed.
+func _camera_input(ev: InputEvent) -> bool:
+	if dev_open or tut_open:
+		return false
+	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		var p: Vector2 = make_input_local(ev).position
+		if view_rect.has_point(p):
+			zoom_at(p, 1.15 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.15)
+			return true
+		return false
+	if ev is InputEventMagnifyGesture:
+		var p: Vector2 = make_input_local(ev).position
+		zoom_at(p if view_rect.has_point(p) else view_rect.get_center(), ev.factor)
+		return true
+	if ev is InputEventPanGesture:
+		_pan_by(-ev.delta * 8.0)
+		return true
+	if ev is InputEventScreenTouch:
+		var p: Vector2 = make_input_local(ev).position
+		if ev.pressed:
+			touches[ev.index] = p
+			if touches.size() >= 2 and not gesture:
+				gesture = true
+				if erase_stroke:
+					undo()
+				_end_pointer()
+		else:
+			touches.erase(ev.index)
+			if touches.is_empty() and gesture:
+				gesture = false
+				_end_pointer()
+		return false   # the emulated mouse events still arrive; they're ignored while gesture
+	if ev is InputEventScreenDrag:
+		var p: Vector2 = make_input_local(ev).position
+		if touches.size() >= 2 and touches.has(ev.index):
+			var ids: Array = touches.keys()
+			var other: Vector2 = touches[ids[1] if ids[0] == ev.index else ids[0]]
+			var before: Vector2 = touches[ev.index]
+			var d0 := before.distance_to(other)
+			var d1 := p.distance_to(other)
+			var mid0 := (before + other) * 0.5
+			var mid1 := (p + other) * 0.5
+			touches[ev.index] = p
+			if d0 > 4.0:
+				zoom_at(mid1, d1 / d0)
+			_pan_by(mid1 - mid0)
+			return true
+		if touches.has(ev.index):
+			touches[ev.index] = p
+	return false
+
+
+func _end_pointer() -> void:
+	pressed = false
+	drag_from = NONE
+	dragging = false
+	press_empty = false
+	panning = false
+	erase_stroke = false
 
 
 func _on_press(p: Vector2) -> void:
 	drag_pos = p
 	press_pos = p
+	pan_last = p
 	if dev_open or tut_open:
 		_press_button(p)
 		return
 	if help_rect.grow(10).has_point(p):
 		open_tutorial()
 		return
-	if Rect2(head_rect.position, Vector2(220, head_rect.size.y)).has_point(p):
+	if dev_mode and dev_rect.has_point(p):
+		dev_open = true
+		return
+	if Rect2(head_rect.position, Vector2(220 * ui, head_rect.size.y)).has_point(p):
 		_dev_tap()
 		return
 	if _press_button(p):
 		return
-	if phase != Phase.BUILD or not view_rect.has_point(p):
+	if not view_rect.has_point(p):
+		return
+	pressed = true
+	dragging = false
+	if phase != Phase.BUILD:
+		press_empty = true
 		return
 	if tool == Tool.ERASE:
-		var bi := _beam_at(p)
-		if bi >= 0:
-			remove_beam(bi)
-		else:
-			_toast("Tap a beam to remove it")
+		erase_stroke = false
+		erase_at(p)
 		return
 	var j := _joint_at(p)
 	if j != NONE:
 		drag_from = j
-		dragging = true
-	elif selected != NONE:
-		var q := _snap(p)
-		if add_path(selected, q, tool):
-			selected = q
 	else:
-		_toast("Start a beam from a joint — drag from a dot")
+		press_empty = true
 
 
 func _on_release(p: Vector2) -> void:
-	if not dragging:
+	var was_drag := dragging
+	var from := drag_from
+	var empty := press_empty and not panning
+	_end_pointer()
+	if phase != Phase.BUILD or tool == Tool.ERASE:
 		return
-	dragging = false
-	var q := _snap(p)
-	var j := _joint_at(p)
-	if j != NONE:
-		q = j
-	if q == drag_from or p.distance_to(press_pos) < 10.0:
-		# a tap on a joint: select it (tap again elsewhere to build from it), or build from the selection
-		if selected != NONE and selected != drag_from:
-			if add_path(selected, drag_from, tool):
-				selected = drag_from
+	if from != NONE:
+		var q := _snap(p)
+		if not was_drag or q == from:
+			# a tap on a joint: build from the selection to it, or select it
+			if selected != NONE and selected != from:
+				if add_path(selected, from, tool):
+					selected = from
+			else:
+				selected = NONE if selected == from else from
+			return
+		if add_path(from, q, tool):
+			selected = q
+		return
+	if empty and not was_drag:
+		if selected != NONE:
+			var q := _snap(p)
+			if add_path(selected, q, tool):
+				selected = q
 		else:
-			selected = NONE if selected == drag_from else drag_from
-		return
-	if add_path(drag_from, q, tool):
-		selected = q
+			_toast("Start a line from a joint — drag from a dot")
 
 
 # ------------------------------------------------------------------ buttons
@@ -951,17 +1304,30 @@ func _do(id: String) -> void:
 		"repair": repair()
 		"finish": finish()
 		"replay": replay()
+		"ideal": toggle_ideal()
 		"share": share()
 		"today": play_today()
+		"zoom_in": zoom_at(view_rect.get_center(), 1.5)
+		"zoom_out":
+			if zoom / 1.5 <= 1.01:
+				zoom_reset()
+			else:
+				zoom_at(view_rect.get_center(), 1.0 / 1.5)
 		"tut_close": close_tutorial()
-		"dev_today": dev_reset_today()
+		"dev_prev": dev_set_day(shift_date(date, -1))
+		"dev_next": dev_set_day(shift_date(date, 1))
+		"dev_rand": dev_random_day()
+		"dev_today": dev_set_day(today)
+		"dev_reset": dev_reset_today()
 		"dev_all": dev_reset_all()
 		"dev_ref": dev_load_reference()
+		"dev_win": dev_win()
+		"dev_lose": dev_lose()
 		"dev_close": dev_open = false
 
 
-func _btn(id: String, r: Rect2, label: String, primary := false, enabled := true, on := false) -> void:
-	buttons.append({"id": id, "rect": r, "label": label, "primary": primary, "enabled": enabled, "on": on})
+func _btn(id: String, r: Rect2, label: String, primary := false, enabled := true, on := false, kind := "") -> void:
+	buttons.append({"id": id, "rect": r, "label": label, "primary": primary, "enabled": enabled, "on": on, "kind": kind})
 
 
 # ------------------------------------------------------------------ layout
@@ -973,23 +1339,22 @@ func _layout() -> void:
 	var head_h := 64.0 * ui
 	head_rect = Rect2(m, m, vs.x - m * 2, head_h)
 	help_rect = Rect2(head_rect.end.x - 46 * ui, head_rect.position.y + (head_h - 40 * ui) * 0.5, 40 * ui, 40 * ui)
-	var narrow := vs.x < 560
 	var panel_h := 128.0 * ui
 	panel_rect = Rect2(m, vs.y - panel_h - m, vs.x - m * 2, panel_h)
-	var area := Rect2(0, head_rect.end.y + 4, vs.x, panel_rect.position.y - head_rect.end.y - 50 * ui)
-	# world bounds shown: a bit of each cliff, sky above, water below
-	var wmin := Vector2(-5.0, -5.6)
-	var wmax := Vector2(gap + 4.5, BridgeSim.WATER_Y + 1.2)
-	var wsize := wmax - wmin
-	ppm = minf(area.size.x / wsize.x, area.size.y / wsize.y)
-	var used := wsize * ppm
-	var top_left := area.position + (area.size - used) * Vector2(0.5, 0.45)
-	view_rect = Rect2(top_left, used)
-	origin = top_left - wmin * ppm
-	_build_buttons(narrow)
+	view_rect = Rect2(0, head_rect.end.y + 4, vs.x, panel_rect.position.y - head_rect.end.y - 50 * ui)
+	var wsize := _world_max() - _world_min()
+	fit_ppm = minf(view_rect.size.x / wsize.x, view_rect.size.y / wsize.y)
+	if zoom <= 1.0001:
+		cam_center = _fit_center()
+	ppm = fit_ppm * zoom
+	_clamp_camera()
+	_apply_camera()
+	var ds := 34.0 * ui
+	dev_rect = Rect2(view_rect.position.x + 8, view_rect.end.y - ds - 8, ds * 1.6, ds)
+	_build_buttons()
 
 
-func _build_buttons(_narrow: bool) -> void:
+func _build_buttons() -> void:
 	buttons.clear()
 	if tut_open:
 		var card := _tut_card()
@@ -997,12 +1362,22 @@ func _build_buttons(_narrow: bool) -> void:
 		return
 	if dev_open:
 		var card := _dev_card()
-		var y := card.position.y + 56 * ui
-		for e in [["dev_today", "Reset today"], ["dev_all", "Reset every day + tutorial"],
-				["dev_ref", "Load reference bridge"], ["dev_close", "Close"]]:
-			_btn(e[0], Rect2(card.position.x + 20, y, card.size.x - 40, 44 * ui), e[1], e[0] == "dev_close")
-			y += 54 * ui
+		var y := card.position.y + 92 * ui
+		var bw := (card.size.x - 50) / 2.0
+		var rows := [["dev_prev", "< Prev day", "dev_next", "Next day >"], ["dev_today", "Today", "dev_rand", "Random day"],
+			["dev_win", "Instant win", "dev_lose", "Instant lose"], ["dev_ref", "Load ideal bridge", "dev_reset", "Reset this day"],
+			["dev_all", "Reset everything", "dev_close", "Close"]]
+		for row in rows:
+			_btn(row[0], Rect2(card.position.x + 20, y, bw, 42 * ui), row[1])
+			_btn(row[2], Rect2(card.position.x + 30 + bw, y, bw, 42 * ui), row[3], row[2] == "dev_close")
+			y += 50 * ui
 		return
+	# zoom controls in the view's top-right corner
+	var zs := 40.0 * ui
+	var zx := view_rect.end.x - zs - 10
+	var zy := view_rect.position.y + 8
+	_btn("zoom_in", Rect2(zx, zy, zs, zs), "+", false, zoom < ZOOM_MAX - 0.01, false, "zoom")
+	_btn("zoom_out", Rect2(zx, zy + zs + 6, zs, zs), "−", false, zoom > 1.01, false, "zoom")
 	var r := panel_rect
 	var pad := 10.0
 	var row_h := (r.size.y - pad * 3) / 2.0
@@ -1019,7 +1394,6 @@ func _build_buttons(_narrow: bool) -> void:
 			_btn("undo", Rect2(x0 + (bw + pad) * 3, y1, bw, row_h), "Undo", false, not history.is_empty())
 			var cw := w * 0.17
 			_btn("clear", Rect2(x0, y2, cw, row_h), "Clear", false, not design.is_empty())
-			# piece length picker: drags are split into pieces this long
 			var sx := x0 + cw + pad
 			var sw := w * 0.46
 			var gap_px := 4.0
@@ -1047,12 +1421,13 @@ func _build_buttons(_narrow: bool) -> void:
 				_btn("replay", Rect2(x0, y2, hw * 0.7, row_h), "Replay")
 				_btn("finish", Rect2(x0 + hw * 0.7 + pad, y2, w - hw * 0.7 - pad, row_h), "See today's result", true)
 		Phase.FINAL:
-			var hw := (w - pad) / 2.0
-			if date != today:
-				_btn("today", Rect2(x0, y2, hw, row_h), "Play today's bridge")
+			var tw := (w - pad * 2) / 3.0
+			if date != today and not dev_sandbox:
+				_btn("today", Rect2(x0, y2, tw, row_h), "Today's bridge")
 			else:
-				_btn("replay", Rect2(x0, y2, hw, row_h), "Replay", false, not tries.is_empty())
-			_btn("share", Rect2(x0 + hw + pad, y2, hw, row_h), "Share result", true)
+				_btn("replay", Rect2(x0, y2, tw, row_h), "Replay", false, not tries.is_empty() or show_ideal)
+			_btn("ideal", Rect2(x0 + tw + pad, y2, tw, row_h), "Your bridge" if show_ideal else "Ideal bridge", false, true, show_ideal)
+			_btn("share", Rect2(x0 + (tw + pad) * 2, y2, tw, row_h), "Share", true)
 
 
 # ------------------------------------------------------------------ drawing
@@ -1071,6 +1446,12 @@ func _draw() -> void:
 	_draw_water_front()
 	_draw_header()
 	_draw_panel()
+	for b in buttons:
+		if b.kind == "zoom":
+			_draw_button(b)
+	if dev_mode and not dev_open and not tut_open:
+		_box(dev_rect, Color(0.12, 0.16, 0.2, 0.7), 8)
+		_text_c("DEV", dev_rect.get_center(), 13, Color.WHITE)
 	if toast_t > 0.0 and toast != "":
 		_draw_toast()
 	if tut_open:
@@ -1082,16 +1463,16 @@ func _draw() -> void:
 func _draw_backdrop(vs: Vector2) -> void:
 	var pts := PackedVector2Array([Vector2.ZERO, Vector2(vs.x, 0), vs, Vector2(0, vs.y)])
 	draw_polygon(pts, PackedColorArray([C_SKY_TOP, C_SKY_TOP, C_SKY_LOW, C_SKY_LOW]))
-	# far hills
+	# far hills (slight parallax with the camera)
 	var hills := PackedVector2Array()
 	var base_y := w2s(Vector2(0, 1.5)).y
+	var shift := (origin.x - view_rect.get_center().x) * 0.15
 	hills.append(Vector2(0, vs.y))
 	for i in 25:
 		var x := vs.x * i / 24.0
-		hills.append(Vector2(x, base_y - 40.0 - 26.0 * sin(i * 0.9 + 1.3) - 14.0 * sin(i * 2.1)))
+		hills.append(Vector2(x, base_y - 40.0 - 26.0 * sin(i * 0.9 + 1.3 + shift * 0.01) - 14.0 * sin(i * 2.1)))
 	hills.append(Vector2(vs.x, vs.y))
 	draw_colored_polygon(hills, C_HILL)
-	# clouds
 	for c in [[0.18, 0.12, 1.0], [0.62, 0.08, 0.8], [0.86, 0.2, 0.6]]:
 		var cx := fmod(vs.x * float(c[0]) + anim_t * 6.0 * float(c[2]), vs.x + 160.0) - 80.0
 		var cy := head_rect.end.y + 20.0 + vs.y * float(c[1]) * 0.4
@@ -1103,30 +1484,30 @@ func _draw_backdrop(vs: Vector2) -> void:
 func _draw_terrain() -> void:
 	var vs := get_viewport_rect().size
 	var g := float(gap)
-	var bottom := vs.y + 10.0
-	# water body (behind the cliffs' feet)
+	var d := float(dy)
+	var deep := BridgeSim.WATER_Y + 4.0
 	var wy := w2s(Vector2(0, BridgeSim.WATER_Y)).y
-	draw_rect(Rect2(0, wy, vs.x, bottom - wy), C_WATER)
-	# cliffs
-	var left := PackedVector2Array([Vector2(-10, w2s(Vector2(0, 0)).y), w2s(Vector2(0, 0)),
-		w2s(Vector2(0.15, 2.0)), w2s(Vector2(-0.1, 4.0)), w2s(Vector2(0.25, BridgeSim.WATER_Y + 2)), Vector2(-10, bottom)])
-	var right := PackedVector2Array([w2s(Vector2(g, 0)), Vector2(vs.x + 10, w2s(Vector2(0, 0)).y),
-		Vector2(vs.x + 10, bottom), w2s(Vector2(g - 0.25, BridgeSim.WATER_Y + 2)), w2s(Vector2(g + 0.1, 4.0)), w2s(Vector2(g - 0.15, 2.0))])
+	draw_rect(Rect2(-10, wy, vs.x + 20, vs.y - wy + 20), C_WATER)
+	var far_l := s2w(Vector2(-20, 0)).x - 1.0
+	var far_r := s2w(Vector2(vs.x + 20, 0)).x + 1.0
+	var left := PackedVector2Array([w2s(Vector2(far_l, 0)), w2s(Vector2(0, 0)), w2s(Vector2(0.15, 2.0)),
+		w2s(Vector2(-0.1, 4.0)), w2s(Vector2(0.25, deep)), w2s(Vector2(far_l, deep))])
+	var right := PackedVector2Array([w2s(Vector2(g, d)), w2s(Vector2(far_r, d)), w2s(Vector2(far_r, deep)),
+		w2s(Vector2(g - 0.25, deep)), w2s(Vector2(g + 0.1, d + 4.0)), w2s(Vector2(g - 0.15, d + 2.0))])
 	draw_colored_polygon(left, C_ROCK)
 	draw_colored_polygon(right, C_ROCK)
 	for strata in [1.2, 2.6, 4.2]:
-		var y := w2s(Vector2(0, strata)).y
-		draw_line(Vector2(-10, y), Vector2(w2s(Vector2(-0.1, 0)).x, y), C_ROCK_DARK, 2.0)
-		draw_line(Vector2(w2s(Vector2(g + 0.1, 0)).x, y), Vector2(vs.x + 10, y), C_ROCK_DARK, 2.0)
-	var gy := w2s(Vector2(0, 0)).y
-	draw_rect(Rect2(-10, gy - 2, w2s(Vector2(0, 0)).x + 10, ppm * 0.22), C_GRASS)
-	draw_rect(Rect2(w2s(Vector2(g, 0)).x, gy - 2, vs.x, ppm * 0.22), C_GRASS)
-	if pillar_h > 0:
-		var c := g * 0.5
-		var pil := PackedVector2Array([w2s(Vector2(c - 0.5, pillar_h)), w2s(Vector2(c + 0.5, pillar_h)),
-			w2s(Vector2(c + 0.75, BridgeSim.WATER_Y + 2)), w2s(Vector2(c - 0.75, BridgeSim.WATER_Y + 2))])
-		draw_colored_polygon(pil, C_ROCK)
-		draw_line(w2s(Vector2(c - 0.5, pillar_h)), w2s(Vector2(c + 0.5, pillar_h)), C_ROCK_DARK, 3.0)
+		draw_line(w2s(Vector2(far_l, strata)), w2s(Vector2(-0.12, strata)), C_ROCK_DARK, 2.0)
+		draw_line(w2s(Vector2(g + 0.12, d + strata)), w2s(Vector2(far_r, d + strata)), C_ROCK_DARK, 2.0)
+	var gh := ppm * 0.22
+	draw_rect(Rect2(w2s(Vector2(far_l, 0)) - Vector2(0, 2), Vector2(w2s(Vector2(0, 0)).x - w2s(Vector2(far_l, 0)).x, gh)), C_GRASS)
+	draw_rect(Rect2(w2s(Vector2(g, d)) - Vector2(0, 2), Vector2(w2s(Vector2(far_r, d)).x - w2s(Vector2(g, d)).x, gh)), C_GRASS)
+	for r: Rect2 in lv.get("rocks", []):
+		var bot := minf(r.end.y, deep)
+		var pts := PackedVector2Array([w2s(r.position), w2s(Vector2(r.end.x, r.position.y)),
+			w2s(Vector2(r.end.x + (0.25 if r.size.y > 3 else 0.0), bot)), w2s(Vector2(r.position.x - (0.25 if r.size.y > 3 else 0.0), bot))])
+		draw_colored_polygon(pts, C_ROCK)
+		draw_line(w2s(r.position), w2s(Vector2(r.end.x, r.position.y)), C_ROCK_DARK, 3.0)
 
 
 func _draw_water_front() -> void:
@@ -1142,41 +1523,43 @@ func _draw_water_front() -> void:
 		for i in 9:
 			var a := PI + PI * (i + 0.5) / 9.0
 			var t := splash_t * 2.2
-			var d := Vector2(cos(a) * 1.6, sin(a) * 3.2 - 0.0) * t * ppm * 0.6
-			d.y += 0.5 * 9.8 * t * t * ppm * 0.18
-			draw_circle(p + d, maxf(1.0, ppm * 0.12 * (1.0 - splash_t / 1.6)), Color(1, 1, 1, 0.85 - splash_t * 0.5))
+			var dd := Vector2(cos(a) * 1.6, sin(a) * 3.2) * t * ppm * 0.6
+			dd.y += 0.5 * 9.8 * t * t * ppm * 0.18
+			draw_circle(p + dd, maxf(1.0, ppm * 0.12 * (1.0 - splash_t / 1.6)), Color(1, 1, 1, 0.85 - splash_t * 0.5))
 
 
 func _draw_build_grid() -> void:
 	var r := maxf(1.5, ppm * 0.05)
-	for y in range(BUILD_MIN_Y, BUILD_MAX_Y + 1):
-		for x in range(BUILD_MIN_X, gap - BUILD_MIN_X + 1):
-			var g := Vector2i(x, y)
+	for y in range(-6, int(BridgeSim.WATER_Y)):
+		for x in range(-2, gap + 3):
+			var g := dot(x, y)
 			if point_problem(g) == "":
-				draw_circle(w2s(Vector2(g)), r, C_DOT)
-	# reach preview while dragging or with a joint selected
-	var from := drag_from if dragging else selected
-	if from != NONE and tool != Tool.ERASE:
-		if dragging:
-			var q := _snap(drag_pos)
-			var ok := q != from and path_problem(from, q) == ""
-			var col := (C_ROAD if tool == Tool.ROAD else C_WOOD) if ok else C_BAD
-			col.a = 0.75
-			draw_line(w2s(Vector2(from)), w2s(Vector2(q)), col, _beam_w(tool))
-			var pts := split_path(from, q)
-			for i in range(1, pts.size()):
-				var c := w2s(Vector2(pts[i]))
+				draw_circle(gpos(g), r, C_DOT)
+	if drag_from != NONE and dragging and tool != Tool.ERASE:
+		var q := _snap(drag_pos)
+		var plan := plan_line(drag_from, q) if q != drag_from else {"pieces": [], "why": "x"}
+		var ok: bool = plan.why == ""
+		var col := (C_ROAD if tool == Tool.ROAD else C_WOOD) if ok else C_BAD
+		col.a = 0.75
+		draw_line(gpos(drag_from), gpos(q), col, _beam_w(tool))
+		var n := 0
+		for pq in plan.pieces:
+			n += 1
+			for g: Vector2i in [pq[0], pq[1]]:
+				var c := gpos(g)
 				draw_circle(c, maxf(5.0, ppm * 0.15), C_INK)
-				draw_circle(c, maxf(3.5, ppm * 0.11), C_JOINT if ok else C_BAD)
-			if ok and pts.size() > 2:
-				var lbl := "%d pieces" % (pts.size() - 1)
-				var fs := int(14 * ui)
-				var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-				var at := w2s(Vector2(q)) + Vector2(ppm * 0.4, ppm * 0.5)
-				at.x = minf(at.x, get_viewport_rect().size.x - tw - 16)
-				var box := Rect2(at - Vector2(6, fs), Vector2(tw + 12, fs + 10))
-				_box(box, Color(1, 1, 1, 0.85), 8)
-				_text(lbl, at + Vector2(0, -2), 14, C_INK)
+				draw_circle(c, maxf(3.5, ppm * 0.11), C_JOINT)
+		if not ok:
+			draw_circle(gpos(q), maxf(5.0, ppm * 0.15), C_BAD)
+		if ok and plan.pieces.size() > 0:
+			var L := BridgeSim.wpos(plan.pieces[0][0]).distance_to(BridgeSim.wpos(plan.pieces[0][1]))
+			var lbl := "%d × %.1f m" % [n, L] if n > 1 else "%.1f m" % L
+			var fs := int(14 * ui)
+			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var at := gpos(q) + Vector2(16 * ui, 28 * ui)
+			at.x = minf(at.x, get_viewport_rect().size.x - tw - 16)
+			_box(Rect2(at - Vector2(6, fs), Vector2(tw + 12, fs + 10)), Color(1, 1, 1, 0.85), 8)
+			_text(lbl, at + Vector2(0, -2), 14, C_INK)
 
 
 func _beam_w(m: int) -> float:
@@ -1205,32 +1588,36 @@ func _draw_joint(p: Vector2, anchor: bool, hi := false) -> void:
 	var r := maxf(4.0, ppm * (0.16 if anchor else 0.12))
 	if hi:
 		draw_circle(p, r + 5.0 + sin(anim_t * 6.0) * 1.5, Color(1, 1, 1, 0.6))
-	if anchor:
-		draw_circle(p, r + 1.5, C_INK)
-		draw_circle(p, r, C_ANCHOR)
-	else:
-		draw_circle(p, r + 1.5, C_INK)
-		draw_circle(p, r, C_JOINT)
+	draw_circle(p, r + 1.5, C_INK)
+	draw_circle(p, r, C_ANCHOR if anchor else C_JOINT)
 
 
 func _draw_design() -> void:
+	var d := shown_design()
 	var show_last := phase == Phase.BUILD and not last_loads.is_empty()
-	for b in design:
+	for b in d:
 		var st := 0.0
 		var snapped_beam := false
 		if show_last:
 			var k := _key(b.p, b.q)
 			if last_loads.has(k):
-				st = float(last_loads[k].load) * 0.8
+				st = clampf((float(last_loads[k].load) - 0.4) / 0.6, 0.0, 1.0) * 0.9
 				snapped_beam = bool(last_loads[k].broken)
-		_draw_beam(w2s(Vector2(b.p)), w2s(Vector2(b.q)), int(b.m), st)
+		_draw_beam(gpos(b.p), gpos(b.q), int(b.m), st)
 		if snapped_beam:
-			var mid := (w2s(Vector2(b.p)) + w2s(Vector2(b.q))) * 0.5
+			var mid := (gpos(b.p) + gpos(b.q)) * 0.5
 			var s := maxf(5.0, ppm * 0.14)
 			draw_line(mid - Vector2(s, s), mid + Vector2(s, s), C_BAD, 3.0)
 			draw_line(mid - Vector2(s, -s), mid + Vector2(s, -s), C_BAD, 3.0)
-	for g in joints():
-		_draw_joint(w2s(Vector2(g)), anchors.has(g), g == selected and phase == Phase.BUILD)
+	var seen := {}
+	for a in anchors:
+		seen[a] = true
+		_draw_joint(gpos(a), true, a == selected and phase == Phase.BUILD)
+	for b in d:
+		for g: Vector2i in [b.p, b.q]:
+			if not seen.has(g):
+				seen[g] = true
+				_draw_joint(gpos(g), false, g == selected and phase == Phase.BUILD)
 
 
 func _draw_sim() -> void:
@@ -1239,7 +1626,6 @@ func _draw_sim() -> void:
 		var c := w2s(sim.node_pos(sim.bb[b]))
 		var m := sim.mat[b]
 		if sim.broken[b] == 1:
-			# snapped: two stubs left hanging from each end
 			_draw_beam(a, a.lerp(c, 0.3), m, 1.0, 0.9)
 			_draw_beam(c, c.lerp(a, 0.3), m, 1.0, 0.9)
 		else:
@@ -1336,6 +1722,16 @@ func _para_c(s: String, r: Rect2, size: int, col: Color, max_lines := 2) -> void
 	draw_multiline_string(font, Vector2(r.position.x, y), s, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, fs, max_lines, col)
 
 
+func _level_line() -> String:
+	var v := vehicle()
+	var s := "%s · %d kg · %d m gap" % [String(v.name), int(v.mass), gap]
+	if dy < 0:
+		s += " · %d m uphill" % -dy
+	elif dy > 0:
+		s += " · %d m downhill" % dy
+	return s
+
+
 func _draw_header() -> void:
 	var r := head_rect
 	_box(r, C_PANEL, 14)
@@ -1343,17 +1739,13 @@ func _draw_header() -> void:
 	_text("Daily Bridge", r.position + Vector2(pad, r.size.y * 0.47), 24, C_INK)
 	_text("#%d · %s" % [puzzle_no, date], r.position + Vector2(pad, r.size.y * 0.84), 14, C_MUTED)
 	var right := help_rect.position.x - 12 * ui
-	var tl := "Attempts left: %d" % tries_left()
-	_text(tl, Vector2(r.position.x, r.position.y + r.size.y * 0.47), 16, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
+	_text("Attempts left: %d" % tries_left(), Vector2(r.position.x, r.position.y + r.size.y * 0.47), 16, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
 	if target_score > 0:
 		_text("Score to beat: %d" % target_score, Vector2(r.position.x, r.position.y + r.size.y * 0.84), 14, C_BTN_ON, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
 	_box(help_rect, C_BTN, 20 * ui)
 	_text_c("?", help_rect.get_center(), 22, C_INK)
-	# today's job, as a label in the sky over the vehicle
-	var v := vehicle()
-	var info := "%s · %d kg · %d m gap" % [String(v.name), int(v.mass), gap]
-	if pillar_h > 0:
-		info += " · rock pillar"
+	# today's job, as a label in the sky
+	var info := _level_line()
 	var fs := int(15 * ui)
 	var w := font.get_string_size(info, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 20 * ui
 	var chip := Rect2(view_rect.position.x + 8, view_rect.position.y + 6, w, fs + 14 * ui)
@@ -1366,48 +1758,56 @@ func _draw_panel() -> void:
 	_box(r, C_PANEL, 14)
 	var pad := 10.0
 	var row_h := (r.size.y - pad * 3) / 2.0
-	var y1 := r.position.y + pad
+	var line := Rect2(r.position.x + pad, r.position.y + pad, r.size.x - pad * 2, row_h)
 	match phase:
-		Phase.BUILD, Phase.RUN:
-			if phase == Phase.RUN:
-				_draw_budget(Rect2(r.position.x + pad, y1, r.size.x - pad * 2, row_h), BridgeSim.design_cost(sim_design))
+		Phase.RUN:
+			_draw_budget(line, BridgeSim.design_cost(sim_design))
 		Phase.RESULT:
-			_draw_result_line(Rect2(r.position.x + pad, y1, r.size.x - pad * 2, row_h), tries.back())
+			_draw_result_line(line, tries.back())
 		Phase.FINAL:
-			_draw_final_line(Rect2(r.position.x + pad, y1, r.size.x - pad * 2, row_h))
-	if phase == Phase.BUILD:
-		# material bar lives just above the panel so the tools stay in thumb reach
-		var br := Rect2(r.position.x, r.position.y - 42 * ui, r.size.x, 36 * ui)
-		_box(br, C_PANEL, 10)
-		_draw_budget(br.grow(-6), cost())
+			_draw_final_line(line)
+		Phase.BUILD:
+			var br := Rect2(r.position.x, r.position.y - 42 * ui, r.size.x, 36 * ui)
+			_box(br, C_PANEL, 10)
+			_draw_budget(br.grow(-6), cost())
 	for b in buttons:
-		_draw_button(b)
+		if b.kind != "zoom":
+			_draw_button(b)
 
 
 func _draw_budget(r: Rect2, used: int) -> void:
 	# label · bar (ideal marked) · projected score
-	var lbl := "Material %d · ideal %d" % [used, ideal]
+	var lbl := "Material %d · ideal %s" % [used, str(ideal) if ideal > 0 else "…"]
 	var lw := font.get_string_size("Material 888 · ideal 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
-	var sc := "Score %d" % score_for(used) if used > 0 else "Score —"
+	var sc := "Score %d" % score_for(used) if used > 0 and ideal > 0 else "Score —"
 	var sw := font.get_string_size("Score 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
 	var cy := r.get_center().y + 6 * ui
 	_text(lbl, Vector2(r.position.x + 6, cy), 16, C_INK)
-	var col := C_GOOD if used <= ideal else (Color("e0a33a") if used <= ideal * 1.5 else C_BAD)
+	var col := C_MUTED
+	if ideal > 0:
+		col = C_GOOD if used <= ideal else (Color("e0a33a") if used <= ideal * 1.5 else C_BAD)
 	_text(sc, Vector2(r.end.x - sw - 6, cy), 16, col if used > 0 else C_MUTED)
 	var bar := Rect2(r.position.x + lw + 16, r.position.y + r.size.y * 0.3, r.size.x - lw - sw - 32, r.size.y * 0.4)
 	_box(bar, Color("d5dde4"), 6)
-	var span := ideal * 2.0                 # the bar shows 0 .. 2x ideal; ideal sits in the middle
+	if ideal <= 0:
+		# still working out the ideal: a gentle sweeping shimmer
+		var t := fmod(anim_t * 0.6, 1.0)
+		_box(Rect2(bar.position.x + bar.size.x * t * 0.8, bar.position.y, bar.size.x * 0.2, bar.size.y), Color(1, 1, 1, 0.8), 6)
+		return
+	var span := ideal * 2.0                  # the bar shows 0 .. 2x ideal; ideal sits in the middle
 	var f := clampf(used / span, 0.0, 1.0)
 	if f > 0.0:
 		_box(Rect2(bar.position, Vector2(maxf(bar.size.y, bar.size.x * f), bar.size.y)), col, 6)
 	var tx := bar.position.x + bar.size.x * 0.5
 	draw_line(Vector2(tx, bar.position.y - 4), Vector2(tx, bar.end.y + 4), C_INK, 2.0)
 
+
 func _draw_result_line(r: Rect2, t: Dictionary) -> void:
 	var msg := ""
 	var col := C_INK
 	if t.crossed:
-		msg = "Made it across! Score %d (%d material, ideal %d)." % [int(t.score), int(t.cost), ideal]
+		var sc := try_score(t)
+		msg = "Made it across! Score %s (%d material)." % [str(sc) if sc >= 0 else "…", int(t.cost)]
 		col = C_GOOD
 	else:
 		match String(t.outcome):
@@ -1420,16 +1820,21 @@ func _draw_result_line(r: Rect2, t: Dictionary) -> void:
 
 
 func _draw_final_line(r: Rect2) -> void:
-	var best := best_score()
 	var msg := ""
-	var bt := best_try()
-	if not bt.is_empty():
-		msg = "Best score %d (%d material, ideal %d)." % [best, int(bt.cost), ideal]
+	var col := C_INK
+	if show_ideal:
+		msg = "Ideal bridge: %d material, scores 100. Replay to watch it." % ideal
+		col = C_IDEAL
 	else:
-		msg = "No crossing today — score 0."
-	if date == today:
-		msg += "  Next bridge in " + _countdown()
-	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, C_GOOD if not bt.is_empty() else C_INK)
+		var bt := best_try()
+		if not bt.is_empty():
+			msg = "Best score %d (%d material, ideal %d)." % [best_score(), int(bt.cost), ideal]
+			col = C_GOOD
+		else:
+			msg = "No crossing today — score 0."
+		if date == today:
+			msg += "  Next bridge in " + _countdown()
+	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, col)
 
 
 func _countdown() -> String:
@@ -1446,11 +1851,13 @@ func _draw_button(b: Dictionary) -> void:
 		col = C_BTN_PRIMARY
 		ink = Color.WHITE
 	if b.on:
-		col = C_BTN_ON
+		col = C_IDEAL if b.id == "ideal" else C_BTN_ON
 		ink = Color.WHITE
 	if not b.enabled:
 		col = col.lerp(Color("cfd6dc"), 0.7)
 		ink = Color(ink, 0.5)
+	if b.kind == "zoom":
+		col = Color(col, 0.85)
 	_box(r, col, 10)
 	var id := String(b.id)
 	if id == "road" or id == "wood":
@@ -1466,7 +1873,7 @@ func _draw_button(b: Dictionary) -> void:
 			_text(String(b.label), Vector2(tx, cy - 1 * ui), 17, ink)
 			_text(price, Vector2(tx, cy + 15 * ui), 12, Color(ink, 0.75))
 		return
-	_text_c(String(b.label), r.get_center(), 18, ink)
+	_text_c(String(b.label), r.get_center(), 24 if b.kind == "zoom" else 18, ink)
 
 
 func _draw_toast() -> void:
@@ -1481,10 +1888,11 @@ func _draw_toast() -> void:
 
 
 # ------------------------------------------------------------------ overlays
+
 func _tut_card() -> Rect2:
 	var vs := get_viewport_rect().size
 	var w := minf(vs.x - 24, 560 * ui)
-	var h := minf(vs.y - 40, 540 * ui)
+	var h := minf(vs.y - 40, 560 * ui)
 	return Rect2((vs.x - w) * 0.5, (vs.y - h) * 0.5, w, h)
 
 
@@ -1493,37 +1901,36 @@ func _draw_tutorial() -> void:
 	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.05, 0.08, 0.12, 0.55))
 	var c := _tut_card()
 	_box(c, Color("fbfaf7"), 18)
-	_text_c("How to build", Vector2(c.get_center().x, c.position.y + 36 * ui), 26, C_INK)
-	# a little truss diagram
-	var dy := c.position.y + 112 * ui
+	_text_c("Get the vehicle across", Vector2(c.get_center().x, c.position.y + 36 * ui), 26, C_INK)
+	var ty := c.position.y + 112 * ui
 	var s := minf(34.0 * ui, (c.size.x - 80) / 6.0)
 	var x0 := c.get_center().x - s * 3
 	var deck: Array = []
 	for i in 4:
-		deck.append(Vector2(x0 + i * s * 2, dy))
+		deck.append(Vector2(x0 + i * s * 2, ty))
 	for i in 3:
-		var top := Vector2(x0 + s + i * s * 2, dy - s * 1.4)
+		var top := Vector2(x0 + s + i * s * 2, ty - s * 1.4)
 		_draw_beam_s(deck[i], top, BridgeSim.Mat.WOOD, s)
 		_draw_beam_s(top, deck[i + 1], BridgeSim.Mat.WOOD, s)
 		if i < 2:
-			_draw_beam_s(top, Vector2(x0 + s * 3 + i * s * 2, dy - s * 1.4), BridgeSim.Mat.WOOD, s)
+			_draw_beam_s(top, Vector2(x0 + s * 3 + i * s * 2, ty - s * 1.4), BridgeSim.Mat.WOOD, s)
 		_draw_beam_s(deck[i], deck[i + 1], BridgeSim.Mat.ROAD, s)
 	for i in 4:
 		draw_circle(deck[i], s * 0.16, C_ANCHOR if i == 0 or i == 3 else C_JOINT)
 	var lines := [
-		"Pick a piece length, then drag from a joint as far as you like: the line is split into pieces of that length, with joints between them. Red joints are anchored to the rock.",
-		"Road is what the vehicle drives on. Wood is lighter and cheaper — brace the road with triangles. Long pieces buckle more easily when squeezed.",
-		"Press Go to send the vehicle. Strained beams glow red, then snap.",
-		"3 attempts a day. Matching today's ideal bridge scores 100 — less material scores higher, more scores lower.",
+		"Drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than the length you pick (1–4 m). Red joints are anchored to the rock.",
+		"Road is what the vehicle drives on. Wood is lighter and cheaper: brace the road with triangles. Long pieces buckle when squeezed.",
+		"Pinch, scroll or use + / − to zoom; drag empty space to pan. Erase removes what you tap or swipe.",
+		"3 attempts a day. Matching today's ideal bridge scores 100; less material scores higher.",
 	]
-	var y := dy + 34 * ui
-	var fs := int(17 * ui)
+	var y := ty + 34 * ui
+	var fs := int(16 * ui)
 	var tw := c.size.x - 44 * ui - 24
 	for l in lines:
 		draw_circle(Vector2(c.position.x + 26 * ui, y + 2), 4 * ui, C_BTN_ON)
 		draw_multiline_string(font, Vector2(c.position.x + 40 * ui, y + 8 * ui), l, HORIZONTAL_ALIGNMENT_LEFT, tw, fs, 4, C_INK)
 		var lines_n := ceili(font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / tw * 1.06)
-		y += lines_n * fs * 1.2 + 14 * ui
+		y += lines_n * fs * 1.2 + 12 * ui
 	for b in buttons:
 		_draw_button(b)
 
@@ -1537,8 +1944,9 @@ func _draw_beam_s(a: Vector2, b: Vector2, m: int, s: float) -> void:
 
 func _dev_card() -> Rect2:
 	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 40, 380 * ui)
-	return Rect2((vs.x - w) * 0.5, vs.y * 0.5 - 150 * ui, w, 290 * ui)
+	var w := minf(vs.x - 24, 460 * ui)
+	var h := 92 * ui + 5 * 50 * ui + 10 * ui
+	return Rect2((vs.x - w) * 0.5, (vs.y - h) * 0.5, w, h)
 
 
 func _draw_dev() -> void:
@@ -1546,7 +1954,10 @@ func _draw_dev() -> void:
 	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.5))
 	var c := _dev_card()
 	_box(c, Color("fbfaf7"), 16)
-	_text_c("Dev menu", Vector2(c.get_center().x, c.position.y + 30 * ui), 22, C_INK)
+	_text_c("Dev · %s (#%d)" % [date, puzzle_no], Vector2(c.get_center().x, c.position.y + 28 * ui), 20, C_INK)
+	var info := "seed %d · %s · ideal %s%s" % [hash("daily-bridge:v2:" + date), _level_line(),
+		str(ideal) if ideal > 0 else "…", " · not saving" if dev_sandbox else ""]
+	_para_c(info, Rect2(c.position.x + 16, c.position.y + 44 * ui, c.size.x - 32, 40 * ui), 12, C_MUTED)
 	for b in buttons:
 		_draw_button(b)
 
@@ -1555,11 +1966,13 @@ func _draw_dev() -> void:
 
 func get_agent_state() -> Dictionary:
 	var st := {
-		"phase": ["build", "run", "result", "final"][phase], "date": date, "puzzle": puzzle_no,
-		"gap": gap, "vehicle": String(vehicle().name), "pillar_h": pillar_h, "ideal": ideal,
-		"cost": cost(), "beams": design.size(), "tries": tries.size(), "tries_left": tries_left(),
+		"phase": ["build", "run", "result", "final"][phase], "state": ["playing", "playing", "playing", "won" if best_score() > 0 else "lost"][phase],
+		"day": date, "puzzle": puzzle_no, "seed": hash("daily-bridge:v2:" + date),
+		"gap": gap, "dy": dy, "vehicle": String(vehicle().name), "anchors": anchors.size(), "rocks": lv.get("rocks", []).size(),
+		"ideal": ideal, "cost": cost(), "beams": design.size(), "tries": tries.size(), "tries_left": tries_left(),
 		"best_score": best_score(), "finished": finished, "tool": ["road", "wood", "erase"][tool],
-		"tutorial": tut_open,
+		"piece_len": piece_len, "zoom": snappedf(zoom, 0.01), "show_ideal": show_ideal,
+		"tutorial": tut_open, "dev_mode": dev_mode, "share_text": share_text() if phase == Phase.FINAL else "",
 	}
 	if sim != null:
 		st["sim"] = sim.summary()
