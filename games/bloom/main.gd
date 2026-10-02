@@ -1534,7 +1534,7 @@ func stamp(idx: int, center: Vector2i) -> bool:
 
 
 func _chip_defs() -> Array:
-	var out: Array = [{"id": "tool", "idx": -1, "label": "Square"}]
+	var out: Array = [{"id": "tool", "idx": -1, "label": "Draw"}]
 	if practice:
 		for i in SHAPES.size():
 			out.append({"id": "tool", "idx": i, "label": SHAPES[i].name})
@@ -1671,6 +1671,6 @@ func get_agent_state() -> Dictionary:
 	return {
 		"phase": Phase.keys()[phase], "date": date, "puzzle": puzzle_no, "budget": budget,
 		"seeds": seeds.size(), "zone": [zone.position.x, zone.position.y, zone.size.x, zone.size.y],
-		"gen": gen, "score": sc, "zoomed": zoomed, "tutorial": tut_open, "tut_page": tut_page, "practice": practice, "no_limits": no_limits, "tool": SHAPES[tool].name if tool >= 0 else "Square", "tool_rot": tool_rot, "walls": tiles.count(Cell.WALL), "tries": tries.map(func(t): return t.score), "best": best_score(),
+		"gen": gen, "score": sc, "zoomed": zoomed, "tutorial": tut_open, "tut_page": tut_page, "practice": practice, "no_limits": no_limits, "tool": SHAPES[tool].name if tool >= 0 else "Draw", "tool_rot": tool_rot, "walls": tiles.count(Cell.WALL), "tries": tries.map(func(t): return t.score), "best": best_score(),
 		"stars": star_total, "target": target_score, "share": share_text() if not tries.is_empty() else "",
 	}
