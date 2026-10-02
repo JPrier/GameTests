@@ -10,6 +10,7 @@ Small Godot games that run in the browser (desktop and mobile).
 | Bloom: a daily Game of Life puzzle | [`games/bloom`](games/bloom) |
 | Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/earthquake-test`](games/earthquake-test) |
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/daily-bridge`](games/daily-bridge) |
+| Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/ticker-time`](games/ticker-time) |
 
 ## How deploys work
 
