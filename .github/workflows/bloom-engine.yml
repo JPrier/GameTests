@@ -1,0 +1,36 @@
+name: Build Bloom web engine
+
+# Builds Bloom's slim Godot web export template (games/bloom/engine/build-template.sh)
+# and uploads it as an artifact. Commit the zip to games/bloom/engine/ to use it.
+# Only runs when the template recipe changes, so normal deploys are unaffected.
+
+on:
+  push:
+    paths:
+      - games/bloom/engine/build-template.sh
+      - .github/workflows/bloom-engine.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.11
+
+      - name: Install SCons
+        run: python3 -m pip install scons
+
+      - name: Build template
+        run: bash games/bloom/engine/build-template.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bloom-web-template
+          path: games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
