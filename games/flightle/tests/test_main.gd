@@ -181,3 +181,22 @@ func test_progress_persists():
 	assert_eq(main.guesses.size(), 1, "guess restored")
 	assert_true(main.solved(0), "locked end restored")
 	main.wipe_save()
+
+
+func test_five_title_taps_enable_dev_mode():
+	var main = await _fresh()
+	main.dev_mode = false
+	main.dev_open = false
+	await wait_frames(2)
+	var p: Vector2 = main.title_rect.get_center()
+	for i in 4:
+		main._on_press(p)
+	assert_false(main.dev_mode, "four taps do nothing")
+	main._on_press(p)
+	assert_true(main.dev_mode, "fifth tap turns dev mode on")
+	assert_true(main.dev_open, "panel opens")
+	assert_true(main._save_path().contains("dev_"), "dev progress kept apart")
+	main.dev_open = false
+	for i in 5:
+		main._on_press(p)
+	assert_true(main.dev_open, "five more taps reopen the panel")

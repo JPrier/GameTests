@@ -84,6 +84,7 @@ var clue_flash_t := 0.0
 var key_flash: Dictionary = {}
 var title_rect := Rect2()
 var press_t := -1.0
+var title_taps: Array = []
 var press_pos := Vector2.ZERO
 var col := Rect2()
 var map_rect := Rect2()
@@ -801,6 +802,31 @@ func dev_lose() -> void:
 		i += 2
 
 
+## 5 quick taps on the title turn dev mode on (same as the other GameTests games);
+## once on, 5 taps toggle the panel. Dev progress is kept apart from real progress.
+func _dev_tap() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	title_taps.append(now)
+	while title_taps.size() > 0 and now - float(title_taps[0]) > 3.0:
+		title_taps.pop_front()
+	if title_taps.size() >= 5:
+		title_taps.clear()
+		press_t = -1.0
+		if not dev_mode:
+			enable_dev()
+		else:
+			dev_open = not dev_open
+
+
+func enable_dev() -> void:
+	if dev_mode:
+		return
+	dev_mode = true
+	load_day(date)
+	dev_open = true
+	_toast("Dev mode on")
+
+
 func _dev_apply_date() -> void:
 	if dev_date_edit:
 		dev_set_day(dev_date_edit.text.strip_edges())
@@ -910,6 +936,9 @@ func _input(ev: InputEvent) -> void:
 func _on_press(p: Vector2) -> void:
 	press_pos = p
 	press_t = Time.get_ticks_msec() / 1000.0
+	if title_rect.has_point(p) and not dev_open:
+		_dev_tap()
+		return
 	for b in buttons:
 		if b.rect.has_point(p):
 			if b.enabled:
@@ -964,7 +993,7 @@ func _layout() -> void:
 	var vs := get_viewport_rect().size
 	var w := minf(vs.x - 24.0, 520.0)
 	col = Rect2((vs.x - w) * 0.5, 0, w, vs.y)
-	title_rect = Rect2(col.position.x, 0, 200, 52)
+	title_rect = Rect2(col.position.x, 0, 280, 52)
 	buttons.clear()
 	if dev_open:
 		_layout_dev(vs)
@@ -1084,7 +1113,7 @@ func _draw() -> void:
 	else:
 		_draw_end()
 	if dev_mode and not dev_open:
-		_text(Vector2(map_rect.position.x + 12, map_rect.end.y - 10), "DEV · press ` or hold the title", 10, Color(C_ACCENT, 0.8))
+		_text(Vector2(map_rect.position.x + 12, map_rect.end.y - 10), "DEV · tap the title 5x, hold it, or press `", 10, Color(C_ACCENT, 0.8))
 	if help_open:
 		_draw_help(vs)
 	if dev_open:
@@ -1094,7 +1123,8 @@ func _draw() -> void:
 	if toast_t > 0.0 and toast != "":
 		var a := clampf(toast_t / 0.3, 0.0, 1.0)
 		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 32
-		var tr := Rect2((vs.x - tw) * 0.5, map_rect.position.y + 10, tw, 34)
+		var ty := _dev_card(vs).end.y + 12 if dev_open else map_rect.position.y + 10
+		var tr := Rect2((vs.x - tw) * 0.5, ty, tw, 34)
 		draw_rect(tr, Color(C_ACCENT, 0.95 * a))
 		_text(Vector2(tr.position.x, tr.position.y + 22), toast, 14, Color(C_BG, a), HORIZONTAL_ALIGNMENT_CENTER, tr.size.x)
 

@@ -31,7 +31,8 @@ Note that changing the route list reshuffles future days.
 
 ## Dev mode
 
-`?dev=1` on the web, or any debug build. Press `` ` `` or long-press the title to open the panel:
+Tap the title 5 times quickly (works on the live site and on phones), or open with `?dev=1`; debug
+builds start in dev mode. Once on, press `` ` ``, long-press the title or tap it 5 times to open the panel:
 jump to any date, previous/next/random day, reset the day, reveal the answer, instant win or lose.
 Dev progress is saved apart from real progress, and share links never include `dev=1`.
 Agents can call `dev_set_day()`, `dev_win()`, `dev_lose()`, `dev_reset()`, `guess(from, to)` via
