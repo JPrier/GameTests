@@ -8,6 +8,8 @@ Build a bridge, then watch one vehicle try to cross. Everyone gets the same cany
 
 - **Drawing:** pick a piece length (1–4 m), then drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than that (a 7.6 m line in 2 m pieces = 4 × 1.9 m), so joints between pieces can sit between grid dots. Lines that pass over existing joints connect through them, and drawing over existing beams doesn't duplicate them. Or tap a joint, then tap where to go. One Undo per line. Red joints are anchored to the rock.
 - **Erase** removes what you tap or swipe across (one Undo per swipe).
+- **Auto-lock** (the LOCK button under the zoom buttons, on by default, remembered): while drawing, the line's end snaps onto an existing joint or anchor within ~0.9 m (or 44 px), even over a slightly closer grid dot, and pressing near a joint picks it up. Off: the line goes to whatever dot or joint is nearest.
+- **Magnifier:** while you hold a joint to draw, a 2.6× loupe floats above your finger (beside it near the top of the screen) showing the line, the target (green ring = locked onto a joint), a crosshair at your fingertip, and the piece count and material.
 - **Zoom:** pinch, mouse wheel / trackpad, the + / − buttons, or the `=` / `-` keys; drag empty space (or two fingers) to pan.
 - **Materials:** **Road** (15 per metre) is the only thing the vehicle drives on. **Wood** (10 per metre) is lighter and cheaper; brace the road into triangles. Beyond 2.3 m a piece's compression strength falls off roughly with 1/length² (tension is unaffected), so long pieces buckle.
 - Press **Go**. Beams glow red as they strain and snap when overloaded. After a failed attempt the bridge is kept, with snapped beams marked ×, so you can repair it.

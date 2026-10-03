@@ -15,6 +15,13 @@ const ZOOM_MAX := 3.5
 const U := BridgeSim.U
 const PIECE_LENGTHS := [1, 2, 3, 4]
 const TUT_FLAG := "user://daily_bridge_tutorial_seen"
+const PREFS := "user://daily_bridge_prefs.json"
+const LOCK_RADIUS := 0.9              # metres: how far auto-lock reaches for a joint...
+const LOCK_PX := 44.0                 # ...or this many screen pixels, whichever is larger
+const LOCK_BIAS := 0.45               # a joint wins over a closer grid dot by up to this much (m)
+const LOUPE_SIZE := 230.0
+const LOUPE_ZOOM := 2.6               # loupe magnification relative to the view
+const LOUPE_LIFT := 110.0             # gap between the finger and the loupe
 const SAVE_PREFIX := "bridge2_"       # v2 saves: centimetre build points
 const IDEAL_VERSION := "v2"           # bump when the physics or candidates change
 const NONE := Vector2i(1 << 30, 1 << 30)
@@ -103,6 +110,8 @@ var pan_last := Vector2.ZERO
 var drag_pos := Vector2.ZERO
 var press_pos := Vector2.ZERO
 var selected := NONE                  # tap-tap building: where the next line starts
+var auto_lock := true                 # line ends snap onto nearby joints (toggle, saved)
+var loupe_caption := ""
 
 # ui
 var buttons: Array = []
@@ -150,6 +159,7 @@ func _ready() -> void:
 	var s := String(url.get("s", ""))
 	target_score = int(s) if s.is_valid_int() else -1
 	load_puzzle(want)
+	_load_prefs()
 	if not tutorial_seen() and String(url.get("dev", "")) != "1":
 		open_tutorial()
 
@@ -1080,19 +1090,61 @@ func _apply_camera() -> void:
 
 # ------------------------------------------------------------------ input
 
-## Where a line ends for a pointer at p: a nearby joint, else the nearest grid dot.
-func _snap(p: Vector2) -> Vector2i:
-	var j := _joint_at(p)
-	if j != NONE:
-		return j
+## Where a line ends for a pointer at p. With auto-lock on, existing joints (and anchors) pull
+## the pointer in from up to LOCK_RADIUS / LOCK_PX away and beat a slightly closer grid dot;
+## with it off, the nearest dot or joint under the pointer wins. `exclude` is skipped (the
+## joint a line starts from).
+func _snap(p: Vector2, exclude := NONE) -> Vector2i:
 	var w := s2w(p)
-	return dot(roundi(w.x), roundi(w.y))
+	var node := NONE
+	var dn := INF
+	for g in joints():
+		if g == exclude:
+			continue
+		var d := BridgeSim.wpos(g).distance_to(w)
+		if d < dn:
+			dn = d
+			node = g
+	var g := dot(roundi(w.x), roundi(w.y))
+	var dd := BridgeSim.wpos(g).distance_to(w)
+	var dot_ok := g != exclude
+	if auto_lock:
+		var reach := maxf(LOCK_RADIUS, LOCK_PX / ppm)
+		if node != NONE and dn <= reach and (not dot_ok or dn <= dd + LOCK_BIAS):
+			return node
+	elif node != NONE and dn <= maxf(0.3, 16.0 / ppm) and (not dot_ok or dn <= dd):
+		return node
+	return g
 
 
-## Nearest joint to a screen point, within a finger's reach.
+## True when a line end is locked onto an existing joint rather than a free grid dot.
+func is_locked_target(g: Vector2i) -> bool:
+	return g != NONE and is_joint(g)
+
+
+func set_auto_lock(on: bool) -> void:
+	auto_lock = on
+	var f := FileAccess.open(PREFS, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"auto_lock": on}))
+		f.close()
+	_toast("Auto-lock " + ("on: lines snap to nearby joints" if on else "off: lines go to the nearest dot"))
+
+
+func _load_prefs() -> void:
+	if not FileAccess.file_exists(PREFS):
+		return
+	var d = JSON.parse_string(FileAccess.get_file_as_string(PREFS))
+	if d is Dictionary:
+		auto_lock = bool(d.get("auto_lock", true))
+
+
+## Nearest joint to a screen point, within a finger's reach (a little further with auto-lock).
 func _joint_at(p: Vector2) -> Vector2i:
 	var best := NONE
 	var bd := maxf(24.0 * ui, ppm * 0.35)
+	if auto_lock:
+		bd = maxf(32.0 * ui, ppm * 0.45)
 	for g in joints():
 		var d := gpos(g).distance_to(p)
 		if d < bd:
@@ -1255,7 +1307,7 @@ func _on_release(p: Vector2) -> void:
 	if phase != Phase.BUILD or tool == Tool.ERASE:
 		return
 	if from != NONE:
-		var q := _snap(p)
+		var q := _snap(p, from)
 		if not was_drag or q == from:
 			# a tap on a joint: build from the selection to it, or select it
 			if selected != NONE and selected != from:
@@ -1269,7 +1321,7 @@ func _on_release(p: Vector2) -> void:
 		return
 	if empty and not was_drag:
 		if selected != NONE:
-			var q := _snap(p)
+			var q := _snap(p, selected)
 			if add_path(selected, q, tool):
 				selected = q
 		else:
@@ -1308,6 +1360,7 @@ func _do(id: String) -> void:
 		"share": share()
 		"today": play_today()
 		"zoom_in": zoom_at(view_rect.get_center(), 1.5)
+		"lock": set_auto_lock(not auto_lock)
 		"zoom_out":
 			if zoom / 1.5 <= 1.01:
 				zoom_reset()
@@ -1378,6 +1431,8 @@ func _build_buttons() -> void:
 	var zy := view_rect.position.y + 8
 	_btn("zoom_in", Rect2(zx, zy, zs, zs), "+", false, zoom < ZOOM_MAX - 0.01, false, "zoom")
 	_btn("zoom_out", Rect2(zx, zy + zs + 6, zs, zs), "−", false, zoom > 1.01, false, "zoom")
+	if phase == Phase.BUILD:
+		_btn("lock", Rect2(zx - 14 * ui, zy + (zs + 6) * 2, zs + 14 * ui, zs), "LOCK", false, true, auto_lock, "zoom")
 	var r := panel_rect
 	var pad := 10.0
 	var row_h := (r.size.y - pad * 3) / 2.0
@@ -1449,6 +1504,8 @@ func _draw() -> void:
 	for b in buttons:
 		if b.kind == "zoom":
 			_draw_button(b)
+	if loupe_active():
+		_draw_loupe()
 	if dev_mode and not dev_open and not tut_open:
 		_box(dev_rect, Color(0.12, 0.16, 0.2, 0.7), 8)
 		_text_c("DEV", dev_rect.get_center(), 13, Color.WHITE)
@@ -1535,8 +1592,9 @@ func _draw_build_grid() -> void:
 			var g := dot(x, y)
 			if point_problem(g) == "":
 				draw_circle(gpos(g), r, C_DOT)
+	loupe_caption = ""
 	if drag_from != NONE and dragging and tool != Tool.ERASE:
-		var q := _snap(drag_pos)
+		var q := _snap(drag_pos, drag_from)
 		var plan := plan_line(drag_from, q) if q != drag_from else {"pieces": [], "why": "x"}
 		var ok: bool = plan.why == ""
 		var col := (C_ROAD if tool == Tool.ROAD else C_WOOD) if ok else C_BAD
@@ -1551,9 +1609,14 @@ func _draw_build_grid() -> void:
 				draw_circle(c, maxf(3.5, ppm * 0.11), C_JOINT)
 		if not ok:
 			draw_circle(gpos(q), maxf(5.0, ppm * 0.15), C_BAD)
+		elif is_locked_target(q):
+			draw_arc(gpos(q), maxf(10.0, ppm * 0.3), 0, TAU, 28, C_GOOD, 3.0)
 		if ok and plan.pieces.size() > 0:
 			var L := BridgeSim.wpos(plan.pieces[0][0]).distance_to(BridgeSim.wpos(plan.pieces[0][1]))
 			var lbl := "%d × %.1f m" % [n, L] if n > 1 else "%.1f m" % L
+			loupe_caption = "%s · %d material" % [lbl, _plan_cost(plan)]
+			if loupe_active():
+				return
 			var fs := int(14 * ui)
 			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			var at := gpos(q) + Vector2(16 * ui, 28 * ui)
@@ -1562,12 +1625,19 @@ func _draw_build_grid() -> void:
 			_text(lbl, at + Vector2(0, -2), 14, C_INK)
 
 
+func _plan_cost(plan: Dictionary) -> int:
+	var c := 0
+	for pq in plan.pieces:
+		c += BridgeSim.beam_cost(BridgeSim.beam(pq[0], pq[1], tool))
+	return c
+
+
 func _beam_w(m: int) -> float:
 	return maxf(3.0, ppm * (0.2 if m == BridgeSim.Mat.ROAD else 0.12))
 
 
-func _draw_beam(a: Vector2, b: Vector2, m: int, stress: float, alpha := 1.0) -> void:
-	var w := _beam_w(m)
+func _draw_beam(a: Vector2, b: Vector2, m: int, stress: float, alpha := 1.0, width := -1.0) -> void:
+	var w := _beam_w(m) if width < 0.0 else width
 	if m == BridgeSim.Mat.ROAD:
 		var col := C_ROAD.lerp(C_STRESS, clampf(stress, 0.0, 1.0))
 		col.a = alpha
@@ -1687,6 +1757,154 @@ func _rbox(r: Rect2, col: Color) -> void:
 	sb.set_corner_radius_all(int(minf(r.size.x, r.size.y) * 0.25))
 	sb.anti_aliasing = true
 	draw_style_box(sb, r)
+
+
+# ------------------------------------------------------------------ magnifier (loupe)
+
+## The loupe shows while a finger/mouse is held on a joint to draw a line.
+func loupe_active() -> bool:
+	return phase == Phase.BUILD and pressed and drag_from != NONE and tool != Tool.ERASE \
+		and not gesture and not tut_open and not dev_open
+
+
+## Where the loupe sits: above the finger (the hand covers below it), or beside it near the top.
+func loupe_rect() -> Rect2:
+	var vs := get_viewport_rect().size
+	var L := minf(LOUPE_SIZE * ui, minf(vs.x, vs.y) * 0.46)
+	var f := drag_pos
+	var r := Rect2(f.x - L / 2.0, f.y - LOUPE_LIFT - L, L, L)
+	if r.position.y < 8.0:
+		r.position.y = clampf(f.y - L / 2.0, 8.0, vs.y - L - 8.0)
+		r.position.x = f.x + LOUPE_LIFT * 0.8 if f.x < vs.x / 2.0 else f.x - LOUPE_LIFT * 0.8 - L
+	r.position.x = clampf(r.position.x, 8.0, vs.x - L - 8.0)
+	return r
+
+
+func _draw_loupe() -> void:
+	var R := loupe_rect()
+	var lppm := maxf(ppm * LOUPE_ZOOM, 90.0)
+	var wc := s2w(drag_pos)
+	var c := R.get_center()
+	var inner := R.grow(-3)
+	var ls := func(w: Vector2) -> Vector2: return c + (w - wc) * lppm
+	var clip := PackedVector2Array([inner.position, Vector2(inner.end.x, inner.position.y), inner.end, Vector2(inner.position.x, inner.end.y)])
+	_box(R.grow(3), Color(0, 0, 0, 0.35), 18)
+	_box(R, C_SKY_LOW, 16, Color(C_INK, 0.45))
+	# water, banks, ledges and pillars (the real collision shapes), clipped to the loupe
+	var g := float(gap)
+	var d := float(dy)
+	var deep := BridgeSim.WATER_Y + 20.0
+	var shapes: Array = [
+		[[Vector2(-80, BridgeSim.WATER_Y), Vector2(g + 80, BridgeSim.WATER_Y), Vector2(g + 80, deep), Vector2(-80, deep)], C_WATER],
+		[[Vector2(-80, 0), Vector2(0, 0), Vector2(0, deep), Vector2(-80, deep)], C_ROCK],
+		[[Vector2(g, d), Vector2(g + 80, d), Vector2(g + 80, deep), Vector2(g, deep)], C_ROCK],
+	]
+	for r: Rect2 in lv.get("rocks", []):
+		shapes.append([[r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)], C_ROCK])
+	for sh in shapes:
+		var poly := PackedVector2Array()
+		for w: Vector2 in sh[0]:
+			poly.append(ls.call(w))
+		for part in Geometry2D.intersect_polygons(poly, clip):
+			draw_colored_polygon(part, sh[1])
+	for top in [[Vector2(-80, 0), Vector2(0, 0)], [Vector2(g, d), Vector2(g + 80, d)]]:
+		var seg := _clip_seg(ls.call(top[0]), ls.call(top[1]), inner)
+		if not seg.is_empty():
+			draw_line(seg[0], seg[1], C_GRASS, maxf(3.0, lppm * 0.12))
+	# grid dots
+	var half := R.size.x / 2.0 / lppm
+	for gx in range(floori(wc.x - half), ceili(wc.x + half) + 1):
+		for gy in range(floori(wc.y - half), ceili(wc.y + half) + 1):
+			var dp := dot(gx, gy)
+			if point_problem(dp) != "":
+				continue
+			var sp: Vector2 = ls.call(BridgeSim.wpos(dp))
+			if inner.grow(-4).has_point(sp):
+				draw_circle(sp, 3.0, Color(1, 1, 1, 0.8))
+	# beams
+	for b in design:
+		var seg := _clip_seg(ls.call(BridgeSim.wpos(b.p)), ls.call(BridgeSim.wpos(b.q)), inner)
+		if not seg.is_empty():
+			_draw_beam(seg[0], seg[1], int(b.m), 0.0, 1.0, lppm * (0.2 if int(b.m) == BridgeSim.Mat.ROAD else 0.12))
+	# the line being drawn
+	var q := NONE
+	var plan_ok := false
+	var pts: Array = []
+	if dragging:
+		q = _snap(drag_pos, drag_from)
+		var plan := plan_line(drag_from, q)
+		plan_ok = plan.why == ""
+		if plan_ok:
+			for pq in plan.pieces:
+				var seg := _clip_seg(ls.call(BridgeSim.wpos(pq[0])), ls.call(BridgeSim.wpos(pq[1])), inner)
+				if not seg.is_empty():
+					_draw_beam(seg[0], seg[1], tool, 0.0, 0.7, lppm * 0.15)
+				pts.append(pq[1])
+		else:
+			var seg := _clip_seg(ls.call(BridgeSim.wpos(drag_from)), ls.call(BridgeSim.wpos(q)), inner)
+			if not seg.is_empty():
+				draw_line(seg[0], seg[1], Color(C_BAD, 0.7), lppm * 0.12)
+	# joints + anchors
+	var jr := maxf(5.0, lppm * 0.09)
+	for k in joints() + pts:
+		var sp: Vector2 = ls.call(BridgeSim.wpos(k))
+		if inner.grow(-jr).has_point(sp):
+			draw_circle(sp, jr + 1.5, C_INK)
+			draw_circle(sp, jr, C_ANCHOR if anchors.has(k) else C_JOINT)
+	# start joint and target
+	var s0: Vector2 = ls.call(BridgeSim.wpos(drag_from))
+	if inner.has_point(s0):
+		draw_arc(s0, jr + 6, 0, TAU, 24, C_BTN_ON, 2.5)
+	if q != NONE:
+		var st: Vector2 = ls.call(BridgeSim.wpos(q))
+		if inner.grow(-6).has_point(st):
+			var locked := is_locked_target(q)
+			draw_arc(st, jr + 8, 0, TAU, 28, C_GOOD if locked and plan_ok else (C_BTN_ON if plan_ok else C_BAD), 3.0)
+	# crosshair where the finger actually is
+	var cc := Color(C_INK, 0.8)
+	draw_line(c + Vector2(-14, 0), c + Vector2(-5, 0), cc, 2.0)
+	draw_line(c + Vector2(5, 0), c + Vector2(14, 0), cc, 2.0)
+	draw_line(c + Vector2(0, -14), c + Vector2(0, -5), cc, 2.0)
+	draw_line(c + Vector2(0, 5), c + Vector2(0, 14), cc, 2.0)
+	# caption
+	var cap := loupe_caption if plan_ok else ""
+	if q != NONE and plan_ok and is_locked_target(q):
+		cap = "locked · " + cap
+	elif q != NONE and not plan_ok:
+		cap = plan_line(drag_from, q).why
+	if cap == "":
+		cap = "drag to a dot or joint"
+	var csz := 15
+	while csz > 10 and font.get_string_size(cap, HORIZONTAL_ALIGNMENT_LEFT, -1, int(csz * ui)).x > R.size.x - 20:
+		csz -= 1
+	var ch := 26.0 * ui
+	var cr := Rect2(R.position.x + 6, R.end.y - ch - 6, R.size.x - 12, ch)
+	_box(cr, Color(0.12, 0.16, 0.2, 0.85), 10)
+	_text_c(cap, cr.get_center(), csz, Color.WHITE)
+
+
+## Clip segment a-b to rect r (Liang-Barsky). Returns [a', b'] or [] when outside.
+func _clip_seg(a: Vector2, b: Vector2, r: Rect2) -> Array:
+	var t0 := 0.0
+	var t1 := 1.0
+	var d := b - a
+	var ps := [-d.x, d.x, -d.y, d.y]
+	var qs := [a.x - r.position.x, r.end.x - a.x, a.y - r.position.y, r.end.y - a.y]
+	for i in 4:
+		var pp: float = ps[i]
+		var qq: float = qs[i]
+		if absf(pp) < 1e-9:
+			if qq < 0.0:
+				return []
+		else:
+			var t := qq / pp
+			if pp < 0.0:
+				t0 = maxf(t0, t)
+			else:
+				t1 = minf(t1, t)
+			if t0 > t1:
+				return []
+	return [a + d * t0, a + d * t1]
 
 
 # ------------------------------------------------------------------ hud
@@ -1845,6 +2063,13 @@ func _countdown() -> String:
 
 func _draw_button(b: Dictionary) -> void:
 	var r: Rect2 = b.rect
+	if b.id == "lock":
+		var on: bool = b.on
+		_box(r, Color(C_GOOD, 0.92) if on else Color(C_BTN, 0.85), 10)
+		var ink := Color.WHITE if on else C_MUTED
+		_text_c("LOCK", r.get_center() + Vector2(0, -7 * ui), 13, ink)
+		_text_c("ON" if on else "OFF", r.get_center() + Vector2(0, 9 * ui), 12, ink)
+		return
 	var col := C_BTN
 	var ink := C_INK
 	if b.primary:
@@ -1920,7 +2145,7 @@ func _draw_tutorial() -> void:
 	var lines := [
 		"Drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than the length you pick (1–4 m). Red joints are anchored to the rock.",
 		"Road is what the vehicle drives on. Wood is lighter and cheaper: brace the road with triangles. Long pieces buckle when squeezed.",
-		"Pinch, scroll or use + / − to zoom; drag empty space to pan. Erase removes what you tap or swipe.",
+		"While you draw, a magnifier above your finger shows where the line lands, and LOCK (on by default) snaps it onto nearby joints. Pinch or use + / − to zoom; drag empty space to pan.",
 		"3 attempts a day. Matching today's ideal bridge scores 100; less material scores higher.",
 	]
 	var y := ty + 34 * ui
@@ -1971,7 +2196,7 @@ func get_agent_state() -> Dictionary:
 		"gap": gap, "dy": dy, "vehicle": String(vehicle().name), "anchors": anchors.size(), "rocks": lv.get("rocks", []).size(),
 		"ideal": ideal, "cost": cost(), "beams": design.size(), "tries": tries.size(), "tries_left": tries_left(),
 		"best_score": best_score(), "finished": finished, "tool": ["road", "wood", "erase"][tool],
-		"piece_len": piece_len, "zoom": snappedf(zoom, 0.01), "show_ideal": show_ideal,
+		"piece_len": piece_len, "auto_lock": auto_lock, "loupe": loupe_active(), "zoom": snappedf(zoom, 0.01), "show_ideal": show_ideal,
 		"tutorial": tut_open, "dev_mode": dev_mode, "share_text": share_text() if phase == Phase.FINAL else "",
 	}
 	if sim != null:

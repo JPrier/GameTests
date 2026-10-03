@@ -257,3 +257,62 @@ func test_dev_controls_dont_touch_saves():
 	main.dev_set_day(main.shift_date("2027-03-15", 1))
 	assert_eq(main.date, "2027-03-16", "next day")
 	main.dev_sandbox = false
+
+
+func test_auto_lock_snaps_to_nearby_joints():
+	var main = await _fresh()
+	await wait_frames(2)
+	main.auto_lock = true
+	main.set_piece_len(3)
+	main.add_path(_dot(0, 0), _dot(3, -5), BridgeSim.Mat.WOOD)   # 5.83 m in 2 pieces: joint at (1.5, -2.5), off the grid
+	var mid: Vector2i = main.design[0].q
+	assert_eq(mid, Vector2i(150, -250), "off-grid joint where expected")
+	var sp: Vector2 = main.w2s(BridgeSim.wpos(mid) + Vector2(0.3, 0.3))   # 0.42 m from the joint, 0.28 m from dot (2, -2)
+	assert_eq(main._snap(sp), mid, "lock on: the nearby joint wins")
+	main.auto_lock = false
+	assert_eq(main._snap(sp), _dot(2, -2), "lock off: the nearest dot wins")
+	main.auto_lock = true
+	assert_ne(main._snap(main.gpos(mid), mid), mid, "a line's own start joint is excluded")
+	var far: Vector2 = main.w2s(Vector2(6.0, -4.0))
+	assert_eq(main._snap(far), _dot(6, -4), "far from joints: plain dot")
+	# a real drag released near the off-grid joint connects to it
+	main.add_beam(_dot(0, 0), _dot(2, 0), BridgeSim.Mat.ROAD)
+	var before: int = main.design.size()
+	main._on_press(main.gpos(_dot(2, 0)))
+	main.dragging = true
+	main._on_release(sp)
+	assert_eq(main.design.back().q, mid, "the line ends on the locked joint")
+	assert_gt(main.design.size(), before, "built")
+	main.wipe_save()
+
+
+func test_lock_toggle_is_saved():
+	var main = await _fresh()
+	main.set_auto_lock(false)
+	main.auto_lock = true
+	main._load_prefs()
+	assert_false(main.auto_lock, "off persists")
+	main.set_auto_lock(true)
+	main._load_prefs()
+	assert_true(main.auto_lock, "on persists")
+
+
+func test_loupe_shows_while_drawing_and_sits_above_the_finger():
+	var main = await _fresh()
+	await wait_frames(2)
+	var vs: Vector2 = main.get_viewport_rect().size
+	assert_false(main.loupe_active(), "hidden until you hold a joint")
+	main._on_press(main.gpos(_dot(0, 0)))
+	assert_true(main.loupe_active(), "shown while holding a joint")
+	main._on_release(main.gpos(_dot(0, 0)))
+	assert_false(main.loupe_active(), "hidden again on release")
+	main.drag_pos = Vector2(vs.x / 2.0, vs.y * 0.8)
+	var r: Rect2 = main.loupe_rect()
+	assert_lt(r.end.y, main.drag_pos.y, "above the finger")
+	assert_true(Rect2(Vector2.ZERO, vs).encloses(r), "on screen")
+	main.drag_pos = Vector2(20, 30)
+	r = main.loupe_rect()
+	assert_true(Rect2(Vector2.ZERO, vs).encloses(r), "on screen near the top-left corner")
+	assert_false(r.has_point(main.drag_pos), "not under the finger")
+	assert_eq(main._clip_seg(Vector2(-10, 5), Vector2(10, 5), Rect2(0, 0, 4, 10)), [Vector2(0, 5), Vector2(4, 5)], "segment clipped to the loupe")
+	assert_eq(main._clip_seg(Vector2(-10, 50), Vector2(10, 50), Rect2(0, 0, 4, 10)), [], "outside")
