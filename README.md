@@ -12,6 +12,7 @@ Small Godot games that run in the browser (desktop and mobile).
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/daily-bridge`](games/daily-bridge) |
 | Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/ticker-time`](games/ticker-time) |
 | Bistro Empire: an incremental restaurant tycoon with 1,241 upgrades, franchises and prestige | [`games/bistro-empire`](games/bistro-empire) |
+| X-Ray Shift: a daily airport x-ray game, flag the bags with contraband and find the illegal items | [`games/xray-shift`](games/xray-shift) |
 
 ## How deploys work
 
