@@ -68,10 +68,14 @@ func press_key(key: Key, frames := 1) -> void:
 	ev.physical_keycode = key
 	ev.pressed = true
 	Input.parse_input_event(ev)
+	# Web builds buffer input until the end of the frame; deliver it now so tests
+	# behave the same headless and in the browser.
+	Input.flush_buffered_events()
 	await wait_physics_frames(frames)
 	var up := ev.duplicate()
 	up.pressed = false
 	Input.parse_input_event(up)
+	Input.flush_buffered_events()
 
 
 # ---- assertions (record and continue; the test fails if any assertion failed)

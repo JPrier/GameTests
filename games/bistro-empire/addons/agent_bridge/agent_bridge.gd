@@ -264,18 +264,15 @@ func _describe(n: Node, depth: int, props: bool) -> Dictionary:
 		d["script"] = s.resource_path
 	if n.scene_file_path != "":
 		d["scene"] = n.scene_file_path
-	if n is Node2D:
-		d["position"] = n.position
-		d["visible"] = n.visible
-	elif n is Node3D:
-		d["position"] = n.position
-		d["visible"] = n.visible
-	elif n is Control:
-		d["position"] = n.position
-		d["size"] = n.size
-		d["visible"] = n.visible
+	# Checked by name so this file doesn't pull 3D or GUI into slim web engines
+	# built for games that don't use them (see .github/engine/).
+	if n is Node2D or n.is_class("Node3D") or n.is_class("Control"):
+		d["position"] = n.get("position")
+		d["visible"] = n.get("visible")
+	if n.is_class("Control"):
+		d["size"] = n.get("size")
 		if "text" in n:
-			d["text"] = n.text
+			d["text"] = n.get("text")
 	if props and s:
 		var p := {}
 		for prop in s.get_script_property_list():

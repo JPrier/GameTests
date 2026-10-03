@@ -1,2 +1,5 @@
 _site/
 .godot/
+.github/scripts/node_modules/
+_engines/
+verify-web.json
