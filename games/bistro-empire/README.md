@@ -53,6 +53,30 @@ Income per second = guests served × bill × price × multipliers.
 | Crossroads (40 pairs) | 80 |
 | Legacy perks (bought with stars) | 80 |
 
+## Saving and offline time
+
+- **Leaving the game.** The browser pauses the game when you switch apps, lock your phone or hide the tab. The game saves the moment the page is hidden. When you come back:
+  - A gap of up to a minute is paid in full.
+  - A longer gap is paid at the offline rate. That starts at 25% for up to 2 hours, and Night Shift upgrades and Legacy perks raise it.
+  - Closing the tab or reloading the page works the same way.
+- **Two copies of every save.** Each save goes to Godot's `user://` files (IndexedDB) and to `localStorage`. The `localStorage` write is synchronous, so it survives the tab being killed straight away.
+- **Rolling backups.** Each of the two copies also keeps a backup of the previous save, refreshed every 2 minutes.
+- **Checks on loading:**
+  - Every copy carries a checksum, and a truncated or corrupt copy is ignored. The newest valid copy wins.
+  - If nothing can be read, the unreadable files are moved aside, never overwritten.
+  - The game refuses to write a save with lower lifetime earnings than the one it loaded.
+- **Persistent storage.** The game asks the browser for persistent storage, so it shouldn't evict the save when space runs low.
+- **Your own backup.** More → Your save has three options:
+  - **Copy save code**: copies a compressed text code you can keep anywhere.
+  - **Download backup**: saves the same code as a file.
+  - **Restore from a save code**: loads a code. It shows what's in the code first and keeps your current game as a backup.
+
+  This is the only thing that survives the browser wiping site data, for example after clearing your history, or Safari after about 7 days without a visit.
+- **Rebuilds don't touch saves.** Saves live in the browser, not the build. To keep old saves loading:
+  - Upgrades are saved by key, and a test checks that all 1,241 keys still exist in every build.
+  - The original save format still loads.
+  - A test pins `application/config/name`, which on the web decides where `user://` lives, and the `localStorage` key. Never rename either.
+
 ## Code
 
 - `econ.gd`: all rules, the upgrade catalogue, saving to and loading from a dictionary, and number formatting. No rendering.
@@ -64,4 +88,4 @@ Income per second = guests served × bill × price × multipliers.
   - `dev_add_cash(x)`
   - `dev_skip(seconds)`
 
-Tests: `gck test bistro-empire` (`tests/test_main.gd`, 22 tests). They cover the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.
+Tests: `gck test bistro-empire` (`tests/test_main.gd`, 32 tests). They cover save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.

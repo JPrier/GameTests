@@ -2,7 +2,10 @@ extends Node2D
 ## Bistro Empire: an incremental restaurant tycoon. Mobile-first, portrait, drawn immediate-mode.
 ## Economy rules live in econ.gd; this file is input, layout, drawing and saving.
 
-const SAVE_PATH := "user://bistro_empire.json"
+## Away longer than this (tab hidden, phone locked, app switched) counts as offline time.
+const AWAY_OFFLINE := 60.0
+## Gaps shorter than this are just slow frames.
+const AWAY_MIN := 2.0
 const AUTOSAVE := 5.0
 const AUTO_TICK := 0.25
 const DRAG_SLOP := 10.0
@@ -87,6 +90,12 @@ var info_cache := {}
 var afford_count := 0
 var last_saved_unix := 0
 var loaded_offline := false
+var store := SaveStore.new()
+var save_ready := false          # never write before the existing save has been read
+var life_floor := 0.0            # lifetime earnings of the loaded save; a save below it is refused
+var last_frame_unix := 0.0
+var _js_cbs: Array = []          # keep JS callbacks alive
+var import_text := ""
 
 
 # =================================================================== lifecycle
@@ -110,8 +119,12 @@ func _ready() -> void:
 	for t in TABS:
 		scroll[t] = 0.0
 		scroll_max[t] = 0.0
+	store.request_persistence()
 	if not load_game():
 		E.new_game()
+	save_ready = true
+	last_frame_unix = Time.get_unix_time_from_system()
+	_hook_page_events()
 	if not E.concept_chosen and modal == "":
 		open_modal("concept")
 	_refresh_cache(true)
@@ -131,9 +144,64 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		if E != null:
 			save_game()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
+		if E != null:
+			_catch_up()
+
+
+## The browser stops running the game while the tab is hidden, so save the moment it hides.
+## pagehide/visibilitychange fire even on mobile when switching apps or locking the phone.
+func _hook_page_events() -> void:
+	if not OS.has_feature("web"):
+		return
+	var cb := JavaScriptBridge.create_callback(_on_page_hidden)
+	_js_cbs.append(cb)
+	var win = JavaScriptBridge.get_interface("window")
+	win.__beHidden = cb
+	JavaScriptBridge.eval("""(function(){
+		document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'){window.__beHidden();}});
+		window.addEventListener('pagehide',function(){window.__beHidden();});
+		window.addEventListener('blur',function(){window.__beHidden();});
+	})()""", true)
+
+
+func _on_page_hidden(_args: Array) -> void:
+	if E != null and save_ready:
+		save_game()
+
+
+## Credits time that passed while the game wasn't running (hidden tab, locked phone).
+func _catch_up() -> void:
+	var now := Time.get_unix_time_from_system()
+	var gap := now - last_frame_unix
+	last_frame_unix = now
+	if gap < AWAY_MIN or not save_ready or not E.concept_chosen or modal == "concept":
+		return
+	if gap <= AWAY_OFFLINE:
+		E.tick(gap)
+		_refresh_cache(false)
+		return
+	var g := E.offline_gain(gap)
+	if g > 0.0:
+		_credit_away(gap, g)
+	save_game()
+
+
+func _credit_away(away: float, g: float) -> void:
+	E.cash = minf(E.cash + g, Econ.MAX_MONEY)
+	E.run_earned += g
+	E.life_earned += g
+	if modal == "welcome":
+		modal_data = {"away": float(modal_data.get("away", 0.0)) + away, "gain": float(modal_data.get("gain", 0.0)) + g}
+	elif modal == "":
+		open_modal("welcome", {"away": away, "gain": g})
+	else:
+		_toast("Away %s: +%s" % [Econ.fmt_time(away), Econ.fmt_money(g)])
+	_refresh_cache(true)
 
 
 func _process(delta: float) -> void:
+	_catch_up()
 	delta = minf(delta, 1.0)
 	anim_t += delta
 	if E.concept_chosen and modal != "concept":
@@ -221,49 +289,134 @@ func buy_count(r: String) -> int:
 
 # =================================================================== saving
 
+func _state() -> Dictionary:
+	var d := E.to_dict()
+	d["ui"] = {"tab": tab, "buy_mode": buy_mode}
+	return d
+
+
 func save_game() -> void:
 	save_t = 0.0
-	var d := E.to_dict()
-	d["t"] = int(Time.get_unix_time_from_system())
-	d["ui"] = {"tab": tab, "buy_mode": buy_mode}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(d))
-		f.close()
-	# touching a second file nudges the web build to flush storage to IndexedDB
-	var s := FileAccess.open("user://.sync", FileAccess.WRITE)
-	if s:
-		s.store_string(str(d.t))
-		s.close()
-	last_saved_unix = int(d.t)
+	if not save_ready:
+		return
+	# safety net: never let a bug overwrite a richer save with a poorer one
+	if E.life_earned < life_floor * 0.999:
+		push_error("refusing to save: lifetime earnings went down (%s < %s)" % [E.life_earned, life_floor])
+		return
+	var t := int(Time.get_unix_time_from_system())
+	store.write(_state(), t, _now())
+	life_floor = maxf(life_floor, E.life_earned)
+	last_saved_unix = t
 
 
 func load_game() -> bool:
-	if not FileAccess.file_exists(SAVE_PATH):
+	var pick := store.best()
+	if pick.is_empty():
+		if store.all_corrupt():
+			store.quarantine(int(Time.get_unix_time_from_system()))
+			_toast("Save unreadable: kept a copy, starting fresh")
 		return false
-	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not d is Dictionary:
-		return false
-	E.from_dict(d)
-	var ui: Dictionary = d.get("ui", {})
-	if TABS.has(String(ui.get("tab", "build"))):
-		tab = String(ui.get("tab", "build"))
-	buy_mode = clampi(int(ui.get("buy_mode", 0)), 0, BUY_MODES.size() - 1)
-	var away := float(int(Time.get_unix_time_from_system()) - int(d.get("t", 0)))
-	if away > 60.0 and E.concept_chosen:
+	_apply_state(pick.state)
+	var away := float(int(Time.get_unix_time_from_system()) - int(pick.t))
+	if away > AWAY_OFFLINE and E.concept_chosen:
 		var g := E.offline_gain(away)
 		if g > 0.0:
-			E.cash = minf(E.cash + g, Econ.MAX_MONEY)
-			E.run_earned += g
-			E.life_earned += g
-			open_modal("welcome", {"away": away, "gain": g})
+			_credit_away(away, g)
 			loaded_offline = true
 	return true
 
 
+func _apply_state(d: Dictionary) -> void:
+	E.from_dict(d)
+	life_floor = E.life_earned
+	var ui: Dictionary = d.get("ui", {})
+	if TABS.has(String(ui.get("tab", "build"))):
+		tab = String(ui.get("tab", "build"))
+	buy_mode = clampi(int(ui.get("buy_mode", 0)), 0, BUY_MODES.size() - 1)
+
+
 func wipe_save() -> void:
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	store.erase_all()
+	life_floor = 0.0
+
+
+# ------------------------------------------------------------------ backups
+
+func export_code() -> String:
+	return SaveStore.encode_code(SaveStore.pack(_state(), int(Time.get_unix_time_from_system())))
+
+
+func copy_save_code() -> void:
+	save_game()
+	var code := export_code()
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("""(function(t){
+			var legacy=function(){try{var ta=document.createElement('textarea');ta.value=t;ta.setAttribute('readonly','');
+				ta.style.cssText='position:fixed;top:0;left:0;opacity:0;';document.body.appendChild(ta);ta.select();
+				var ok=document.execCommand('copy');document.body.removeChild(ta);var c=document.querySelector('canvas');if(c){c.focus();}return ok;}catch(e){return false;}};
+			var ask=function(){try{window.prompt('Copy your save code and keep it somewhere safe:',t);}catch(e){}};
+			if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){},function(){if(!legacy()){ask();}});}
+			else if(!legacy()){ask();}
+		})(%s)""" % JSON.stringify(code), true)
+	else:
+		DisplayServer.clipboard_set(code)
+	_toast("Save code copied")
+
+
+func download_backup() -> void:
+	save_game()
+	var code := export_code()
+	var name := "bistro-empire-%s.txt" % Time.get_date_string_from_system()
+	if OS.has_feature("web"):
+		JavaScriptBridge.download_buffer(code.to_utf8_buffer(), name, "text/plain")
+	else:
+		var f := FileAccess.open("user://" + name, FileAccess.WRITE)
+		if f:
+			f.store_string(code)
+			f.close()
+	_toast("Backup file saved")
+
+
+func ask_import() -> void:
+	var code := ""
+	if OS.has_feature("web"):
+		var r = JavaScriptBridge.eval("(function(){try{return window.prompt('Paste a Bistro Empire save code:','')||'';}catch(e){return '';}})()", true)
+		code = r if r is String else ""
+	else:
+		code = DisplayServer.clipboard_get()
+	if code.strip_edges() == "":
+		return
+	preview_import(code)
+
+
+## Validates a code and asks for confirmation. Returns false if the code is unusable.
+func preview_import(code: String) -> bool:
+	var text := SaveStore.decode_code(code)
+	var u := SaveStore.unpack(text)
+	if u.is_empty():
+		_toast("That save code isn't valid")
+		return false
+	import_text = text
+	var st: Dictionary = u.state
+	open_modal("import", {"stars": float(st.get("stars", 0.0)), "life": float(st.get("life_earned", 0.0)),
+		"cash": float(st.get("cash", 0.0)), "t": int(u.t)})
+	return true
+
+
+func confirm_import() -> void:
+	var u := SaveStore.unpack(import_text)
+	if u.is_empty():
+		return
+	store.keep_before_import(SaveStore.pack(_state(), int(Time.get_unix_time_from_system())))
+	_apply_state(u.state)
+	life_floor = E.life_earned
+	import_text = ""
+	modal = ""
+	if not E.concept_chosen:
+		open_modal("concept")
+	_refresh_cache(true)
+	save_game()
+	_toast("Save imported")
 
 
 # =================================================================== actions
@@ -363,6 +516,13 @@ func _do(id: String) -> void:
 				save_game()
 		"close": modal = ""
 		"reset": open_modal("reset")
+		"copy_code": copy_save_code()
+		"download": download_backup()
+		"import": ask_import()
+		"import_yes": confirm_import()
+		"save_now":
+			save_game()
+			_toast("Saved")
 		"reset_yes":
 			wipe_save()
 			E.new_game()
@@ -1252,6 +1412,7 @@ func _draw_more(y: float) -> float:
 		_rr(r, Color(C_CARD, 0.5), 12)
 		_text(r.position + Vector2(14, 30), "Hire managers in Upgrades to automate.", 14, C_DIM)
 		y += 54
+	y = _draw_backup(y + 6)
 	y = _section(y + 6, "Stats")
 	var cc: Dictionary = Econ.CONCEPT[E.concept]
 	var stats := [
@@ -1294,6 +1455,32 @@ func _draw_more(y: float) -> float:
 	return rb.end.y + 8
 
 
+func _draw_backup(y: float) -> float:
+	y = _section(y, "Your save")
+	var r := _row_rect(y, 84)
+	_rr(r, C_CARD, 12)
+	var ago := int(Time.get_unix_time_from_system()) - last_saved_unix
+	var ok := store.last_write_ok
+	var where := "browser storage x%d + backups" % store.last_places if ok else "not saved yet"
+	_text(r.position + Vector2(14, 26), "Saved %s ago" % Econ.fmt_time(float(maxi(ago, 1))) if last_saved_unix > 0 else "Not saved yet", 16, C_GREEN if ok else C_ORANGE)
+	_text(r.position + Vector2(14, 48), _fit(where, 13, r.size.x - 120), 13, C_MUTED)
+	_text(r.position + Vector2(14, 68), _fit("Auto-saves every %ds and when you leave" % int(AUTOSAVE), 12, r.size.x - 120), 12, C_DIM)
+	_button("save_now", Rect2(r.end.x - 96, r.position.y + 20, 86, 44), "Save now", "", "content", false, true, 14)
+	y = r.end.y + 8
+	var tip := _wrap("Browsers can wipe site data (clearing history, low storage, or Safari after ~7 days without a visit). Keep a backup code somewhere safe, like your notes app.", 13, content_r.size.x - 40)
+	for l in tip:
+		_text(Vector2(content_r.position.x + 18, y + 14), l, 13, C_DIM)
+		y += 17
+	y += 8
+	var w := (content_r.size.x - 24 - 8) * 0.5
+	var x := content_r.position.x + 12
+	_button("copy_code", Rect2(x, y, w, 44), "Copy save code", "accent", "content", false, true, 14)
+	_button("download", Rect2(x + w + 8, y, w, 44), "Download backup", "", "content", false, true, 14)
+	y += 52
+	_button("import", _row_rect(y, 44), "Restore from a save code", "", "content", false, true, 14)
+	return y + 52
+
+
 # =================================================================== draw: overlay
 
 func _draw_overlay() -> void:
@@ -1322,6 +1509,7 @@ func _draw_overlay() -> void:
 		"welcome": _modal_welcome(vs)
 		"reset": _modal_reset(vs)
 		"help": _modal_help(vs)
+		"import": _modal_import(vs)
 
 
 func _modal_card(vs: Vector2, h: float) -> Rect2:
@@ -1396,6 +1584,28 @@ func _modal_reset(vs: Vector2) -> void:
 	var bw := (r.size.x - 44) * 0.5
 	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Cancel", "", "modal", false, true, 16)
 	_button("reset_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Erase", "red", "modal", false, true, 16)
+
+
+func _modal_import(vs: Vector2) -> void:
+	var r := _modal_card(vs, 290)
+	_rr(r, C_BG, 16, C_LINE, 1)
+	_text_c(r, r.position.y + 40, "Restore this save?", 22)
+	var t := int(modal_data.get("t", 0))
+	var when := Time.get_datetime_string_from_unix_time(t, true) if t > 0 else "unknown time"
+	var rows := [
+		["Saved", when],
+		["Stars", Econ.fmt_num(float(modal_data.get("stars", 0.0)))],
+		["Cash", Econ.fmt_money(float(modal_data.get("cash", 0.0)))],
+		["Earned all time", Econ.fmt_money(float(modal_data.get("life", 0.0)))],
+	]
+	for i in rows.size():
+		var yy := r.position.y + 78 + i * 24
+		_text(Vector2(r.position.x + 24, yy), String(rows[i][0]), 14, C_MUTED)
+		_text_r(r.end.x - 24, yy, String(rows[i][1]), 14, C_INK)
+	_text_c(r, r.position.y + 190, "Your current game is kept as a backup first.", 13, C_DIM)
+	var bw := (r.size.x - 44) * 0.5
+	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Cancel", "", "modal", false, true, 16)
+	_button("import_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Restore", "accent", "modal", false, true, 16)
 
 
 func _modal_help(vs: Vector2) -> void:

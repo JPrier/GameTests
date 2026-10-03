@@ -352,3 +352,176 @@ func test_full_prestige_flow_via_buttons():
 	var again = await load_scene("res://main.tscn")
 	assert_eq(again.E.prestiges, 1, "save restored")
 	main.wipe_save()
+
+
+# ------------------------------------------------------------------ saving safety
+
+func _store() -> SaveStore:
+	var s := SaveStore.new()
+	s.erase_all()
+	return s
+
+
+func _sample_state(life: float) -> Dictionary:
+	var e := _econ("fastfood")
+	e.cash = 777.0
+	e.life_earned = life
+	e.reps.tables = 9
+	return e.to_dict()
+
+
+func test_pack_unpack_and_tamper():
+	var st := _sample_state(1000.0)
+	var text := SaveStore.pack(st, 1234)
+	var u := SaveStore.unpack(text)
+	assert_false(u.is_empty(), "valid save unpacks")
+	assert_eq(int(u.t), 1234, "time kept")
+	assert_eq(int(u.state.reps.tables), 9, "state kept")
+	assert_true(SaveStore.unpack(text.replace("777", "778")).is_empty(), "tampered data rejected by checksum")
+	assert_true(SaveStore.unpack(text.substr(0, text.length() / 2)).is_empty(), "truncated save rejected")
+	assert_true(SaveStore.unpack("").is_empty(), "empty rejected")
+	# version 1 saves (the original format) still load
+	var v1 := st.duplicate()
+	v1["t"] = 99
+	var u1 := SaveStore.unpack(JSON.stringify(v1))
+	assert_false(u1.is_empty(), "v1 save loads")
+	assert_eq(int(u1.t), 99, "v1 time")
+
+
+func test_store_writes_two_places_and_recovers():
+	var s := _store()
+	assert_eq(s.write(_sample_state(10.0), 100, 0.0), 2, "file + local copy")
+	assert_eq(String(s.best().src), "file", "newest valid copy")
+	# corrupt the main file: the local copy takes over
+	var f := FileAccess.open(SaveStore.FILE, FileAccess.WRITE)
+	f.store_string("{\"game\":\"bistro-empire\",\"v\":2,\"da")
+	f.close()
+	var b := s.best()
+	assert_eq(String(b.src), "local", "falls back to the second copy")
+	assert_eq(float(b.state.life_earned), 10.0, "with the right data")
+	s.erase_all()
+
+
+func test_rolling_backup():
+	var s := _store()
+	s.write(_sample_state(1.0), 100, 0.0)
+	s.write(_sample_state(2.0), 200, 10.0)
+	s.write(_sample_state(3.0), 300, 500.0)   # backup refreshed from the t=200 copy
+	var c := {}
+	for x in s.candidates():
+		c[x.src] = x
+	assert_eq(int(c.file.t), 300, "main copy is newest")
+	assert_eq(int(c.file_backup.t), 200, "file backup holds the previous save")
+	assert_eq(int(c.local_backup.t), 200, "local backup too")
+	# both main copies broken: the backups still restore progress
+	for p in [SaveStore.FILE]:
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		f.store_string("garbage")
+		f.close()
+	s._ls_set(SaveStore.LS_KEY, "garbage")
+	assert_eq(int(s.best().t), 200, "backup restores")
+	s.erase_all()
+
+
+func test_all_corrupt_is_quarantined_not_overwritten():
+	var main = await load_scene("res://main.tscn")
+	main.wipe_save()
+	var f := FileAccess.open(SaveStore.FILE, FileAccess.WRITE)
+	f.store_string("not json at all")
+	f.close()
+	assert_true(main.store.all_corrupt(), "detects unreadable save")
+	main.load_game()
+	assert_true(FileAccess.file_exists("user://bistro_empire.corrupt-file-%d.json" % int(Time.get_unix_time_from_system())) or DirAccess.get_files_at("user://").size() > 0, "copy kept aside")
+	var kept := false
+	for n in DirAccess.get_files_at("user://"):
+		if n.begins_with("bistro_empire.corrupt-file"):
+			kept = true
+			DirAccess.remove_absolute(ProjectSettings.globalize_path("user://" + n))
+	assert_true(kept, "unreadable save quarantined")
+	main.wipe_save()
+
+
+func test_v1_save_file_still_loads():
+	var main = await load_scene("res://main.tscn")
+	main.wipe_save()
+	var st := _sample_state(5e9)
+	st["t"] = int(Time.get_unix_time_from_system())
+	var f := FileAccess.open(SaveStore.FILE, FileAccess.WRITE)
+	f.store_string(JSON.stringify(st))
+	f.close()
+	assert_true(main.load_game(), "loads the original save format")
+	assert_eq(main.E.concept, "fastfood", "concept restored")
+	assert_eq(int(main.E.reps.tables), 9, "builds restored")
+	main.save_game()
+	assert_eq(int(SaveStore.unpack(FileAccess.get_file_as_string(SaveStore.FILE)).state.reps.tables), 9, "rewritten in the new format")
+	main.wipe_save()
+
+
+func test_refuses_to_save_lost_progress():
+	var main = await _fresh()
+	main.E.life_earned = 1e12
+	main.save_game()
+	main.E.life_earned = 5.0   # a bug wiped progress
+	main.save_game()
+	var u := SaveStore.unpack(FileAccess.get_file_as_string(SaveStore.FILE))
+	assert_eq(float(u.state.life_earned), 1e12, "good save not overwritten")
+	main.wipe_save()
+
+
+func test_export_import_code():
+	var main = await _fresh()
+	main.E.cash = 4242.0
+	main.E.life_earned = 1e9
+	main.E.reps.cooks = 33
+	var code: String = main.export_code()
+	assert_true(code.begins_with("BISTRO1:"), "code prefix")
+	assert_false(main.preview_import("BISTRO1:nonsense"), "garbage code rejected")
+	assert_false(main.preview_import("hello"), "random text rejected")
+	main.E.new_game()
+	main.E.choose_concept("diner")
+	assert_true(main.preview_import(code), "valid code accepted")
+	assert_eq(main.modal, "import", "asks before replacing")
+	main.press_button("import_yes")
+	assert_eq(int(main.E.reps.cooks), 33, "progress restored")
+	assert_near(main.E.cash, 4242.0, 1e-6, "cash restored")
+	assert_ne(main.store._ls_get(SaveStore.LS_PRE_IMPORT), "", "previous game kept")
+	main.wipe_save()
+
+
+func test_background_time_is_credited():
+	var main = await _fresh()
+	main.E.reps.tables = 20
+	main.E.reps.cooks = 20
+	main.E.reps.ads = 30
+	main.E.mark_dirty()
+	await wait_frames(2)
+	var inc: float = main.E.income()
+	# tab hidden for 30 seconds: full income
+	var c0: float = main.E.cash
+	main.last_frame_unix -= 30.0
+	main._catch_up()
+	assert_near(main.E.cash - c0, inc * 30.0, inc * 2.0, "short absence earns full income")
+	# hidden for 2 hours: offline rate plus a welcome-back card
+	c0 = main.E.cash
+	main.last_frame_unix -= 7200.0
+	main._catch_up()
+	assert_near(main.E.cash - c0, main.E.offline_gain(7200.0), inc * 2.0, "long absence earns offline income")
+	assert_eq(main.modal, "welcome", "welcome back shown")
+	main.wipe_save()
+
+
+func test_upgrade_keys_never_disappear():
+	# saves store upgrades by key; renaming or removing one would silently drop it from players' saves
+	if not FileAccess.file_exists("res://tests/fixtures/upgrade_keys_v1.txt"):
+		return   # fixtures aren't exported to the web build; the headless run (and CI) checks this
+	var e := Econ.new()
+	var lines := FileAccess.get_file_as_string("res://tests/fixtures/upgrade_keys_v1.txt").split("\n", false)
+	assert_eq(lines.size(), 1241, "fixture size")
+	for k in lines:
+		assert_true(e.by_key.has(k), "upgrade key still exists: " + k)
+
+
+func test_project_name_pins_save_location():
+	# user:// on the web is keyed by the project name; renaming it would orphan every save
+	assert_eq(String(ProjectSettings.get_setting("application/config/name")), "Bistro Empire", "project name unchanged")
+	assert_eq(SaveStore.LS_KEY, "bistro-empire:save", "localStorage key unchanged")
