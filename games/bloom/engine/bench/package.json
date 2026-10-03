@@ -1,0 +1,9 @@
+{
+  "name": "bloom-load-bench",
+  "private": true,
+  "description": "Measure Bloom's web load time in headless Chromium. See ../../LOAD_TIME.md.",
+  "dependencies": {
+    "@sparticuz/chromium": "*",
+    "puppeteer-core": "*"
+  }
+}

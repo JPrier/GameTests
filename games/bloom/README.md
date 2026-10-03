@@ -18,3 +18,5 @@ When you finish, **Share score** sends your result with a link (`?d=<date>&s=<sc
 Dev menu (hidden): tap the **Bloom** title 5 times quickly, or open with `?dev=1`. It can reset today's progress, or every saved day plus the tutorial-seen flag.
 
 Tests: `gck test bloom` (tests/test_main.gd).
+
+Load time: Bloom exports with a slim Godot engine built just for it (`engine/`), about 2.5x faster to start than the stock engine. See [LOAD_TIME.md](LOAD_TIME.md) for the measurements, how the engine is rebuilt, and what to do when bumping Godot or using new engine features.
