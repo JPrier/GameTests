@@ -1,5 +1,15 @@
 name: Build & deploy games
 
+# Every game gets its own web engine, built from what the game actually uses:
+#   plan    detect each game's engine features (.github/engine/detect-features.gd)
+#   engine  build each distinct engine once, cached until its feature set,
+#           the Godot version or the build recipe changes (~10 min on a cache miss)
+#   build   validate + test every game headless, export it with its engine, then
+#           load it in headless Chrome and run its tests again in the real web build
+#   deploy  publish to GitHub Pages (main only)
+# A game whose engine fails to build ships with the stock engine (with a warning).
+# A game that has no tests, or whose tests fail headless or in the browser, fails the build.
+
 on:
   push:
     branches: [main]
@@ -17,38 +27,128 @@ env:
   GODOT_VERSION: 4.7.2
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      engines: ${{ steps.plan.outputs.engines }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+
+      - name: Fetch Godot module list
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse --branch "${GODOT_VERSION}-stable" \
+            https://github.com/godotengine/godot ~/godot-modules
+          git -C ~/godot-modules sparse-checkout set modules
+
+      - name: Detect each game's engine features
+        id: plan
+        run: |
+          bash .github/scripts/plan-engines.sh ~/godot-modules _engines | tee plan.txt
+          { echo "## Engines"; echo; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "engines=$(python3 -c 'import json;print(json.dumps([{"key":e["key"],"features":e["features"]} for e in json.load(open("_engines/engines.json"))]))')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-plan
+          path: _engines
+
+  engine:
+    needs: plan
+    if: needs.plan.outputs.engines != '[]'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(needs.plan.outputs.engines) }}
+    name: engine ${{ matrix.engine.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-plan
+          path: _engines
+
+      - name: Restore engine
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: _engines/${{ matrix.engine.key }}.zip
+          key: web-engine-${{ matrix.engine.key }}
+
+      - name: Fetch Godot source
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: src
+        run: |
+          git clone --depth 1 --branch "${GODOT_VERSION}-stable" https://github.com/godotengine/godot ~/godot-src
+          # Use the Emscripten version Godot's own CI builds this release with.
+          em="$(sed -n 's/^ *EM_VERSION: *//p' ~/godot-src/.github/workflows/web_builds.yml | head -1)"
+          echo "em=${em:-4.0.11}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ steps.src.outputs.em }}
+
+      - name: Build engine
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          python3 -m pip install scons
+          bash .github/engine/build-template.sh "_engines/${{ matrix.engine.features }}" \
+            "_engines/${{ matrix.engine.key }}.zip" ~/godot-src
+
+      - name: Save engine
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _engines/${{ matrix.engine.key }}.zip
+          key: web-engine-${{ matrix.engine.key }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.engine.key }}
+          path: _engines/${{ matrix.engine.key }}.zip
+          compression-level: 0
+
   build:
+    needs: [plan, engine]
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Godot + web export templates
-        id: cache-godot
-        uses: actions/cache@v4
+      - uses: ./.github/actions/setup-godot
         with:
-          path: |
-            ~/.local/godot
-            ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-web-nothreads
+          version: ${{ env.GODOT_VERSION }}
 
-      - name: Install Godot ${{ env.GODOT_VERSION }}
-        if: steps.cache-godot.outputs.cache-hit != 'true'
-        run: |
-          REL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
-          mkdir -p ~/.local/godot
-          curl -fsSL -o /tmp/godot.zip "$REL/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          unzip -oq /tmp/godot.zip -d ~/.local/godot
-          # Only pull the web templates out of the ~1.2 GB template archive (HTTP range requests).
-          python3 .github/scripts/fetch-zip-members.py \
-            "$REL/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
-            ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable \
-            "templates/version.txt" "templates/web_nothreads_debug.zip" "templates/web_nothreads_release.zip"
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-plan
+          path: _engines
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: engine-[0-9]*
+          path: _engines
+          merge-multiple: true
 
       - name: Validate, test and export every game
+        run: ENGINES_DIR=_engines bash .github/scripts/build-site.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run every game's tests in the browser
         run: |
-          export GODOT_BIN=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
-          chmod +x "$GODOT_BIN"
-          bash .github/scripts/build-site.sh
+          npm install --prefix .github/scripts --no-save --no-audit --no-fund puppeteer-core@24
+          node .github/scripts/verify-web.js _site
 
       - name: Upload site
         if: github.event_name != 'pull_request'

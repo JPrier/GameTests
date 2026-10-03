@@ -1,0 +1,41 @@
+name: Set up Godot
+description: Installs the Godot editor and its web export templates (cached), and exports GODOT_BIN.
+inputs:
+  version:
+    description: Godot version, e.g. 4.7.2
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Cache Godot + web export templates
+      id: cache-godot
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/godot
+          ~/.local/share/godot/export_templates
+        key: godot-${{ inputs.version }}-web-nothreads
+
+    - name: Install Godot ${{ inputs.version }}
+      if: steps.cache-godot.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        V: ${{ inputs.version }}
+      run: |
+        REL="https://github.com/godotengine/godot/releases/download/${V}-stable"
+        mkdir -p ~/.local/godot
+        curl -fsSL -o /tmp/godot.zip "$REL/Godot_v${V}-stable_linux.x86_64.zip"
+        unzip -oq /tmp/godot.zip -d ~/.local/godot
+        # Only pull the web templates out of the ~1.2 GB template archive (HTTP range requests).
+        python3 .github/scripts/fetch-zip-members.py \
+          "$REL/Godot_v${V}-stable_export_templates.tpz" \
+          ~/.local/share/godot/export_templates/${V}.stable \
+          "templates/version.txt" "templates/web_nothreads_debug.zip" "templates/web_nothreads_release.zip"
+
+    - name: Export GODOT_BIN
+      shell: bash
+      env:
+        V: ${{ inputs.version }}
+      run: |
+        chmod +x ~/.local/godot/Godot_v${V}-stable_linux.x86_64
+        echo "GODOT_BIN=$HOME/.local/godot/Godot_v${V}-stable_linux.x86_64" >> "$GITHUB_ENV"
