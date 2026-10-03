@@ -13,6 +13,7 @@ Small Godot games that run in the browser (desktop and mobile).
 | Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/ticker-time`](games/ticker-time) |
 | Bistro Empire: an incremental restaurant tycoon with 1,241 upgrades, franchises and prestige | [`games/bistro-empire`](games/bistro-empire) |
 | X-Ray Shift: a daily airport x-ray game, flag the bags with contraband and find the illegal items | [`games/xray-shift`](games/xray-shift) |
+| Flightle: name both airports of a real flight path; every miss reveals a clue | [`games/flightle`](games/flightle) |
 
 ## How deploys work
 
