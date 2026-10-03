@@ -106,6 +106,8 @@ async function verify(browser, port, game) {
     const r = await verify(browser, port, g);
     results.push(r);
     console.log(`${r.ok ? 'PASS' : 'FAIL'} ${g}: engine ${r.wasm_mb} MB, download ${r.download_mb} MB gz, start ${r.start_s ?? '-'} s, tests ${r.tests ?? '-'}${r.error ? '\n  ' + r.error : ''}`);
+    if (process.env.GITHUB_ACTIONS) // shows on the PR's checks page
+      console.log(`::${r.ok ? 'notice' : 'error'} title=${g}::engine ${r.wasm_mb} MB, download ${r.download_mb} MB gzipped, started in ${r.start_s ?? '-'} s, browser tests ${r.tests ?? '-'}${r.error ? ' - ' + r.error : ''}`);
   }
   await browser.close(); server.close();
   fs.writeFileSync('verify-web.json', JSON.stringify(results, null, 2));
