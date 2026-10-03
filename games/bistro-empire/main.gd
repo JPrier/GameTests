@@ -602,6 +602,14 @@ func _do(id: String) -> void:
 			var w: String = parts[2]
 			if E.buy_biz(i, w, biz_buy_count(i, w)):
 				_refresh_cache(true)
+		"bizupg":
+			var n := 0
+			for u in _biz_upgrades(int(parts[1])):
+				if float(u.cost) <= E.cash and E.buy_upgrade(int(u.id)):
+					n += 1
+			if n > 0:
+				_toast("Bought %d upgrade%s" % [n, "" if n == 1 else "s"])
+			_refresh_cache(true)
 		"spot":
 			if Biz.move_truck(E.biz[int(parts[1])], int(parts[2])):
 				_toast("Driving to %s..." % Biz.SPOTS[int(parts[2])])
@@ -1744,7 +1752,9 @@ func _draw_biz_card(y: float, i: int) -> float:
 	var s: Dictionary = E.biz[i]
 	var col := Color(String(d.color))
 	var tw_h := _twist_height(i)
-	var r := _row_rect(y, 48 + tw_h + 2 * 60 + 6)
+	var ups := _biz_upgrades(i)
+	var up_h := 50.0 if not ups.is_empty() else 0.0
+	var r := _row_rect(y, 48 + tw_h + 2 * 60 + 6 + up_h)
 	if not _visible(r):
 		return r.end.y + 10
 	_rr(r, C_CARD, 12)
@@ -1757,11 +1767,38 @@ func _draw_biz_card(y: float, i: int) -> float:
 	var tr := Rect2(r.position.x + 12, r.position.y + 48, r.size.x - 24, tw_h)
 	_draw_twist(i, s, tr)
 	var yy := tr.end.y + 6
+	if not ups.is_empty():
+		var cost := 0.0
+		var gain := 1.0
+		var n := 0
+		for u in ups:
+			if cost + float(u.cost) <= E.cash:
+				cost += float(u.cost)
+				n += 1
+				for ef in u.eff:
+					if String(ef[0]) == "biz":
+						gain *= float(ef[2])
+		var ur := Rect2(r.position.x + 12, yy, r.size.x - 24, 44)
+		_rr(ur, Color(col, 0.14), 10, col, 1)
+		_text(ur.position + Vector2(10, 19), "%d upgrade%s ready" % [ups.size(), "" if ups.size() == 1 else "s"], 14, col)
+		_text(ur.position + Vector2(10, 37), _fit(("x%s income" % Econ.fmt_mult(snappedf(gain, 0.01))) if n > 0 else "Need " + Econ.fmt_money(float(ups[0].cost)), 12, ur.size.x - 140), 12, C_MUTED)
+		_button("bizupg:%d" % i, Rect2(ur.end.x - 124, ur.position.y + 4, 120, 36), ("Buy %d · %s" % [n, Econ.fmt_money(cost)]) if n > 0 else "Too pricey", "buy" if n > 0 else "", "content", false, n > 0, 13)
+		yy += up_h
 	for w in ["a", "b"]:
 		var br := Rect2(r.position.x + 12, yy, r.size.x - 24, 54)
 		_draw_biz_build(i, s, w, br, col)
 		yy += 60
 	return r.end.y + 10
+
+
+## This business's upgrades that can be bought right now, cheapest first.
+func _biz_upgrades(i: int) -> Array:
+	var out: Array = []
+	for u in vis_cache:
+		var q: Array = u.req
+		if String(u.cat) == "business" and String(q[0]) == "biz" and int(q[1]) == i:
+			out.append(u)
+	return out
 
 
 func _draw_biz_build(i: int, s: Dictionary, w: String, r: Rect2, col: Color) -> void:
@@ -1770,13 +1807,21 @@ func _draw_biz_build(i: int, s: Dictionary, w: String, r: Rect2, col: Color) -> 
 	var nm: String = d[w]
 	_text(r.position + Vector2(10, 22), nm, 15)
 	_text(r.position + Vector2(16 + _tw(nm, 15), 22), "x%d" % int(s[w]), 13, C_MUTED)
-	_text(r.position + Vector2(10, 42), _fit(String(d[w + "_desc"]), 12, r.size.x - 150), 12, C_MUTED)
+	var nm_next := E.biz_next_milestone(i, w)
+	var desc := String(d[w + "_desc"])
+	if nm_next > 0:
+		desc += " · %d: bonus" % nm_next
+	_text(r.position + Vector2(10, 42), _fit(desc, 12, r.size.x - 150), 12, C_MUTED)
 	var k := biz_buy_count(i, w)
 	var cost := E.biz_cost(i, w, k)
 	var can := cost <= E.cash
 	var g := biz_gain(i, w, k)
-	if absf(g) > 0.0:
-		_text_r(r.end.x - 130, r.end.y - 8, ("+" if g >= 0.0 else "-") + Econ.fmt_money(absf(g)) + "/s", 11, C_GREEN if g >= 0.0 else C_ORANGE)
+	if g > 0.0:
+		var pb := cost / g
+		var pc := C_GREEN if pb < 600.0 else (C_ACCENT if pb < 3600.0 else C_ORANGE)
+		_text_r(r.end.x - 126, r.position.y + 22, "+%s/s · pays back %s" % [Econ.fmt_money(g), Econ.fmt_time(pb)], 11, pc)
+	elif g < 0.0:
+		_text_r(r.end.x - 126, r.position.y + 22, "-%s/s (not needed now)" % Econ.fmt_money(-g), 11, C_ORANGE)
 	_button("biz:%d:%s" % [i, w], Rect2(r.end.x - 118, r.position.y + 5, 112, r.size.y - 10), "Buy %d\n%s" % [k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 15)
 
 

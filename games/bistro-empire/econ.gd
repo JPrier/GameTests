@@ -1268,6 +1268,14 @@ func open_biz(i: int) -> bool:
 	return true
 
 
+func biz_next_milestone(i: int, which: String) -> int:
+	var n := int(biz[i][which])
+	for m in (Biz.A_MILESTONES if which == "a" else Biz.B_MILESTONES):
+		if n < int(m):
+			return int(m)
+	return -1
+
+
 func biz_cost(i: int, which: String, k: int = 1) -> float:
 	return Biz.cost_of(i, which, int(biz[i][which]), k)
 

@@ -904,3 +904,28 @@ func _has_button(main, id: String) -> bool:
 		if String(b.id) == id:
 			return true
 	return false
+
+
+func test_business_builds_keep_paying_back():
+	# the next build should pay for itself in minutes for a long while, not days
+	for i in Biz.N:
+		for n in [25, 100]:
+			var e := _with_biz(i)
+			var s: Dictionary = e.biz[i]
+			s.a = n
+			s.b = 3 if Biz.DEFS[i].id == "catering" else int(n * (0.7 if Biz.DEFS[i].id in ["bakery", "hotel"] else (0.6 if Biz.DEFS[i].id == "bar" else 0.3)))
+			for u in e.upgrades:
+				if not u.legacy and String(u.key).begins_with("bz_%s_a" % Biz.DEFS[i].id) and e.req_met(u):
+					e.owned[u.id] = true
+			e.mark_dirty()
+			var c0 := Biz.estimate(i, s, e)
+			var s2 := s.duplicate(true)
+			s2.a = n + 1
+			var cost := e.biz_cost(i, "a", 1)
+			if Biz.DEFS[i].id == "bakery":
+				s2.b = int(s.b) + 1
+				cost += e.biz_cost(i, "b", 1)
+			var c1 := Biz.estimate(i, s2, e)
+			var gain := (float(c1.rev) - float(c1.cost)) - (float(c0.rev) - float(c0.cost))
+			assert_gt(gain, 0.0, "%s build %d earns" % [Biz.DEFS[i].name, n])
+			assert_lt(cost / gain, 3600.0, "%s build %d pays back within an hour" % [Biz.DEFS[i].name, n])

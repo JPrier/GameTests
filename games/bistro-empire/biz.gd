@@ -13,31 +13,31 @@ extends RefCounted
 ## and some have per-sale costs, so a badly run business can lose money. Money is computed two ways: step() simulates the twist in real time while the
 ## game runs, estimate() gives a steady-state rate for display, offline time and the balance bot.
 
-const REV_K := 2.0e-5             # revenue per unit per second, relative to the business's scale
+const REV_K := 3.0e-6             # revenue per unit per second, relative to the business's scale
 
 const DEFS := [
 	{"id": "truck", "name": "Food Truck", "unlock": 3.0e5, "a": "Truck", "as": "Trucks", "b": "Menu Item", "bs": "Menu Items",
-		"a_cost": 0.002, "b_cost": 0.02, "ga": 1.15, "gb": 1.22, "color": "ff8a3d", "rev": 4.0,
+		"a_cost": 0.002, "b_cost": 0.02, "ga": 1.04, "gb": 1.1, "color": "ff8a3d", "rev": 0.5,
 		"blurb": "Park where the crowds are. Each spot's crowd changes every few minutes; moving takes 15s.",
-		"a_desc": "+1 truck selling food", "b_desc": "+10% per sale"},
+		"a_desc": "+1 truck selling food", "b_desc": "+5% on every sale"},
 	{"id": "bakery", "name": "Bakery", "unlock": 3.0e7, "a": "Oven", "as": "Ovens", "b": "Counter", "bs": "Counters",
-		"a_cost": 0.002, "b_cost": 0.004, "ga": 1.15, "gb": 1.16, "color": "e0c27a", "rev": 2.5,
+		"a_cost": 0.002, "b_cost": 0.004, "ga": 1.04, "gb": 1.06, "color": "e0c27a", "rev": 6.0,
 		"blurb": "Ovens bake, counters sell. Unsold bread goes stale; a morning rush every 4 minutes sells triple.",
 		"a_desc": "+1 loaf/s baked", "b_desc": "+1.5 loaves/s sold"},
 	{"id": "catering", "name": "Catering Co.", "unlock": 3.0e9, "a": "Crew", "as": "Crew", "b": "Van", "bs": "Vans",
-		"a_cost": 0.002, "b_cost": 0.05, "ga": 1.15, "gb": 1.6, "color": "6cc56b",
+		"a_cost": 0.002, "b_cost": 0.05, "ga": 1.04, "gb": 1.3, "color": "6cc56b",
 		"blurb": "Take contracts: weddings, galas, festivals. Crew is busy until the job ends, then it pays.",
 		"a_desc": "+1 crew member", "b_desc": "+1 job at a time"},
 	{"id": "bar", "name": "Cocktail Bar", "unlock": 3.0e11, "a": "Bartender", "as": "Bartenders", "b": "Bouncer", "bs": "Bouncers",
-		"a_cost": 0.002, "b_cost": 0.006, "ga": 1.15, "gb": 1.17, "color": "b58cff",
+		"a_cost": 0.002, "b_cost": 0.006, "ga": 1.04, "gb": 1.07, "color": "b58cff",
 		"blurb": "Fat margins, rowdy crowds. When the rowdy meter fills there's an incident and a fine.",
 		"a_desc": "+1 drink/s", "b_desc": "Keeps the peace"},
 	{"id": "hotel", "name": "Boutique Hotel", "unlock": 3.0e13, "a": "Room", "as": "Rooms", "b": "Concierge", "bs": "Concierges",
-		"a_cost": 0.002, "b_cost": 0.005, "ga": 1.15, "gb": 1.17, "color": "5aa9e6",
+		"a_cost": 0.002, "b_cost": 0.005, "ga": 1.04, "gb": 1.07, "color": "5aa9e6",
 		"blurb": "Set your room rate each season. Rent is due on every room, full or empty.",
 		"a_desc": "+1 room (+rent)", "b_desc": "+more guests want to stay"},
 	{"id": "wholesale", "name": "Wholesale Co.", "unlock": 3.0e15, "a": "Warehouse", "as": "Warehouses", "b": "Delivery Truck", "bs": "Delivery Trucks",
-		"a_cost": 0.002, "b_cost": 0.01, "ga": 1.15, "gb": 1.2, "color": "6ad1c0",
+		"a_cost": 0.002, "b_cost": 0.01, "ga": 1.04, "gb": 1.12, "color": "6ad1c0",
 		"blurb": "Stock piles up; sell it when the market price is high. Trucks cut food costs across your empire.",
 		"a_desc": "+1 crate/s", "b_desc": "-food costs everywhere"},
 ]
@@ -54,7 +54,8 @@ const JOB_NAMES := ["Wedding", "Corporate Gala", "Music Festival", "Birthday Par
 const SEASONS := ["Peak", "Shoulder", "Off-season", "Shoulder"]
 const SEASON_MULT := [1.7, 1.0, 0.45, 1.0]
 const SEASON_LEN := 240.0
-const A_MILESTONES := [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000]
+const A_MILESTONES := [10, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450, 475, 500,
+	525, 550, 575, 600, 625, 650, 675, 700, 725, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1000]
 const B_MILESTONES := [5, 10, 25, 50, 100, 150]
 
 
@@ -116,23 +117,33 @@ const RUN_A := {"truck": 0.35, "bakery": 0.0, "catering": 0.4, "bar": 0.2, "hote
 const RUN_B := {"truck": 0.0, "bakery": 0.2, "catering": 0.0, "bar": 0.4, "hotel": 0.0, "wholesale": 0.3}
 
 
-static func cost_mult(i: int, e) -> float:
+## Builds get pricier slowly (+5% each), and every milestone (10, then every 25 up to 1,000)
+## doubles the business's income, so the next build keeps paying back in minutes for a long time.
+static func compound(_i: int, _s: Dictionary) -> float:
+	return 1.0
+
+
+static func cost_mult(i: int, e, s = null) -> float:
 	var a: Dictionary = e.agg()
-	return float(a.biz[i]) * float(a.mul.biz) * float(a.upkeep) * e.effect_mult("wages")
+	if s == null:
+		s = e.biz[i]
+	return float(a.biz[i]) * float(a.mul.biz) * compound(i, s) * float(a.upkeep) * e.effect_mult("wages")
 
 
 static func upkeep(i: int, s: Dictionary, e) -> float:
 	if not s.open:
 		return 0.0
 	var id: String = DEFS[i].id
-	return (int(s.a) * float(RUN_A[id]) + int(s.b) * float(RUN_B[id])) * unit_rev(i) * cost_mult(i, e)
+	return (int(s.a) * float(RUN_A[id]) + int(s.b) * float(RUN_B[id])) * unit_rev(i) * cost_mult(i, e, s)
 
 
 # ------------------------------------------------------------------ helpers
 
-static func mult(i: int, e) -> float:
+static func mult(i: int, e, s = null) -> float:
 	var a: Dictionary = e.agg()
-	return float(a.biz[i]) * float(a.mul.biz) * brand(e) * e.star_mult(a) * e.grit_mult(a) * float(a.mul.empire) * e.effect_mult("income")
+	if s == null:
+		s = e.biz[i]
+	return compound(i, s) * float(a.biz[i]) * float(a.mul.biz) * brand(e) * e.star_mult(a) * e.grit_mult(a) * float(a.mul.empire) * e.effect_mult("income")
 
 
 ## Franchising makes your name famous, which draws customers to every business you run.
@@ -150,7 +161,7 @@ static func food_cost(e) -> float:
 
 static func truck_rev(i: int, s: Dictionary, e, spot_mult: float) -> float:
 	var a: Dictionary = e.agg()
-	return int(s.a) * unit_rev(i) * (1.0 + 0.1 * int(s.b)) * spot_mult * float(a.twist.truck) * mult(i, e)
+	return int(s.a) * unit_rev(i) * (1.0 + 0.05 * int(s.b)) * spot_mult * float(a.twist.truck) * mult(i, e, s)
 
 
 static func bakery_sell_cap(s: Dictionary, e) -> float:
@@ -202,8 +213,8 @@ static func season(s: Dictionary) -> int:
 static func hotel_rev(i: int, s: Dictionary, e, sea: int, rate: float) -> Dictionary:
 	var rooms := float(int(s.a))
 	var occ := minf(rooms, hotel_demand(s, e, sea, rate))
-	var m := mult(i, e)
-	return {"rev": occ * rate * unit_rev(i) * 2.2 * m, "rent": rooms * unit_rev(i) * 0.6 * cost_mult(i, e), "occ": occ / maxf(rooms, 1.0)}
+	var m := mult(i, e, s)
+	return {"rev": occ * rate * unit_rev(i) * 1.4 * m, "rent": rooms * unit_rev(i) * 0.6 * cost_mult(i, e, s), "occ": occ / maxf(rooms, 1.0)}
 
 
 static func wholesale_cap(s: Dictionary) -> float:
@@ -211,7 +222,7 @@ static func wholesale_cap(s: Dictionary) -> float:
 
 
 static func wholesale_price(i: int, s: Dictionary, e) -> float:
-	return unit_rev(i) * float(s.mprice) * float(e.agg().twist.wholesale) * mult(i, e)
+	return unit_rev(i) * float(s.mprice) * float(e.agg().twist.wholesale) * mult(i, e, s)
 
 
 ## Percentage points knocked off food costs everywhere by delivery trucks.
@@ -243,17 +254,17 @@ static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
 		"bakery":
 			var made := float(int(s.a))
 			var sold := minf(made, bakery_sell_cap(s, e))
-			var price := unit_rev(i) * mult(i, e)
+			var price := unit_rev(i) * mult(i, e, s)
 			rev = sold * price
 			cost += made * price * 0.35 * food_cost(e) / 25.0
 		"catering":
 			var util := minf(0.9, 0.35 + 0.12 * int(s.b) + (0.15 if mgr else 0.0))
 			if offline and not mgr:
 				util = 0.0
-			rev = int(s.a) * unit_rev(i) * 1.6 * util * float(a.twist.catering) * mult(i, e)
+			rev = int(s.a) * unit_rev(i) * 1.6 * util * float(a.twist.catering) * mult(i, e, s)
 		"bar":
 			var m := bar_mix(s)
-			var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e)
+			var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e, s)
 			var full := int(s.a) * float(m.vol) * per
 			var inc := bar_incident_rate(s, e)
 			var lost := clampf(inc * 10.0, 0.0, 1.0)   # closed 10s per incident
@@ -272,7 +283,7 @@ static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
 			cost += rent
 		"wholesale":
 			var pm := 1.35 if mgr else (0.85 if offline else 1.0)
-			rev = int(s.a) * unit_rev(i) * pm * float(a.twist.wholesale) * mult(i, e)
+			rev = int(s.a) * unit_rev(i) * pm * float(a.twist.wholesale) * mult(i, e, s)
 	return {"rev": rev, "cost": cost}
 
 
@@ -305,7 +316,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 		"bakery":
 			s.rush_t = fmod(float(s.rush_t) + dt, RUSH_PERIOD)
 			var rush := float(s.rush_t) < RUSH_LEN
-			var price := unit_rev(i) * mult(i, e)
+			var price := unit_rev(i) * mult(i, e, s)
 			var made := float(int(s.a)) * dt
 			cost += made * price * 0.35 * food_cost(e) / 25.0
 			var stock := float(s.stock) + made
@@ -330,7 +341,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 					done.append(j)
 			for j in done:
 				(s.jobs as Array).erase(j)
-				rev += float(j.pay) * float(a.twist.catering) * mult(i, e)
+				rev += float(j.pay) * float(a.twist.catering) * mult(i, e, s)
 			if mgr:
 				auto_accept(i, s, e)
 		"bar":
@@ -338,7 +349,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 			if float(s.closed_t) > 0.0:
 				s.closed_t = maxf(0.0, float(s.closed_t) - dt)
 			else:
-				var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e)
+				var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e, s)
 				rev = int(s.a) * float(m.vol) * per * dt
 				cost += rev * 0.2 * food_cost(e) / 25.0
 				# meter fills at 100 per incident on average
@@ -480,7 +491,7 @@ static func add_upgrades(e) -> void:
 		var u := float(d.unlock)
 		for mi in A_MILESTONES.size():
 			var n: int = A_MILESTONES[mi]
-			var x := 2.0 if mi < 2 else 1.25
+			var x := 2.0
 			var c := u * float(d.a_cost) * pow(float(d.ga), n - 1) * 3.0
 			e._add("bz_%s_a%d" % [id, n], "%s: %d %s" % [d.name, n, d.as], "business", c, [["biz", i, x]], ["biz", i, "a", n])
 		for mi in B_MILESTONES.size():

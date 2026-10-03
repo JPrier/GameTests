@@ -49,7 +49,7 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 | Boutique Hotel | Set the room rate. The season changes every 4 minutes, and rent is due on every room, full or empty. |
 | Wholesale Co. | Stock piles up in warehouses; sell it when the moving market price is high. Delivery trucks cut food costs across the whole empire. |
 
-Each business has an optional manager upgrade that runs its twist for you. Franchising also boosts every business a little through brand fame.
+Each build costs only about 5% more than the last. Every milestone (10, then every 25 up to 1,000) doubles that business's income. So the next build keeps paying back in minutes up to about 100 builds, and the curve only steepens to hours past 200. Each buy button shows its payback time. Every business card has a "Buy all" bar for that business's ready upgrades, so you don't have to dig through the Upgrades tab. Each business also has an optional manager upgrade that runs its twist for you. Franchising also boosts every business a little through brand fame.
 
 ## Money out: expenses, loans and events
 
@@ -69,7 +69,7 @@ Each business has an optional manager upgrade that runs its twist for you. Franc
 
   You can also file for bankruptcy yourself while you're in the red. Bankruptcies count towards unlocking concepts, the same as sales.
 
-## Upgrades: 1,564 in total
+## Upgrades: 1,720 in total
 
 | Kind | Count |
 |---|---|
@@ -87,7 +87,7 @@ Each business has an optional manager upgrade that runs its twist for you. Franc
 | Concept signatures (4 × 30) | 120 |
 | Crossroads (40 pairs) | 80 |
 | Legacy perks (bought with stars) | 80 |
-| Side businesses (6 × 40, plus 10 for every business) | 250 |
+| Side businesses (6 × 66, plus 10 for every business) | 406 |
 | Grit perks (bought with Grit) | 73 |
 
 ## Saving and offline time
@@ -128,4 +128,4 @@ Each business has an optional manager upgrade that runs its twist for you. Franc
   - `dev_skip(seconds)`
   - `dev_event("lawsuit")` (any id from `events.gd`)
 
-Tests: `gck test bistro-empire` (`tests/test_main.gd`, 51 tests). They cover expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.
+Tests: `gck test bistro-empire` (`tests/test_main.gd`, 52 tests). They cover business payback staying under an hour, expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.
