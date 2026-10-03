@@ -232,3 +232,20 @@ func test_keyboard_loop():
 	press_key(KEY_ENTER)
 	await wait_frames(2)
 	assert_true(main.results[0].done, "Enter closes the bag")
+
+
+## Dates spread from next year out to 2100, plus leap days and the 2038 rollover.
+func _far_future_days() -> Array:
+	var out: Array = ["2028-02-29", "2038-01-19", "2038-01-20", "2096-02-29", "2100-03-01"]
+	var t := Time.get_unix_time_from_datetime_string("2027-01-01T00:00:00")
+	var end := Time.get_unix_time_from_datetime_string("2100-12-31T00:00:00")
+	while t <= end:
+		out.append(Time.get_date_string_from_unix_time(t))
+		t += 449 * 86400   # an odd stride so the samples land on every weekday and month
+	return out
+
+
+func test_far_future_days_are_fair():
+	var main = await _fresh()
+	for d in _far_future_days():
+		assert_true(main.bags_valid(main.generate(d)), d + ": valid shift")

@@ -200,3 +200,30 @@ func test_five_title_taps_enable_dev_mode():
 	for i in 5:
 		main._on_press(p)
 	assert_true(main.dev_open, "five more taps reopen the panel")
+
+
+## Dates spread from next year out to 2100, plus leap days and the 2038 rollover.
+func _far_future_days() -> Array:
+	var out: Array = ["2028-02-29", "2038-01-19", "2038-01-20", "2096-02-29", "2100-03-01"]
+	var t := Time.get_unix_time_from_datetime_string("2027-01-01T00:00:00")
+	var end := Time.get_unix_time_from_datetime_string("2100-12-31T00:00:00")
+	while t <= end:
+		out.append(Time.get_date_string_from_unix_time(t))
+		t += 449 * 86400   # an odd stride so the samples land on every weekday and month
+	return out
+
+
+func test_far_future_days_are_playable():
+	var main = await _fresh()
+	for d in _far_future_days():
+		var i: int = main.route_index_for(d)
+		assert_true(i >= 0 and i < main.routes.size(), d + ": route index in range")
+		assert_true(main.route_valid(main.routes[i]), d + ": valid route")
+	# the route pool is reshuffled every cycle, so cycles far ahead still never repeat within a cycle
+	var n: int = main.routes.size()
+	var start := 40 * n
+	var seen := {}
+	var t0 := Time.get_unix_time_from_datetime_string(main.EPOCH + "T00:00:00")
+	for k in n:
+		seen[main.route_index_for(Time.get_date_string_from_unix_time(t0 + (start + k) * 86400))] = true
+	assert_gt(seen.size(), n - 3, "cycle 40 still uses (almost) every route once")

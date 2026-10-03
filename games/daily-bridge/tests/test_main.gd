@@ -316,3 +316,24 @@ func test_loupe_shows_while_drawing_and_sits_above_the_finger():
 	assert_false(r.has_point(main.drag_pos), "not under the finger")
 	assert_eq(main._clip_seg(Vector2(-10, 5), Vector2(10, 5), Rect2(0, 0, 4, 10)), [Vector2(0, 5), Vector2(4, 5)], "segment clipped to the loupe")
 	assert_eq(main._clip_seg(Vector2(-10, 50), Vector2(10, 50), Rect2(0, 0, 4, 10)), [], "outside")
+
+
+## Dates spread from next year out to 2100, plus leap days and the 2038 rollover.
+func _far_future_days() -> Array:
+	var out: Array = ["2028-02-29", "2038-01-19", "2038-01-20", "2096-02-29", "2100-03-01"]
+	var t := Time.get_unix_time_from_datetime_string("2027-01-01T00:00:00")
+	var end := Time.get_unix_time_from_datetime_string("2100-12-31T00:00:00")
+	while t <= end:
+		out.append(Time.get_date_string_from_unix_time(t))
+		t += 449 * 86400   # an odd stride so the samples land on every weekday and month
+	return out
+
+
+func test_far_future_days_are_solvable():
+	# every day past the precomputed table is searched on the player's device, so it must find an ideal
+	var days := _far_future_days()
+	for k in range(0, days.size(), 8):
+		var d: String = days[k]
+		var s := BridgeSim.IdealSearch.new(BridgeSim.make_level(d))
+		s.run()
+		assert_true(s.index() >= 0 and s.cost > 0, d + ": has an ideal bridge")

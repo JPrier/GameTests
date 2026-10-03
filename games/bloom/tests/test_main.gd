@@ -338,3 +338,30 @@ func test_playground_practice_map():
 	assert_eq(main.tool, -1, "playground-only tool is reset")
 	main.date = "2026-10-01"
 	main.wipe_save()
+
+
+## Dates spread from next year out to 2100, plus leap days and the 2038 rollover.
+func _far_future_days() -> Array:
+	var out: Array = ["2028-02-29", "2038-01-19", "2038-01-20", "2096-02-29", "2100-03-01"]
+	var t := Time.get_unix_time_from_datetime_string("2027-01-01T00:00:00")
+	var end := Time.get_unix_time_from_datetime_string("2100-12-31T00:00:00")
+	while t <= end:
+		out.append(Time.get_date_string_from_unix_time(t))
+		t += 449 * 86400   # an odd stride so the samples land on every weekday and month
+	return out
+
+
+func test_far_future_days_generate():
+	var main = await _fresh()
+	var seen := {}
+	for d in _far_future_days():
+		main.generate(d)
+		var open := 0
+		for t in main.tiles:
+			if t == main.Cell.OPEN:
+				open += 1
+		assert_true(main.budget >= 16 and main.budget <= 28, d + ": seed budget in range")
+		assert_gt(open, 300, d + ": enough open ground to grow into")
+		assert_gt(main.puzzle_no, 0, d + ": has a puzzle number")
+		seen[hash(main.tiles)] = true
+	assert_eq(seen.size(), _far_future_days().size(), "every sampled day has its own map")
