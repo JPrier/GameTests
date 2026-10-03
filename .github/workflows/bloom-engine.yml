@@ -1,8 +1,9 @@
 name: Build Bloom web engine
 
 # Builds Bloom's slim Godot web export template (games/bloom/engine/build-template.sh)
-# and uploads it as an artifact. Commit the zip to games/bloom/engine/ to use it.
-# Only runs when the template recipe changes, so normal deploys are unaffected.
+# and commits the zip back to the branch that changed the recipe, together with
+# build-info.txt (sizes and how the live site serves Bloom's files).
+# Only runs when the recipe changes, so normal deploys are unaffected.
 
 on:
   push:
@@ -12,24 +13,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: bloom-engine-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   template:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Show how the live site serves Bloom's files
-        continue-on-error: true
-        run: |
-          for f in index.html index.js index.wasm index.pck; do
-            echo "== $f"
-            curl -sS -o /dev/null -H 'Accept-Encoding: gzip, br' \
-              -w 'status=%{http_code} bytes_on_wire=%{size_download} time=%{time_total}s\n' \
-              -D - "https://jprier.github.io/GameTests/bloom/$f" \
-              | grep -iE '^(status|content-(encoding|length|type)|cache-control|x-cache|age)' || true
-          done
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
@@ -41,7 +35,34 @@ jobs:
       - name: Build template
         run: bash games/bloom/engine/build-template.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bloom-web-template
-          path: games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
+      - name: Write build-info.txt
+        run: |
+          out=games/bloom/engine/build-info.txt
+          zip=games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
+          {
+            echo "Built $(date -u +%FT%TZ) from $GITHUB_SHA by $GITHUB_WORKFLOW"
+            echo
+            echo "## Template contents (bytes)"
+            unzip -l "$zip"
+            unzip -p "$zip" godot.wasm > /tmp/godot.wasm
+            echo "godot.wasm gzip -9: $(gzip -9c /tmp/godot.wasm | wc -c)"
+            echo
+            echo "## How the live site serves Bloom right now"
+            for f in index.html index.js index.wasm index.pck; do
+              echo "== $f"
+              curl -sS -o /dev/null -H 'Accept-Encoding: gzip, br' \
+                -w 'status=%{http_code} bytes_on_wire=%{size_download} time=%{time_total}s\n' \
+                -D - "https://jprier.github.io/GameTests/bloom/$f" \
+                | grep -iE '^(status|content-(encoding|length|type)|cache-control|x-cache|age)' || true
+            done
+          } > "$out"
+          cat "$out"
+
+      - name: Commit template to the branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip games/bloom/engine/build-info.txt
+          git commit -m "Bloom: rebuild slim web template" || exit 0
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
