@@ -41,6 +41,7 @@ jobs:
           zip=games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
           {
             echo "Built $(date -u +%FT%TZ) from $GITHUB_SHA by $GITHUB_WORKFLOW"
+            echo "Godot $(sed -n 's/^ *GODOT_VERSION: *//p' .github/workflows/pages.yml | head -1), Emscripten $(emcc --version | head -1)"
             echo
             echo "## Template contents (bytes)"
             unzip -l "$zip"
@@ -50,10 +51,10 @@ jobs:
             echo "## How the live site serves Bloom right now"
             for f in index.html index.js index.wasm index.pck; do
               echo "== $f"
-              curl -sS -o /dev/null -H 'Accept-Encoding: gzip, br' \
+              curl -sSL -o /dev/null -H 'Accept-Encoding: gzip, br' \
                 -w 'status=%{http_code} bytes_on_wire=%{size_download} time=%{time_total}s\n' \
                 -D - "https://jprier.github.io/GameTests/bloom/$f" \
-                | grep -iE '^(status|content-(encoding|length|type)|cache-control|x-cache|age)' || true
+                | grep -iE '^(status|location|content-(encoding|length|type)|cache-control|x-cache|age)' || true
             done
           } > "$out"
           cat "$out"

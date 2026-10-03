@@ -267,9 +267,9 @@ func _describe(n: Node, depth: int, props: bool) -> Dictionary:
 	if n is Node2D:
 		d["position"] = n.position
 		d["visible"] = n.visible
-	elif n is Node3D:
-		d["position"] = n.position
-		d["visible"] = n.visible
+	elif n.is_class("Node3D"):  # by name, so slim engine builds without 3D still parse
+		d["position"] = n.get("position")
+		d["visible"] = n.get("visible")
 	elif n is Control:
 		d["position"] = n.position
 		d["size"] = n.size

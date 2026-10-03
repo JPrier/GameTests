@@ -15,6 +15,9 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Must match the editor that exports the site (GODOT_VERSION in pages.yml).
+PAGES_YML="$HERE/../../../.github/workflows/pages.yml"
+GODOT_VERSION="${GODOT_VERSION:-$(sed -n 's/^ *GODOT_VERSION: *//p' "$PAGES_YML" 2>/dev/null | head -1)}"
 GODOT_VERSION="${GODOT_VERSION:-4.7.2}"
 EM_VERSION="${EM_VERSION:-4.0.11}"
 SRC="${1:-$HERE/.godot-src}"
