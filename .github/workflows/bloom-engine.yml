@@ -20,6 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show how the live site serves Bloom's files
+        continue-on-error: true
+        run: |
+          for f in index.html index.js index.wasm index.pck; do
+            echo "== $f"
+            curl -sS -o /dev/null -H 'Accept-Encoding: gzip, br' \
+              -w 'status=%{http_code} bytes_on_wire=%{size_download} time=%{time_total}s\n' \
+              -D - "https://jprier.github.io/GameTests/bloom/$f" \
+              | grep -iE '^(status|content-(encoding|length|type)|cache-control|x-cache|age)' || true
+          done
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 4.0.11
