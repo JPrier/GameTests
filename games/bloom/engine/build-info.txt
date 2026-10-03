@@ -1,0 +1,46 @@
+Built 2026-10-03T17:13:41Z from 09402b3e0e1c868c41e942cc153859e63068a178 by Build Bloom web engine
+
+## Template contents (bytes)
+Archive:  games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+   247760  2026-10-03 17:13   godot.js
+ 15877120  2026-10-03 17:13   godot.wasm
+     7298  2026-10-03 17:03   godot.audio.worklet.js
+     2973  2026-10-03 17:03   godot.audio.position.worklet.js
+     5088  2026-10-03 17:03   godot.html
+     5739  2026-10-03 17:03   godot.service.worker.js
+      971  2026-10-03 17:03   godot.offline.html
+---------                     -------
+ 16146949                     7 files
+godot.wasm gzip -9: 4667944
+
+## How the live site serves Bloom right now
+== index.html
+content-type: text/html
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+status=301 bytes_on_wire=162 time=0.090782s
+== index.js
+content-type: text/html
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+status=301 bytes_on_wire=162 time=0.065099s
+== index.wasm
+content-type: text/html
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+status=301 bytes_on_wire=162 time=0.060020s
+== index.pck
+content-type: text/html
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+status=301 bytes_on_wire=162 time=0.066421s
