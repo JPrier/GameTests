@@ -1,0 +1,79 @@
+Built 2026-10-03T17:33:22Z from ad18dd979971f6e11fb174dacda3357ff70ae108 by Build Bloom web engine
+Godot 4.7.2, Emscripten emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.11 (d3432e7a2a6585331c94b041973fb16c9f332ce4)
+
+## Template contents (bytes)
+Archive:  games/bloom/engine/godot.web.template_release.wasm32.nothreads.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+   247760  2026-10-03 17:33   godot.js
+ 15877120  2026-10-03 17:33   godot.wasm
+     7298  2026-10-03 17:23   godot.audio.worklet.js
+     2973  2026-10-03 17:23   godot.audio.position.worklet.js
+     5088  2026-10-03 17:23   godot.html
+     5739  2026-10-03 17:23   godot.service.worker.js
+      971  2026-10-03 17:23   godot.offline.html
+---------                     -------
+ 16146949                     7 files
+godot.wasm gzip -9: 4667944
+
+## How the live site serves Bloom right now
+== index.html
+content-type: text/html
+location: https://joshprier.dev/GameTests/bloom/index.html
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+content-type: text/html; charset=utf-8
+cache-control: max-age=600
+content-encoding: gzip
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 2294
+status=200 bytes_on_wire=2294 time=0.462352s
+== index.js
+content-type: text/html
+location: https://joshprier.dev/GameTests/bloom/index.js
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+content-type: application/javascript; charset=utf-8
+cache-control: max-age=600
+content-encoding: gzip
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 69442
+status=200 bytes_on_wire=69442 time=0.297755s
+== index.wasm
+content-type: text/html
+location: https://joshprier.dev/GameTests/bloom/index.wasm
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+content-type: application/wasm
+cache-control: max-age=600
+content-encoding: gzip
+age: 1
+x-cache: MISS
+x-cache-hits: 0
+content-length: 10248949
+status=200 bytes_on_wire=10248949 time=1.568446s
+== index.pck
+content-type: text/html
+location: https://joshprier.dev/GameTests/bloom/index.pck
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 162
+content-type: application/octet-stream
+cache-control: max-age=600
+content-encoding: gzip
+age: 0
+x-cache: MISS
+x-cache-hits: 0
+content-length: 81495
+status=200 bytes_on_wire=81495 time=0.433622s
