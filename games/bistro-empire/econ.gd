@@ -7,10 +7,16 @@ extends RefCounted
 ## so the three volume stats bottleneck each other, and price turns surplus
 ## demand into money up to a price ceiling. Franchises, ventures and stars
 ## multiply the flagship on top.
+##
+## Money out: food costs (a % of restaurant revenue), upkeep on everything you've built,
+## loan interest, and random events. If cash stays below zero past the deadline the whole
+## empire goes bankrupt: the run resets and you earn Grit, a second prestige currency.
+## Side businesses (biz.gd) earn alongside the restaurant.
 
 const STATS := ["demand", "seating", "kitchen", "ticket"]
 const STAT_NAME := {"demand": "Demand", "seating": "Seating", "kitchen": "Kitchen", "ticket": "Ticket",
-	"global": "All income", "tap": "Serve tap", "royalty": "Franchise royalties", "ceiling": "Price ceiling"}
+	"global": "Restaurant income", "tap": "Serve tap", "royalty": "Franchise royalties", "ceiling": "Price ceiling",
+	"biz": "All business income", "empire": "All income"}
 const REPS := ["ads", "tables", "cooks", "recipes"]
 const REP_NAME := {"ads": "Ad Campaign", "tables": "Table", "cooks": "Line Cook", "recipes": "Recipe"}
 const REP_PLURAL := {"ads": "Ad Campaigns", "tables": "Tables", "cooks": "Line Cooks", "recipes": "Recipes"}
@@ -29,6 +35,15 @@ const STAR_BASE := 0.02
 const OFFLINE_BASE := 0.25
 const OFFLINE_HOURS_BASE := 2.0
 const CITY_GROWTH := 1.8
+const FOOD_BASE := 25.0           # % of a plate's base value spent on ingredients
+const RENT_K := 0.1              # per idle seat, as a share of a plate's base value
+const WAGE_K := 0.1              # per idle kitchen slot
+const MARKETING_K := 0.05         # per guest turned away (ads that brought people you can't serve)
+const CREDIT_SECS := 600.0        # credit limit = this many seconds of gross income
+const INTEREST_BASE := 0.005 / 60.0  # 0.5% per minute at low borrowing
+const DEADLINE_BASE := 300.0      # seconds you can stay in the red
+const GRIT_BASE := 0.01           # +1% all income per unspent Grit
+const STAR_COEF := 25.0
 const VENT_GROWTH := 1.5
 
 const CONCEPTS := ["diner", "fastfood", "fine", "cafe"]
@@ -51,7 +66,7 @@ const CITY_NAMES := ["Maple Falls", "Riverton", "Cedar Grove", "Port Haven", "Br
 	"Madrid", "Istanbul", "Dubai", "Mumbai", "Singapore", "Seoul", "Tokyo", "Sydney", "Sao Paulo", "New York",
 	"Orbital Station", "Lunar Base", "Mars Colony"]
 const VENTURES := [
-	{"name": "Food Truck Fleet", "stat": "demand"},
+	{"name": "Street Food Brand", "stat": "demand"},
 	{"name": "Family Farm", "stat": "ticket"},
 	{"name": "Furniture Workshop", "stat": "seating"},
 	{"name": "Culinary School", "stat": "kitchen"},
@@ -99,14 +114,29 @@ var play_time := 0.0
 var taps := 0
 var best_income := 0.0
 var concept_chosen := false
+var biz: Array = []               # side businesses, see biz.gd
+var debt := 0.0
+var grit := 0.0                   # unspent
+var grit_earned := 0.0
+var bankruptcies := 0
+var red_t := 0.0                  # seconds spent with cash below zero
+var effects: Array = []           # [{kind, mult, t, dur, src}] timed effects from events
+var event: Dictionary = {}        # the event card waiting for an answer
+var event_t := Events.MIN_GAP     # seconds of active play until the next event
+var peak_gross := 0.0             # best gross income per second this run
+var events_on := true
+var last_bankrupt: Dictionary = {}
+var notes: Array = []             # short messages for the UI to show
+var rng := RandomNumberGenerator.new()
 
 var _agg: Dictionary = {}
 var _dirty := true
 
 
 func _init() -> void:
+	rng.randomize()
 	for i in NC:
-		city_cost.append(5.0e6 * ladder(0.0, 3.2, 3.2, i, NC))
+		city_cost.append(5.0e6 * ladder(0.0, 2.4, 3.4, i, NC))
 		city_yield.append(pow(4.0, i))
 	for i in NV:
 		vent_cost.append(1.0e9 * ladder(0.0, 10.0, 10.0, i, NV))
@@ -359,6 +389,25 @@ func _build_catalogue() -> void:
 					eff = [["flag", flag_list[t]]]; sc = 2.0 + 3.0 * t
 			_add("l_%s_%d" % [kind, t], "%s %s" % [base_n, roman(t + 1)], "legacy", 0.0, eff, ["legacy", kind, t],
 				{"legacy": true, "star": floor(sc)})
+	# ---- 15. side businesses: 6 x 40 + 10
+	Biz.add_upgrades(self)
+	# ---- 16. grit perks (earned by going bankrupt, survive every reset): 73
+	var grit_lines := [
+		["Comeback Kid", 10, "empire", [["mul", "empire", 1.5]], 3.0, 2.2],
+		["Thick Skin", 8, "skin", [["event_cost", 0.8]], 2.0, 2.0],
+		["Line of Credit", 8, "credit", [["credit", 1.5]], 2.0, 2.0],
+		["Friendly Banker", 8, "rates", [["interest", 0.8]], 2.0, 2.0],
+		["Lean Operations", 8, "lean", [["upkeep", 0.8]], 3.0, 2.0],
+		["Bulk Buyer", 6, "food", [["foodcut", 3.0]], 3.0, 2.2],
+		["Second Wind", 5, "wind", [["deadline", 60.0]], 2.0, 2.5],
+		["Side Hustle", 10, "hustle", [["mul", "biz", 2.0]], 3.0, 2.2],
+		["Lucky Break", 5, "luck", [["luck", 0.08]], 4.0, 2.5],
+		["Fire Sale", 5, "sale", [["firesale", 0.1]], 2.0, 2.0],
+	]
+	for row in grit_lines:
+		for t in int(row[1]):
+			_add("gr_%s_%d" % [row[2], t], "%s %s" % [row[0], roman(t + 1)], "grit", 0.0, row[3], ["legacy", row[2], t],
+				{"legacy": true, "cur": "grit", "lp": "gr", "star": floor(float(row[4]) * pow(float(row[5]), t))})
 
 
 # ================================================================= lifecycle
@@ -377,6 +426,15 @@ func reset_run_state() -> void:
 	for i in NV:
 		vents.append(0)
 	price = 1.0
+	biz = []
+	for i in Biz.N:
+		biz.append(Biz.blank(i))
+	debt = 0.0
+	red_t = 0.0
+	peak_gross = 0.0
+	effects = []
+	event = {}
+	event_t = Events.MIN_GAP
 	_dirty = true
 	var a := agg()
 	cash = maxf(5.0, float(a.startcash))
@@ -397,6 +455,10 @@ func new_game() -> void:
 	taps = 0
 	best_income = 0.0
 	auto_on = {}
+	grit = 0.0
+	grit_earned = 0.0
+	bankruptcies = 0
+	last_bankrupt = {}
 	reset_run_state()
 
 
@@ -410,7 +472,7 @@ func choose_concept(c: String) -> bool:
 
 
 func concept_unlocked(c: String) -> bool:
-	return prestiges >= int(CONCEPT[c].unlock)
+	return prestiges + bankruptcies >= int(CONCEPT[c].unlock)
 
 
 # ================================================================= aggregate
@@ -433,7 +495,14 @@ func _blank_agg() -> Dictionary:
 		"syn": [], "tappct": 0.0, "city": [], "citycost": 1.0, "vent": [], "flags": {},
 		"offline": OFFLINE_BASE, "offhours": OFFLINE_HOURS_BASE, "starpow": 0.0, "startcash": 0.0, "startreps": 0,
 		"elastic": 2.0, "ceiling": 3.0,
+		"biz": [], "twist": {"truck": 1.0, "bakery": 1.0, "catering": 1.0, "bar": 1.0, "hotel": 1.0, "wholesale": 1.0},
+		"upkeep": 1.0, "foodcut": 0.0, "event_cost": 1.0, "credit": 1.0, "interest": 1.0, "deadline": 0.0,
+		"luck": 0.0, "firesale": 0.0,
 	}
+	a.mul["biz"] = 1.0
+	a.mul["empire"] = 1.0
+	for i in Biz.N:
+		a.biz.append(1.0)
 	for i in NC:
 		a.city.append(1.0)
 	for i in NV:
@@ -477,6 +546,16 @@ func apply_effects(a: Dictionary, eff: Array) -> void:
 			"starpow": a.starpow += float(e[1])
 			"startcash": a.startcash = maxf(a.startcash, float(e[1]))
 			"startreps": a.startreps += int(e[1])
+			"biz": a.biz[int(e[1])] *= float(e[2])
+			"twist": a.twist[e[1]] *= float(e[2])
+			"upkeep": a.upkeep *= float(e[1])
+			"foodcut": a.foodcut += float(e[1])
+			"event_cost": a.event_cost *= float(e[1])
+			"credit": a.credit *= float(e[1])
+			"interest": a.interest *= float(e[1])
+			"deadline": a.deadline += float(e[1])
+			"luck": a.luck += float(e[1])
+			"firesale": a.firesale += float(e[1])
 
 
 func copy_with(a: Dictionary, eff: Array) -> Dictionary:
@@ -575,9 +654,9 @@ func effective_price(a: Dictionary, rep_override: Dictionary = {}, force_best :=
 
 ## Full breakdown of income per second for an aggregate.
 func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Array = [], force_best := false) -> Dictionary:
-	var d := stat("demand", a, rep_override)
-	var se := stat("seating", a, rep_override)
-	var k := stat("kitchen", a, rep_override)
+	var d := stat("demand", a, rep_override) * effect_mult("demand")
+	var se := stat("seating", a, rep_override) * effect_mult("seating")
+	var k := stat("kitchen", a, rep_override) * effect_mult("kitchen")
 	var t := stat("ticket", a, rep_override)
 	var p := effective_price(a, rep_override, force_best)
 	var want := d * pow(p, -float(a.elastic))
@@ -585,19 +664,68 @@ func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Ar
 	var served := minf(want, cap)
 	var fr := franchise_mult(a, city_override)
 	var g := global_mult(a)
-	var sm := star_mult(a)
-	var total := served * t * p * g * fr * sm
+	var sm := star_mult(a) * grit_mult(a) * float(a.mul.empire) * effect_mult("income")
+	var closed := effect_mult("closed") <= 0.0
+	var total := 0.0 if closed else served * t * p * g * fr * sm
 	var limit := "demand"
 	if want > cap:
 		limit = "seating" if se <= k else "kitchen"
+	# costs are measured against a plate's base value (ticket x ambience), not price or royalties,
+	# so raising prices widens your margin and franchise royalties are pure profit
+	var unit := t * g
+	var srv := 0.0 if closed else served
+	var food := srv * unit * food_cost_pct(a) / 100.0
+	var wm := float(a.upkeep) * effect_mult("wages")
+	# idle capacity and turned-away guests are what cost you: balance pays
+	var rent := maxf(0.0, se - srv) * unit * RENT_K * wm
+	var wages := maxf(0.0, k - srv) * unit * WAGE_K * wm
+	var mkt := maxf(0.0, want - srv) * unit * MARKETING_K * wm
+	var up := rent + wages + mkt
 	return {"demand": d, "seating": se, "kitchen": k, "ticket": t, "price": p, "want": want, "cap": cap,
-		"served": served, "fr": fr, "global": g, "star": sm, "total": total, "limit": limit}
+		"served": srv, "fr": fr, "global": g, "star": sm, "total": total, "limit": limit,
+		"food": food, "rent": rent, "wages": wages, "marketing": mkt, "upkeep": up, "net": total - food - up, "closed": closed}
 
 
-func income(a: Dictionary = {}, force_best := false) -> float:
+func food_cost_pct(a: Dictionary = {}) -> float:
 	if a.is_empty():
 		a = agg()
-	return float(income_info(a, {}, [], force_best).total)
+	var cut := float(a.foodcut)
+	for i in Biz.N:
+		if String(Biz.DEFS[i].id) == "wholesale":
+			cut += Biz.food_cut(biz[i])
+	return clampf(FOOD_BASE - cut + effect_add("food"), 5.0, 80.0)
+
+
+func grit_mult(_a: Dictionary = {}) -> float:
+	return 1.0 + grit * GRIT_BASE
+
+
+## Money in and out per second for the whole empire (businesses use steady-state estimates).
+func empire(offline := false) -> Dictionary:
+	var a := agg()
+	var inf := income_info(a)
+	var br := 0.0
+	var bc := 0.0
+	var per: Array = []
+	for i in Biz.N:
+		var est := Biz.estimate(i, biz[i], self, offline)
+		per.append(est)
+		br += float(est.rev)
+		bc += float(est.cost)
+	var it := interest_per_s()
+	var gross := float(inf.total) + br
+	var costs := float(inf.food) + float(inf.upkeep) + bc + it
+	return {"rest_rev": float(inf.total), "food": float(inf.food), "rest_upkeep": float(inf.upkeep),
+		"biz_rev": br, "biz_cost": bc, "interest": it, "gross": gross, "costs": costs, "net": gross - costs, "per": per}
+
+
+## Net money per second for the whole empire.
+func income(_a: Dictionary = {}, _force_best := false) -> float:
+	return float(empire().net)
+
+
+func gross_income() -> float:
+	return float(empire().gross)
 
 
 func tap_value(a: Dictionary = {}) -> float:
@@ -718,6 +846,16 @@ func req_met(u: Dictionary) -> bool:
 		"vent": return int(vents[int(q[1])]) >= int(q[2])
 		"locs": return locations() >= int(q[1])
 		"legacy": return true
+		"bizopen": return biz_open_count() >= int(q[1])
+		"biz":
+			var s: Dictionary = biz[int(q[1])]
+			if not s.open:
+				return false
+			match String(q[2]):
+				"a": return int(s.a) >= int(q[3])
+				"b": return int(s.b) >= int(q[3])
+				"open": return true
+				"earn": return run_earned >= float(u.cost) * 0.08
 	return false
 
 
@@ -729,6 +867,14 @@ func req_text(u: Dictionary) -> String:
 		"city": return "%d locations in %s" % [int(q[2]), CITY_NAMES[int(q[1])]]
 		"vent": return "%s level %d" % [VENTURES[int(q[1])].name, int(q[2])]
 		"locs": return "%d franchise locations" % int(q[1])
+		"bizopen": return "Run %d side business%s" % [int(q[1]), "" if int(q[1]) == 1 else "es"]
+		"biz":
+			var d: Dictionary = Biz.DEFS[int(q[1])]
+			match String(q[2]):
+				"a": return "%d %s at the %s" % [int(q[3]), d.as, d.name]
+				"b": return "%d %s at the %s" % [int(q[3]), d.bs, d.name]
+				"open": return "Open the %s" % d.name
+				"earn": return "Open the %s and earn %s this run" % [d.name, fmt_money(float(u.cost) * 0.08)]
 	return ""
 
 
@@ -786,14 +932,26 @@ func legacy_available(u: Dictionary) -> bool:
 	var t := int(q[2])
 	if t == 0:
 		return true
-	return legacy.has(by_key["l_%s_%d" % [q[1], t - 1]])
+	return legacy.has(by_key["%s_%s_%d" % [String(u.get("lp", "l")), q[1], t - 1]])
+
+
+func currency(u: Dictionary) -> String:
+	return String(u.get("cur", "star"))
+
+
+func wallet(cur: String) -> float:
+	return grit if cur == "grit" else stars
 
 
 func buy_legacy(id: int) -> bool:
 	var u: Dictionary = upgrades[id]
-	if not legacy_available(u) or float(u.star) > stars:
+	var cur := currency(u)
+	if not legacy_available(u) or float(u.star) > wallet(cur):
 		return false
-	stars -= float(u.star)
+	if cur == "grit":
+		grit -= float(u.star)
+	else:
+		stars -= float(u.star)
 	legacy[id] = true
 	_dirty = true
 	return true
@@ -822,7 +980,23 @@ func effect_text(eff: Array) -> String:
 			"starpow": parts.append("Each star +%s%% more" % fmt_mult(float(e[1]) * 100.0))
 			"startcash": parts.append("Start runs with %s" % fmt_money(float(e[1])))
 			"startreps": parts.append("Start with +%d of each build" % int(e[1]))
+			"biz": parts.append("%s income ×%s" % [Biz.DEFS[int(e[1])].name, fmt_mult(float(e[2]))])
+			"twist": parts.append(TWIST_TEXT.get(e[1], e[1]) % fmt_mult(float(e[2])))
+			"upkeep": parts.append("Upkeep ×%s" % fmt_mult(float(e[1])))
+			"foodcut": parts.append("Food costs -%s pts" % fmt_mult(float(e[1])))
+			"event_cost": parts.append("Event costs and fines ×%s" % fmt_mult(float(e[1])))
+			"credit": parts.append("Credit limit ×%s" % fmt_mult(float(e[1])))
+			"interest": parts.append("Loan interest ×%s" % fmt_mult(float(e[1])))
+			"deadline": parts.append("+%ds in the red before bankruptcy" % int(e[1]))
+			"luck": parts.append("+%d%% chance of good events" % int(round(float(e[1]) * 100.0)))
+			"firesale": parts.append("+%d%% back when selling off" % int(round(float(e[1]) * 100.0)))
 	return ", ".join(parts)
+
+
+const TWIST_TEXT := {
+	"truck": "Truck crowds ×%s", "bakery": "Counter speed ×%s", "catering": "Contract pay ×%s",
+	"bar": "Rowdiness ×%s", "hotel": "Hotel guest demand ×%s", "wholesale": "Wholesale prices ×%s",
+}
 
 
 const FLAG_TEXT := {
@@ -833,22 +1007,289 @@ const FLAG_TEXT := {
 	"auto_cooks": "Auto-buys Line Cooks",
 	"auto_recipes": "Auto-buys Recipes",
 	"auto_upg": "Auto-buys the cheapest upgrade",
+	"mgr_truck": "Moves the truck to the best spot",
+	"mgr_bakery": "Bigger shelves, bread stays fresh",
+	"mgr_catering": "Accepts the best contracts",
+	"mgr_bar": "Calms rowdy crowds (-40% incidents)",
+	"mgr_hotel": "Sets the best room rate each season",
+	"mgr_wholesale": "Sells when prices are high",
 }
 
 
 # ================================================================= time
 
-func tick(dt: float) -> float:
-	var inc := income()
-	var e := inc * dt
-	cash += e
-	run_earned += e
-	life_earned += e
+## Advances the game. active=false for catch-up after the game was paused (no events,
+## no bankruptcy clock, businesses use their averages).
+func tick(dt: float, active := true) -> float:
+	_tick_effects(dt)
+	var a := agg()
+	var inf := income_info(a)
+	var flow := float(inf.net) * dt
+	var gross := float(inf.total)
+	for i in Biz.N:
+		var s: Dictionary = biz[i]
+		if not s.open:
+			continue
+		var r: Dictionary
+		if active and dt <= 5.0:
+			r = Biz.step(i, s, self, dt)
+		else:
+			var est := Biz.estimate(i, s, self, not active)
+			r = {"rev": float(est.rev) * dt, "cost": float(est.cost) * dt}
+		flow += float(r.rev) - float(r.cost)
+		s.earned = float(s.earned) + float(r.rev)
+		gross += float(r.rev) / maxf(dt, 1e-9)
+	flow -= interest_per_s() * dt
+	cash = minf(cash + flow, MAX_MONEY)
+	if flow > 0.0:
+		run_earned += flow
+		life_earned += flow
 	run_time += dt
 	play_time += dt
-	best_income = maxf(best_income, inc)
-	cash = minf(cash, MAX_MONEY)
-	return e
+	best_income = maxf(best_income, gross)
+	peak_gross = maxf(peak_gross, gross)
+	if active:
+		_tick_events(dt, gross)
+		_tick_red(dt)
+	return flow
+
+
+# ================================================================= effects
+
+func add_effect(kind: String, m: float, dur: float, src: String) -> void:
+	effects.append({"kind": kind, "mult": m, "t": dur, "dur": dur, "src": src})
+
+
+func _tick_effects(dt: float) -> void:
+	if effects.is_empty():
+		return
+	var keep: Array = []
+	for f in effects:
+		f.t = float(f.t) - dt
+		if float(f.t) > 0.0:
+			keep.append(f)
+	effects = keep
+
+
+func effect_mult(kind: String) -> float:
+	var m := 1.0
+	for f in effects:
+		if String(f.kind) == kind:
+			m *= float(f.mult)
+	return m
+
+
+func effect_add(kind: String) -> float:
+	var v := 0.0
+	for f in effects:
+		if String(f.kind) == kind:
+			v += float(f.mult)
+	return v
+
+
+func notify(msg: String) -> void:
+	notes.append(msg)
+	if notes.size() > 8:
+		notes.pop_front()
+
+
+# ================================================================= events
+
+func _tick_events(dt: float, gross: float) -> void:
+	if not events_on or not concept_chosen:
+		return
+	if not event.is_empty():
+		event.t = float(event.t) - dt
+		if float(event.t) <= 0.0:
+			var line := answer_event(int(event.default))
+			notify("%s: no answer, so %s" % [event.get("title", ""), line])
+		return
+	# no surprises until the restaurant is up and running
+	if run_time < 120.0 or run_earned < cp(3.0e6):
+		return
+	event_t -= dt
+	if event_t <= 0.0:
+		event_t = rng.randf_range(Events.MIN_GAP, Events.MAX_GAP)
+		var a := agg()
+		event = Events.make(rng, maxf(gross, 1.0), float(a.luck), float(a.event_cost), cash > 0.0)
+
+
+## Answers the open event card. Returns a short description of what happened.
+func answer_event(idx: int) -> String:
+	if event.is_empty():
+		return ""
+	var ev := event
+	event = {}
+	var ch: Dictionary = (ev.choices as Array)[clampi(idx, 0, (ev.choices as Array).size() - 1)]
+	var line := Events.resolve(self, ev, idx)
+	_dirty = true
+	return (String(ch.label).to_lower() + (". " + line if line != "" else "")).strip_edges()
+
+
+# ================================================================= loans
+
+## Banks lend against your best income this run, so a temporary closure doesn't cancel your credit.
+func credit_limit() -> float:
+	var g := float(income_info(agg()).total)
+	for i in Biz.N:
+		g += float(Biz.estimate(i, biz[i], self).rev)
+	return maxf(maxf(0.0, g), peak_gross) * CREDIT_SECS * float(agg().credit)
+
+
+func credit_available() -> float:
+	return maxf(0.0, credit_limit() - debt)
+
+
+## Interest per second on the current debt; it climbs steeply as you max out your credit.
+func interest_rate(at_debt := -1.0) -> float:
+	var d := debt if at_debt < 0.0 else at_debt
+	var lim := maxf(credit_limit(), 1.0)
+	var u := minf(d / lim, 2.0)
+	return INTEREST_BASE * float(agg().interest) * (1.0 + 2.0 * u * u)
+
+
+func interest_per_s() -> float:
+	if debt <= 0.0:
+		return 0.0
+	return debt * interest_rate()
+
+
+func borrow(amount: float) -> float:
+	amount = minf(amount, credit_available())
+	if amount <= 0.0:
+		return 0.0
+	debt += amount
+	cash += amount
+	return amount
+
+
+func repay(amount: float) -> float:
+	amount = minf(amount, minf(debt, maxf(0.0, cash)))
+	if amount <= 0.0:
+		return 0.0
+	debt -= amount
+	cash -= amount
+	if debt < 1e-6:
+		debt = 0.0
+	return amount
+
+
+# ================================================================= bankruptcy
+
+func deadline() -> float:
+	return DEADLINE_BASE + float(agg().deadline)
+
+
+func in_red() -> bool:
+	return cash < 0.0
+
+
+func _tick_red(dt: float) -> void:
+	if cash >= 0.0:
+		red_t = 0.0
+		return
+	red_t += dt
+	if red_t >= deadline():
+		go_bankrupt()
+
+
+static func grit_for(earned: float) -> float:
+	return floor(6.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e7, 0.25))
+
+
+func grit_pending() -> float:
+	return grit_for(run_earned)
+
+
+## Everything resets like selling, but you get Grit instead of stars and this run's stars are lost.
+func go_bankrupt() -> float:
+	var g := grit_pending()
+	var lost := stars_pending()
+	grit += g
+	grit_earned += g
+	bankruptcies += 1
+	stars_earned = maxf(stars_earned, stars_for(life_earned))
+	last_bankrupt = {"grit": g, "lost_stars": lost, "debt": debt, "run_earned": run_earned}
+	concept_chosen = false
+	reset_run_state()
+	return g
+
+
+func refund_rate() -> float:
+	return 0.5 + float(agg().firesale)
+
+
+## Sells a side business for part of what you put into it.
+func sell_biz(i: int) -> float:
+	var s: Dictionary = biz[i]
+	if not s.open:
+		return 0.0
+	var v := Biz.invested(i, s) * refund_rate()
+	cash += v
+	biz[i] = Biz.blank(i)
+	_dirty = true
+	return v
+
+
+## Sells the newest franchise location in your most expensive city.
+func sell_location() -> float:
+	for i in range(NC - 1, -1, -1):
+		if int(cities[i]) > 0:
+			cities[i] = int(cities[i]) - 1
+			var v := cp(float(city_cost[i]) * pow(CITY_GROWTH, int(cities[i]))) * float(agg().citycost) * refund_rate()
+			cash += v
+			return v
+	return 0.0
+
+
+# ================================================================= businesses
+
+func biz_open_count() -> int:
+	var n := 0
+	for s in biz:
+		if s.open:
+			n += 1
+	return n
+
+
+func biz_unlocked(i: int) -> bool:
+	return biz[i].open or run_earned >= Biz.unlock_at(i)
+
+
+func open_biz(i: int) -> bool:
+	var s: Dictionary = biz[i]
+	if s.open or not biz_unlocked(i) or cash < Biz.open_cost(i):
+		return false
+	cash -= Biz.open_cost(i)
+	s.open = true
+	s.a = 1
+	s.b = 1
+	_dirty = true
+	return true
+
+
+func biz_cost(i: int, which: String, k: int = 1) -> float:
+	return Biz.cost_of(i, which, int(biz[i][which]), k)
+
+
+func biz_max_affordable(i: int, which: String) -> int:
+	var g := Biz.growth(i, which)
+	var c0 := Biz.cost_at(i, which, int(biz[i][which]))
+	if cash < c0:
+		return 0
+	return maxi(1, int(floor(log(cash * (g - 1.0) / c0 + 1.0) / log(g))))
+
+
+func buy_biz(i: int, which: String, k: int = 1) -> bool:
+	var s: Dictionary = biz[i]
+	if not s.open or k <= 0:
+		return false
+	var c := biz_cost(i, which, k)
+	if c > cash:
+		return false
+	cash -= c
+	s[which] = int(s[which]) + k
+	return true
 
 
 func automation_owned(key: String) -> bool:
@@ -888,13 +1329,13 @@ func tap() -> float:
 func offline_gain(seconds: float) -> float:
 	var a := agg()
 	var s := minf(seconds, float(a.offhours) * 3600.0)
-	return income() * s * float(a.offline)
+	return maxf(0.0, float(empire(true).net)) * s * float(a.offline)
 
 
 # ================================================================= prestige
 
 static func stars_for(earned: float) -> float:
-	return floor(10.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e10, 0.2))
+	return floor(STAR_COEF * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e10, 0.2))
 
 
 func stars_pending() -> float:
@@ -924,7 +1365,9 @@ func to_dict() -> Dictionary:
 		"stars_earned": stars_earned, "prestiges": prestiges, "concept": concept, "concept_chosen": concept_chosen,
 		"reps": reps.duplicate(), "owned": _keys_of(owned), "legacy": _keys_of(legacy), "cities": cities.duplicate(),
 		"vents": vents.duplicate(), "price": price, "price_auto": price_auto, "auto_on": auto_on.duplicate(),
-		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income}
+		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income,
+		"biz": biz.duplicate(true), "debt": debt, "grit": grit, "grit_earned": grit_earned, "bankruptcies": bankruptcies,
+		"red_t": red_t, "peak_gross": peak_gross, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
 
 
 func _keys_of(d: Dictionary) -> Array:
@@ -969,6 +1412,23 @@ func from_dict(d: Dictionary) -> void:
 	play_time = float(d.get("play_time", 0.0))
 	taps = int(d.get("taps", 0))
 	best_income = float(d.get("best_income", 0.0))
+	var bz: Array = d.get("biz", [])
+	for i in mini(bz.size(), Biz.N):
+		if bz[i] is Dictionary:
+			var s := Biz.blank(i)
+			for k in bz[i]:
+				if s.has(k):
+					s[k] = bz[i][k]
+			biz[i] = s
+	debt = float(d.get("debt", 0.0))
+	grit = float(d.get("grit", 0.0))
+	grit_earned = float(d.get("grit_earned", 0.0))
+	bankruptcies = int(d.get("bankruptcies", 0))
+	red_t = float(d.get("red_t", 0.0))
+	peak_gross = float(d.get("peak_gross", 0.0))
+	effects = d.get("effects", [])
+	event = d.get("event", {})
+	event_t = float(d.get("event_t", Events.MIN_GAP))
 	_dirty = true
 
 

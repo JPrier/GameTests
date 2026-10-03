@@ -34,17 +34,19 @@ const CAT_COLOR := {
 	"global": Color("f6ede1"), "cost": Color("a8957f"), "tap": Color("ff8a3d"), "ceiling": Color("e0c27a"),
 	"auto": Color("9ad1ff"), "offline": Color("7a8cff"), "royalty": Color("b58cff"), "city": Color("c58bff"),
 	"venture": Color("6ad1c0"), "concept": Color("ffb3c1"), "cross": Color("ff6f91"), "legacy": Color("f5b942"),
+	"business": Color("ffcf6e"), "grit": Color("ff8a5c"),
 }
 const CAT_LABEL := {
 	"demand": "Demand", "seating": "Seating", "kitchen": "Kitchen", "ticket": "Menu", "global": "Ambience",
 	"cost": "Savings", "tap": "Serving", "ceiling": "Brand", "auto": "Manager", "offline": "Night shift",
 	"royalty": "Franchise", "city": "City", "venture": "Venture", "concept": "Signature", "cross": "Crossroads",
+	"business": "Business",
 }
-const TABS := ["build", "upgrades", "franchise", "legacy", "more"]
-const TAB_LABEL := {"build": "Build", "upgrades": "Upgrades", "franchise": "Franchise", "legacy": "Legacy", "more": "More"}
+const TABS := ["build", "upgrades", "business", "franchise", "legacy", "more"]
+const TAB_LABEL := {"build": "Build", "upgrades": "Upgrades", "business": "Business", "franchise": "Franchise", "legacy": "Legacy", "more": "More"}
 const BUY_MODES := [1, 10, 100, -1]
-const UPG_FILTERS := ["all", "afford", "stats", "growth", "cross"]
-const UPG_FILTER_LABEL := {"all": "All", "afford": "Can buy", "stats": "Stats", "growth": "Growth", "cross": "Crossroads"}
+const UPG_FILTERS := ["all", "afford", "stats", "business", "growth", "cross"]
+const UPG_FILTER_LABEL := {"all": "All", "afford": "Can buy", "stats": "Stats", "business": "Business", "growth": "Growth", "cross": "Crossroads"}
 const REP_ICON := {"ads": "megaphone", "tables": "table", "cooks": "hat", "recipes": "book"}
 const REP_BLURB := {"ads": "+0.5 guest demand", "tables": "+0.4 seats", "cooks": "+0.4 kitchen speed", "recipes": "+$0.50 per bill"}
 
@@ -86,6 +88,8 @@ var vis_cache: Array = []
 var upcoming_cache: Array = []
 var gain_cache := {}
 var inc_cache := 0.0
+var em_cache := {}
+const C_GRIT := Color("ff8a5c")
 var info_cache := {}
 var afford_count := 0
 var last_saved_unix := 0
@@ -178,7 +182,7 @@ func _catch_up() -> void:
 	if gap < AWAY_MIN or not save_ready or not E.concept_chosen or modal == "concept":
 		return
 	if gap <= AWAY_OFFLINE:
-		E.tick(gap)
+		E.tick(gap, false)
 		_refresh_cache(false)
 		return
 	var g := E.offline_gain(gap)
@@ -205,7 +209,19 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 1.0)
 	anim_t += delta
 	if E.concept_chosen and modal != "concept":
+		E.events_on = modal == ""
 		E.tick(delta)
+	if not E.last_bankrupt.is_empty():
+		var lb: Dictionary = E.last_bankrupt
+		E.last_bankrupt = {}
+		for t in TABS:
+			scroll[t] = 0.0
+		tab = "build"
+		open_modal("bankrupt", lb)
+		_refresh_cache(true)
+		save_game()
+	while not E.notes.is_empty():
+		_toast(String(E.notes.pop_front()))
 	auto_t += delta
 	if auto_t >= AUTO_TICK:
 		auto_t = 0.0
@@ -249,7 +265,8 @@ func _now() -> float:
 func _refresh_cache(full: bool) -> void:
 	cache_t = 0.0
 	info_cache = E.income_info(E.agg())
-	inc_cache = float(info_cache.total)
+	em_cache = E.empire()
+	inc_cache = float(em_cache.net)
 	vis_cache = E.visible_upgrades()
 	afford_count = 0
 	for u in vis_cache:
@@ -266,8 +283,8 @@ func upgrade_gain(u: Dictionary) -> float:
 	if gain_cache.has(key):
 		return float(gain_cache[key])
 	var a := E.agg()
-	var cur := float(E.income_info(a).total)
-	var nxt := float(E.income_info(E.copy_with(a, u.eff)).total)
+	var cur := _profit(E.income_info(a))
+	var nxt := _profit(E.income_info(E.copy_with(a, u.eff)))
 	var g := nxt / maxf(cur, 1e-300) - 1.0 if cur > 0.0 else 0.0
 	gain_cache[key] = g
 	return g
@@ -275,9 +292,30 @@ func upgrade_gain(u: Dictionary) -> float:
 
 func rep_gain(r: String, k: int) -> float:
 	var a := E.agg()
-	var cur := float(E.income_info(a).total)
-	var nxt := float(E.income_info(a, {r: int(E.reps[r]) + k}).total)
+	var cur := _profit(E.income_info(a))
+	var nxt := _profit(E.income_info(a, {r: int(E.reps[r]) + k}))
 	return nxt / maxf(cur, 1e-300) - 1.0 if cur > 0.0 else 0.0
+
+
+## Restaurant profit, ignoring temporary closures so previews stay meaningful.
+func _profit(inf: Dictionary) -> float:
+	return float(inf.net)
+
+
+func biz_buy_count(i: int, w: String) -> int:
+	var m: int = BUY_MODES[buy_mode]
+	if m > 0:
+		return m
+	return maxi(1, E.biz_max_affordable(i, w))
+
+
+func biz_gain(i: int, w: String, k: int) -> float:
+	var s: Dictionary = E.biz[i]
+	var cur: Dictionary = Biz.estimate(i, s, E)
+	var s2 := s.duplicate(true)
+	s2[w] = int(s2[w]) + k
+	var nxt: Dictionary = Biz.estimate(i, s2, E)
+	return (float(nxt.rev) - float(nxt.cost)) - (float(cur.rev) - float(cur.cost))
 
 
 func buy_count(r: String) -> int:
@@ -445,7 +483,7 @@ func set_tab(t: String) -> void:
 
 func _toast(s: String) -> void:
 	toast = s
-	toast_t = 2.2
+	toast_t = 2.2 + minf(2.0, s.length() / 30.0)
 
 
 func _do(id: String) -> void:
@@ -532,6 +570,89 @@ func _do(id: String) -> void:
 			open_modal("concept")
 			_refresh_cache(true)
 		"help": open_modal("help")
+		"event":
+			var ev_title := String(E.event.get("title", ""))
+			var line := E.answer_event(int(parts[1]))
+			if line != "":
+				_toast("%s: %s" % [ev_title, line])
+			_refresh_cache(true)
+		"borrow":
+			var amt := E.credit_available() * float(parts[1])
+			var got := E.borrow(amt)
+			if got > 0.0:
+				_toast("Borrowed %s" % Econ.fmt_money(got))
+			_refresh_cache(true)
+		"rescue":
+			var got := E.borrow(-E.cash * 1.05 + 1.0)
+			if got > 0.0:
+				_toast("Emergency loan: %s" % Econ.fmt_money(got))
+			_refresh_cache(true)
+		"repay":
+			var amt := E.debt * float(parts[1])
+			var paid := E.repay(amt)
+			if paid > 0.0:
+				_toast("Repaid %s" % Econ.fmt_money(paid))
+			_refresh_cache(true)
+		"biz_open":
+			if E.open_biz(int(parts[1])):
+				_toast("%s is open!" % Biz.DEFS[int(parts[1])].name)
+				_refresh_cache(true)
+		"biz":
+			var i := int(parts[1])
+			var w: String = parts[2]
+			if E.buy_biz(i, w, biz_buy_count(i, w)):
+				_refresh_cache(true)
+		"spot":
+			if Biz.move_truck(E.biz[int(parts[1])], int(parts[2])):
+				_toast("Driving to %s..." % Biz.SPOTS[int(parts[2])])
+		"accept":
+			if Biz.accept(E.biz[int(parts[1])], int(parts[2])):
+				_toast("Contract accepted")
+			else:
+				_toast("Not enough free crew or vans")
+		"happy":
+			var s2: Dictionary = E.biz[int(parts[1])]
+			s2.happy = not bool(s2.happy)
+			_toast("Happy hour ON: more drinks, rowdier crowd" if s2.happy else "Happy hour OFF")
+			_refresh_cache(false)
+		"rate":
+			var hs: Dictionary = E.biz[int(parts[1])]
+			match String(parts[2]):
+				"up": hs.rate = minf(20.0, float(hs.rate) * 1.1); hs.rate_auto = false
+				"down": hs.rate = maxf(0.2, float(hs.rate) / 1.1); hs.rate_auto = false
+				"auto": hs.rate_auto = not bool(hs.rate_auto)
+			_refresh_cache(false)
+		"ws_sell":
+			var i := int(parts[1])
+			var v := Biz.sell_stock(i, E.biz[i], E)
+			E.cash += v
+			E.run_earned += v
+			E.life_earned += v
+			E.biz[i].earned = float(E.biz[i].earned) + v
+			_toast("Sold for %s" % Econ.fmt_money(v))
+		"ws_auto":
+			var ws: Dictionary = E.biz[int(parts[1])]
+			ws.auto_sell = not bool(ws.auto_sell)
+		"sell_loc":
+			var v := E.sell_location()
+			if v > 0.0:
+				_toast("Sold a franchise: +%s" % Econ.fmt_money(v))
+			_refresh_cache(true)
+		"sell_biz": open_modal("sell_biz", {"i": int(parts[1])})
+		"sell_biz_yes":
+			var i := int(modal_data.get("i", -1))
+			modal = ""
+			if i >= 0:
+				var v := E.sell_biz(i)
+				_toast("Sold the %s: +%s" % [Biz.DEFS[i].name, Econ.fmt_money(v)])
+			_refresh_cache(true)
+		"file": open_modal("file")
+		"file_yes":
+			modal = ""
+			E.go_bankrupt()
+		"after_bankrupt":
+			modal = ""
+			open_modal("concept", {"grit": float(modal_data.get("grit", 0.0))})
 		"noop": pass
 
 
@@ -763,8 +884,13 @@ func _draw_header() -> void:
 	var ccol := Color(String(cc.color))
 	_text(Vector2(r.position.x, r.position.y + 14), ("BISTRO EMPIRE  ·  " + String(cc.name).to_upper()) if E.concept_chosen else "BISTRO EMPIRE", 12, ccol)
 	var cash_s := Econ.fmt_money(E.cash)
-	_text(Vector2(r.position.x, r.position.y + 46), cash_s, 32, C_INK)
-	_text(Vector2(r.position.x, r.position.y + 66), "+%s/s" % Econ.fmt_money(inc_cache), 16, C_GREEN)
+	var red := E.in_red()
+	_text(Vector2(r.position.x, r.position.y + 46), cash_s, 32, C_RED if red else C_INK)
+	var net_s := ("+" if inc_cache >= 0.0 else "") + Econ.fmt_money(inc_cache) + "/s"
+	_text(Vector2(r.position.x, r.position.y + 66), net_s, 16, C_GREEN if inc_cache >= 0.0 else C_RED)
+	if E.debt > 0.0:
+		var nx := r.position.x + _tw(net_s, 16) + 12
+		_text(Vector2(nx, r.position.y + 66), "debt " + Econ.fmt_money(E.debt), 13, C_ORANGE)
 	# stars badge
 	var bw := 92.0
 	var br := Rect2(r.end.x - bw, r.position.y + 4, bw, 40)
@@ -773,7 +899,9 @@ func _draw_header() -> void:
 	_text(br.position + Vector2(38, 27), Econ.fmt_num(E.stars), 18, C_ACCENT)
 	_btn("tab:legacy", br)
 	var pend := E.stars_pending()
-	if pend >= 1.0:
+	if E.grit > 0.0 or E.bankruptcies > 0:
+		_text_r(r.end.x, r.position.y + 62, "%s grit" % Econ.fmt_num(E.grit), 13, C_GRIT)
+	elif pend >= 1.0:
 		_text_r(r.end.x, r.position.y + 62, "+%s on sale" % Econ.fmt_num(pend), 13, C_ACCENT)
 	elif E.prestiges == 0:
 		_text_r(r.end.x, r.position.y + 62, "stars", 13, C_DIM)
@@ -866,6 +994,21 @@ func _draw_scene() -> void:
 		var qx := rr.position.x + 8.0 + (i % 2) * 2.0
 		var qy := rr.end.y - 12.0 - i * 9.0
 		cv.draw_circle(Vector2(qx + sin(anim_t * 3.0 + i) * 1.0, qy), 4, Color.from_hsv(fmod(i * 0.21, 1.0), 0.4, 0.9))
+	# closed sign
+	if bool(inf.get("closed", false)):
+		var cs := Rect2(rr.get_center().x - 50, rr.position.y + rr.size.y * 0.42, 100, 30)
+		_rr(cs, Color("2a0904"), 6, C_RED, 2)
+		_text_c(cs, cs.position.y + 21, "CLOSED", 16, C_RED)
+	# active event effects
+	var fx_y := rr.position.y + 22
+	for f in E.effects:
+		var lab := _effect_label(f)
+		var fw := _tw(lab, 11) + 14
+		var fr2 := Rect2(rr.position.x + 8, fx_y, fw, 17)
+		var good := _effect_good(f)
+		_rr(fr2, Color(0, 0, 0, 0.6), 8, C_GREEN if good else C_RED, 1)
+		_text(fr2.position + Vector2(7, 13), lab, 11, C_GREEN if good else Color("ffb0a6"))
+		fx_y += 20
 	# tap hint
 	var tv := Econ.fmt_money(E.tap_value())
 	var hint := "TAP TO SERVE  +" + tv
@@ -873,6 +1016,23 @@ func _draw_scene() -> void:
 	var hr := Rect2(rr.end.x - hw - 8, rr.end.y - 26, hw, 20)
 	_rr(hr, Color(0, 0, 0, 0.45), 10)
 	_text_c(hr, hr.position.y + 15, hint, 13, Color(C_ACCENT, 0.8 + 0.2 * sin(anim_t * 3.0)))
+
+
+func _effect_good(f: Dictionary) -> bool:
+	match String(f.kind):
+		"food", "wages": return float(f.mult) < (0.0 if String(f.kind) == "food" else 1.0)
+		"closed": return false
+	return float(f.mult) >= 1.0
+
+
+func _effect_label(f: Dictionary) -> String:
+	var t := Econ.fmt_time(float(f.t))
+	match String(f.kind):
+		"closed": return "Closed %s" % t
+		"food": return "Food +%d pts %s" % [int(f.mult), t]
+		"wages": return "Upkeep x%s %s" % [Econ.fmt_mult(float(f.mult)), t]
+		"income": return "Income x%s %s" % [Econ.fmt_mult(float(f.mult)), t]
+	return "%s x%s %s" % [String(f.kind).capitalize().replace("Demand", "Guests"), Econ.fmt_mult(float(f.mult)), t]
 
 
 func _draw_strip() -> void:
@@ -910,7 +1070,7 @@ func _draw_nav() -> void:
 		var t: String = TABS[i]
 		var br := Rect2(r.position.x + i * w, r.position.y, w, r.size.y)
 		var on := t == tab
-		var locked := t == "franchise" and not E.franchise_unlocked()
+		var locked := (t == "franchise" and not E.franchise_unlocked()) or (t == "business" and not E.biz_unlocked(0))
 		var c := C_ACCENT if on else (C_DIM if locked else C_MUTED)
 		_nav_icon(t, Vector2(br.get_center().x, br.position.y + 24), c, locked)
 		_text_c(br, br.position.y + 52, TAB_LABEL[t], 12, c)
@@ -943,6 +1103,10 @@ func _nav_icon(t: String, c: Vector2, col_: Color, locked: bool) -> void:
 				cv.draw_rect(Rect2(c + Vector2(-12 + i * 8, 10 - h), Vector2(6, h)), col_)
 		"legacy":
 			_star(c, 11, col_)
+		"business":
+			cv.draw_rect(Rect2(c + Vector2(-11, -6), Vector2(22, 16)), col_, false, 2)
+			cv.draw_rect(Rect2(c + Vector2(-5, -11), Vector2(10, 5)), col_, false, 2)
+			cv.draw_line(c + Vector2(-11, 1), c + Vector2(11, 1), col_, 2)
 		"more":
 			for i in 3:
 				cv.draw_rect(Rect2(c + Vector2(-10, -8 + i * 7), Vector2(20, 3)), col_)
@@ -958,10 +1122,11 @@ func _draw_content() -> void:
 	cv = content
 	content.draw_set_transform(-content_r.position)
 	var y0 := content_r.position.y + 6.0 - float(scroll[tab])
-	var y := y0
+	var y := _draw_alerts(y0)
 	match tab:
 		"build": y = _draw_build(y)
 		"upgrades": y = _draw_upgrades(y)
+		"business": y = _draw_business(y)
 		"franchise": y = _draw_franchise(y)
 		"legacy": y = _draw_legacy(y)
 		"more": y = _draw_more(y)
@@ -1018,6 +1183,18 @@ func _draw_build(y: float) -> float:
 		y += 90
 	# price
 	y = _draw_price(y + 4, a)
+	y = _draw_pnl(y + 4)
+	# a nudge when selling would be worth it
+	var pend := E.stars_pending()
+	if pend >= maxf(10.0, (E.stars + _legacy_spent()) * 0.5) and E.run_time > 1200.0:
+		var hr := _row_rect(y + 4, 64)
+		_rr(hr, Color(C_ACCENT, 0.12), 12, C_ACCENT, 1)
+		_star(hr.position + Vector2(24, 32), 12, C_ACCENT)
+		_text(hr.position + Vector2(44, 27), "Selling now: +%s" % _stars_label(pend), 16, C_ACCENT)
+		var after := 1.0 + (E.stars + pend) * (Econ.STAR_BASE + float(a.starpow))
+		_text(hr.position + Vector2(44, 48), _fit("Stars would multiply income by %s. Tap to sell." % Econ.fmt_mult(snappedf(after, 0.01)), 13, hr.size.x - 56), 13, C_MUTED)
+		_btn("tab:legacy", hr, "content")
+		y = hr.end.y + 8
 	# strategy tip
 	var tip := _tip()
 	if tip != "":
@@ -1028,6 +1205,52 @@ func _draw_build(y: float) -> float:
 			_text(Vector2(tr.position.x + 12, tr.position.y + 24 + i * 19), lines[i], 14, C_ACCENT if i == 0 else C_MUTED)
 		y = tr.end.y + 6
 	return y
+
+
+func _legacy_spent() -> float:
+	var n := 0.0
+	for id in E.legacy:
+		var u: Dictionary = E.upgrades[id]
+		if E.currency(u) == "star":
+			n += float(u.star)
+	return n
+
+
+func _draw_pnl(y: float) -> float:
+	var em := em_cache
+	if em.is_empty():
+		return y
+	var inf := info_cache
+	var rows: Array = [
+		["Restaurant sales", float(em.rest_rev), C_INK],
+		["Food (%d%% of each plate)" % int(round(E.food_cost_pct())), -float(em.food), C_MUTED],
+		["Rent on empty seats", -float(inf.get("rent", 0.0)), C_MUTED],
+		["Wages for idle cooks", -float(inf.get("wages", 0.0)), C_MUTED],
+		["Ads for guests turned away", -float(inf.get("marketing", 0.0)), C_MUTED],
+	]
+	if E.biz_open_count() > 0:
+		rows.append(["Side businesses", float(em.biz_rev) - float(em.biz_cost), C_INK])
+	if E.debt > 0.0:
+		rows.append(["Loan interest", -float(em.interest), C_ORANGE])
+	var h := 44 + rows.size() * 22 + 30
+	var r := _row_rect(y, h)
+	if not _visible(r):
+		return r.end.y + 8
+	_rr(r, C_CARD, 12)
+	_text(r.position + Vector2(14, 26), "Profit & loss", 17)
+	var pct := 100.0 * float(em.costs) / maxf(float(em.gross), 1e-300)
+	_text_r(r.end.x - 14, r.position.y + 26, "costs %d%% of sales" % int(round(pct)), 12, C_DIM)
+	var yy := r.position.y + 50
+	for row in rows:
+		var v := float(row[1])
+		_text(Vector2(r.position.x + 14, yy), String(row[0]), 13, C_MUTED)
+		_text_r(r.end.x - 14, yy, ("" if v >= 0.0 else "-") + Econ.fmt_money(absf(v)) + "/s", 13, row[2] if v >= 0.0 else Color("e99a8f"))
+		yy += 22
+	cv.draw_line(Vector2(r.position.x + 14, yy - 12), Vector2(r.end.x - 14, yy - 12), C_LINE, 1)
+	_text(Vector2(r.position.x + 14, yy + 8), "Profit", 15, C_INK)
+	var net := float(em.net)
+	_text_r(r.end.x - 14, yy + 8, ("+" if net >= 0.0 else "-") + Econ.fmt_money(absf(net)) + "/s", 15, C_GREEN if net >= 0.0 else C_RED)
+	return r.end.y + 8
 
 
 func _tip() -> String:
@@ -1129,7 +1352,7 @@ func _draw_price(y: float, a: Dictionary) -> float:
 	var auto_owned: bool = a.flags.has("auto_price")
 	var auto: bool = auto_owned and E.price_auto
 	_text(r.position + Vector2(14, 25), "Menu prices", 17)
-	_text(r.position + Vector2(14 + _tw("Menu prices", 17) + 8, r.position.y + 25), "x" + Econ.fmt_mult(snappedf(p, 0.01)), 17, C_ACCENT)
+	_text(r.position + Vector2(14 + _tw("Menu prices", 17) + 8, 25), "x" + Econ.fmt_mult(snappedf(p, 0.01)), 17, C_ACCENT)
 	var sub := "Floor Manager sets the best price" if auto else "Higher prices scare guests away (max x%s)" % Econ.fmt_mult(snappedf(cap, 0.01))
 	_text(r.position + Vector2(14, 46), _fit(sub, 13, r.size.x - 150), 13, C_MUTED)
 	# gauge
@@ -1294,7 +1517,7 @@ func _draw_city_row(r: Rect2, i: int, unlocked: bool, a: Dictionary) -> void:
 	var nm: String = Econ.CITY_NAMES[i]
 	_text(r.position + Vector2(14, 26), nm, 17, C_INK if unlocked else C_DIM)
 	if n > 0:
-		_text(r.position + Vector2(20 + _tw(nm, 17), r.position.y + 26), "x%d" % n, 15, C_PURPLE)
+		_text(r.position + Vector2(20 + _tw(nm, 17), 26), "x%d" % n, 15, C_PURPLE)
 	if not unlocked:
 		_text(r.position + Vector2(14, 50), "Scout it: earn %s this run" % Econ.fmt_money(Econ.cp(float(E.city_cost[i])) * 0.05), 13, C_DIM)
 		return
@@ -1325,7 +1548,7 @@ func _draw_vent_row(r: Rect2, i: int, unlocked: bool, a: Dictionary) -> void:
 	_rr(r, C_CARD if unlocked else Color(C_CARD, 0.5), 12)
 	_text(r.position + Vector2(14, 26), String(v.name), 17, C_INK if unlocked else C_DIM)
 	if n > 0:
-		_text(r.position + Vector2(20 + _tw(String(v.name), 17), r.position.y + 26), "Lv %d" % n, 15, Color("6ad1c0"))
+		_text(r.position + Vector2(20 + _tw(String(v.name), 17), 26), "Lv %d" % n, 15, Color("6ad1c0"))
 	if not unlocked:
 		_text(r.position + Vector2(14, 50), "Unlock: earn %s this run" % Econ.fmt_money(Econ.cp(float(E.vent_cost[i])) * 0.05), 13, C_DIM)
 		return
@@ -1335,6 +1558,337 @@ func _draw_vent_row(r: Rect2, i: int, unlocked: bool, a: Dictionary) -> void:
 	var can := cost <= E.cash
 	var br := Rect2(r.end.x - 124, r.position.y + 10, 114, r.size.y - 20)
 	_button("vent:%d" % i, br, "Level up\n" + Econ.fmt_money(cost), "buy" if can else "", "content", true, can, 16)
+
+
+# ------------------------------------------------------------------ alerts (every tab)
+
+func _draw_alerts(y: float) -> float:
+	if E.in_red():
+		y = _draw_red(y)
+	if not E.event.is_empty():
+		y = _draw_event(y)
+	return y
+
+
+func _draw_red(y: float) -> float:
+	var left := maxf(0.0, E.deadline() - E.red_t)
+	var opts: Array = []
+	var need := -E.cash
+	if E.credit_available() > 0.0:
+		opts.append(["rescue", "Emergency loan\n" + Econ.fmt_money(minf(E.credit_available(), need * 1.05)), "accent"])
+	if E.locations() > 0:
+		opts.append(["sell_loc", "Sell a franchise\n+" + Econ.fmt_money(_loc_refund()), ""])
+	var bi := _biggest_biz()
+	if bi >= 0:
+		opts.append(["sell_biz:%d" % bi, "Sell %s\n+%s" % [Biz.DEFS[bi].name, Econ.fmt_money(Biz.invested(bi, E.biz[bi]) * E.refund_rate())], ""])
+	opts.append(["file", "File for bankruptcy\n+%s grit" % Econ.fmt_num(E.grit_pending()), "red"])
+	var rows := int(ceil(opts.size() / 2.0))
+	var r := _row_rect(y, 92 + rows * 58)
+	var pulse := 0.6 + 0.4 * sin(anim_t * 5.0)
+	_rr(r, Color("2a0b07"), 12, Color(C_RED, pulse), 2)
+	_text(r.position + Vector2(14, 28), "IN THE RED", 18, C_RED)
+	_text_r(r.end.x - 14, r.position.y + 28, "Bankrupt in " + Econ.fmt_time(left), 16, C_RED)
+	var lines := _wrap("You're %s short. Get back above $0 before the deadline or the whole empire goes under." % Econ.fmt_money(need), 13, r.size.x - 28)
+	for i in mini(lines.size(), 2):
+		_text(r.position + Vector2(14, 50 + i * 17), lines[i], 13, Color("ffb0a6"))
+	var bar := Rect2(r.position.x + 14, r.position.y + 80, r.size.x - 28, 5)
+	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
+	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * left / maxf(E.deadline(), 1.0), 5)), C_RED)
+	var bw := (r.size.x - 28 - 8) * 0.5
+	for k in opts.size():
+		var o: Array = opts[k]
+		var br := Rect2(r.position.x + 14 + (k % 2) * (bw + 8), r.position.y + 92 + (k / 2) * 58, bw, 50)
+		_button(String(o[0]), br, String(o[1]), String(o[2]), "content", false, true, 14)
+	return r.end.y + 10
+
+
+func _loc_refund() -> float:
+	for i in range(E.NC - 1, -1, -1):
+		if int(E.cities[i]) > 0:
+			return Econ.cp(float(E.city_cost[i]) * pow(Econ.CITY_GROWTH, int(E.cities[i]) - 1)) * float(E.agg().citycost) * E.refund_rate()
+	return 0.0
+
+
+func _biggest_biz() -> int:
+	var best := -1
+	var bv := 0.0
+	for i in Biz.N:
+		if E.biz[i].open:
+			var v := Biz.invested(i, E.biz[i])
+			if v > bv:
+				bv = v
+				best = i
+	return best
+
+
+func _draw_event(y: float) -> float:
+	var ev := E.event
+	var lines := _wrap(String(ev.text), 13, content_r.size.x - 52)
+	var choices: Array = ev.choices
+	var r := _row_rect(y, 70 + lines.size() * 17 + 62)
+	var good := bool(ev.good)
+	var col := C_GREEN if good else C_ORANGE
+	_rr(r, C_CARD_HI, 12, col, 2)
+	_text(r.position + Vector2(14, 26), _fit(String(ev.title), 17, r.size.x - 80), 17, col)
+	_text_r(r.end.x - 14, r.position.y + 26, Econ.fmt_time(float(ev.t)), 14, C_MUTED)
+	for i in lines.size():
+		_text(r.position + Vector2(14, 48 + i * 17), lines[i], 13, C_MUTED)
+	var bar := Rect2(r.position.x + 14, r.position.y + 56 + lines.size() * 17, r.size.x - 28, 3)
+	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
+	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * float(ev.t) / Events.TIMEOUT, 3)), col)
+	var by := bar.end.y + 8
+	var n := choices.size()
+	var bw := (r.size.x - 28 - 8 * (n - 1)) / n
+	for k in n:
+		var ch: Dictionary = choices[k]
+		var cost := Events.upfront(ev, ch, E.cash)
+		var sub := String(ch.get("note", ""))
+		if cost > 0.0:
+			sub = "Pay " + Econ.fmt_money(cost) + ("" if sub == "" else " · " + sub)
+		if sub == "":
+			sub = "No cost"
+		if k == int(ev.default) and n > 1:
+			sub = "(default) " + sub
+		var br := Rect2(r.position.x + 14 + k * (bw + 8), by, bw, 50)
+		var style := "accent" if k == 0 and n > 1 else ("buy" if n == 1 else "")
+		_button("event:%d" % k, br, String(ch.label), style, "content", false, true, 15)
+		_text_c(br, br.end.y - 7, _fit(sub, 11, bw - 8), 11, Color(0, 0, 0, 0.7) if style != "" else C_MUTED)
+	return r.end.y + 10
+
+
+# ------------------------------------------------------------------ business tab
+
+func _draw_business(y: float) -> float:
+	y = _draw_bank(y)
+	# buy mode chips (shared with Build)
+	var r := _row_rect(y, 32)
+	var labels := ["x1", "x10", "x100", "Max"]
+	var cw := (r.size.x - 3 * 6) / 4.0
+	for i in 4:
+		_button("mode:%d" % i, Rect2(r.position.x + i * (cw + 6), y, cw, 32), labels[i], "on" if buy_mode == i else "ghost", "content", false, true, 14)
+	y += 40
+	var shown_locked := false
+	for i in Biz.N:
+		var s: Dictionary = E.biz[i]
+		if s.open:
+			y = _draw_biz_card(y, i)
+		elif E.biz_unlocked(i):
+			y = _draw_biz_offer(y, i)
+		elif not shown_locked:
+			shown_locked = true
+			y = _draw_biz_locked(y, i)
+	return y
+
+
+func _draw_bank(y: float) -> float:
+	var lim := E.credit_limit()
+	var r := _row_rect(y, 128 if E.debt > 0.0 else 104)
+	if not _visible(r):
+		return r.end.y + 10
+	_rr(r, C_CARD, 12)
+	_text(r.position + Vector2(14, 26), "Bank", 17)
+	var rate := E.interest_rate() * 60.0 * 100.0
+	if E.debt > 0.0:
+		_text_r(r.end.x - 14, r.position.y + 26, "Debt " + Econ.fmt_money(E.debt), 15, C_ORANGE)
+		_text(r.position + Vector2(14, 48), "Interest %s/s (%s%%/min, rises as you max out)" % [Econ.fmt_money(E.interest_per_s()), Econ.fmt_mult(snappedf(rate, 0.01))], 12, C_MUTED)
+		var bar := Rect2(r.position.x + 14, r.position.y + 58, r.size.x - 28, 5)
+		cv.draw_rect(bar, Color(1, 1, 1, 0.08))
+		cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(E.debt / maxf(lim, 1e-9), 0.0, 1.0), 5)), C_ORANGE)
+	else:
+		_text_r(r.end.x - 14, r.position.y + 26, "No debt", 13, C_GREEN)
+		_text(r.position + Vector2(14, 48), _fit("Borrow up to %s at %s%%/min to expand faster." % [Econ.fmt_money(lim), Econ.fmt_mult(snappedf(rate, 0.01))], 12, r.size.x - 28), 12, C_MUTED)
+	var by := r.end.y - 46
+	var avail := E.credit_available()
+	var w := (r.size.x - 28 - 18) / 4.0
+	var x := r.position.x + 14
+	_button("borrow:0.25", Rect2(x, by, w, 36), "+" + Econ.fmt_money(avail * 0.25), "", "content", false, avail > 1.0, 13)
+	_button("borrow:1.0", Rect2(x + (w + 6), by, w, 36), "Max", "", "content", false, avail > 1.0, 13)
+	_button("repay:0.5", Rect2(x + 2 * (w + 6), by, w, 36), "Repay half", "", "content", false, E.debt > 0.0 and E.cash > 0.0, 12)
+	_button("repay:1.0", Rect2(x + 3 * (w + 6), by, w, 36), "Repay all", "buy" if E.debt > 0.0 and E.cash >= E.debt else "", "content", false, E.debt > 0.0 and E.cash > 0.0, 12)
+	return r.end.y + 10
+
+
+func _draw_biz_locked(y: float, i: int) -> float:
+	var d: Dictionary = Biz.DEFS[i]
+	var r := _row_rect(y, 84)
+	_rr(r, Color(C_CARD, 0.5), 12)
+	_text(r.position + Vector2(14, 26), String(d.name), 17, C_DIM)
+	_text_r(r.end.x - 14, r.position.y + 26, "LOCKED", 11, C_DIM)
+	var need := Biz.unlock_at(i)
+	_text(r.position + Vector2(14, 48), _fit("Earn %s this run to unlock" % Econ.fmt_money(need), 13, r.size.x - 28), 13, C_DIM)
+	var bar := Rect2(r.position.x + 14, r.end.y - 18, r.size.x - 28, 5)
+	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
+	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(E.run_earned / need, 0.0, 1.0), 5)), Color(String(d.color)))
+	return r.end.y + 10
+
+
+func _draw_biz_offer(y: float, i: int) -> float:
+	var d: Dictionary = Biz.DEFS[i]
+	var col := Color(String(d.color))
+	var lines := _wrap(String(d.blurb), 13, content_r.size.x - 48)
+	var r := _row_rect(y, 96 + lines.size() * 17)
+	if not _visible(r):
+		return r.end.y + 10
+	_rr(r, C_CARD, 12, col, 2)
+	_text(r.position + Vector2(14, 28), String(d.name), 19, col)
+	_text_r(r.end.x - 14, r.position.y + 28, "NEW", 12, col)
+	for k in lines.size():
+		_text(r.position + Vector2(14, 50 + k * 17), lines[k], 13, C_MUTED)
+	var cost := Biz.open_cost(i)
+	_button("biz_open:%d" % i, Rect2(r.position.x + 14, r.end.y - 46, r.size.x - 28, 36), "Open for " + Econ.fmt_money(cost), "buy" if E.cash >= cost else "", "content", false, E.cash >= cost, 15)
+	return r.end.y + 10
+
+
+func _draw_biz_card(y: float, i: int) -> float:
+	var d: Dictionary = Biz.DEFS[i]
+	var s: Dictionary = E.biz[i]
+	var col := Color(String(d.color))
+	var tw_h := _twist_height(i)
+	var r := _row_rect(y, 48 + tw_h + 2 * 60 + 6)
+	if not _visible(r):
+		return r.end.y + 10
+	_rr(r, C_CARD, 12)
+	cv.draw_rect(Rect2(r.position.x, r.position.y + 12, 4, 26), col)
+	_text(r.position + Vector2(14, 30), String(d.name), 18, col)
+	var est: Dictionary = (em_cache.get("per", []) as Array)[i] if (em_cache.get("per", []) as Array).size() > i else Biz.estimate(i, s, E)
+	var net := float(est.rev) - float(est.cost)
+	_text_r(r.end.x - 14, r.position.y + 24, ("+" if net >= 0.0 else "-") + Econ.fmt_money(absf(net)) + "/s", 15, C_GREEN if net >= 0.0 else C_RED)
+	_text_r(r.end.x - 14, r.position.y + 40, "sales %s · costs %s" % [Econ.fmt_money(float(est.rev)), Econ.fmt_money(float(est.cost))], 11, C_DIM)
+	var tr := Rect2(r.position.x + 12, r.position.y + 48, r.size.x - 24, tw_h)
+	_draw_twist(i, s, tr)
+	var yy := tr.end.y + 6
+	for w in ["a", "b"]:
+		var br := Rect2(r.position.x + 12, yy, r.size.x - 24, 54)
+		_draw_biz_build(i, s, w, br, col)
+		yy += 60
+	return r.end.y + 10
+
+
+func _draw_biz_build(i: int, s: Dictionary, w: String, r: Rect2, col: Color) -> void:
+	var d: Dictionary = Biz.DEFS[i]
+	_rr(r, Color(1, 1, 1, 0.03), 10)
+	var nm: String = d[w]
+	_text(r.position + Vector2(10, 22), nm, 15)
+	_text(r.position + Vector2(16 + _tw(nm, 15), 22), "x%d" % int(s[w]), 13, C_MUTED)
+	_text(r.position + Vector2(10, 42), _fit(String(d[w + "_desc"]), 12, r.size.x - 150), 12, C_MUTED)
+	var k := biz_buy_count(i, w)
+	var cost := E.biz_cost(i, w, k)
+	var can := cost <= E.cash
+	var g := biz_gain(i, w, k)
+	if absf(g) > 0.0:
+		_text_r(r.end.x - 130, r.end.y - 8, ("+" if g >= 0.0 else "-") + Econ.fmt_money(absf(g)) + "/s", 11, C_GREEN if g >= 0.0 else C_ORANGE)
+	_button("biz:%d:%s" % [i, w], Rect2(r.end.x - 118, r.position.y + 5, 112, r.size.y - 10), "Buy %d\n%s" % [k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 15)
+
+
+func _twist_height(i: int) -> float:
+	match String(Biz.DEFS[i].id):
+		"truck": return 80.0
+		"bakery": return 62.0
+		"catering": return 146.0
+		"bar": return 62.0
+		"hotel": return 72.0
+		"wholesale": return 72.0
+	return 60.0
+
+
+func _draw_twist(i: int, s: Dictionary, r: Rect2) -> void:
+	var id: String = Biz.DEFS[i].id
+	var col := Color(String(Biz.DEFS[i].color))
+	_rr(r, Color(0, 0, 0, 0.25), 10)
+	var mgr := Biz.has_mgr(i, E)
+	match id:
+		"truck":
+			var moving := float(s.move_t) > 0.0
+			var sub := "Driving to %s... %s" % [Biz.SPOTS[int(s.spot)], Econ.fmt_time(float(s.move_t))] if moving else "Crowds change in %s" % Econ.fmt_time(float(s.spot_t))
+			if mgr:
+				sub += " · Route Planner on"
+			_text(r.position + Vector2(10, 18), sub, 12, C_MUTED)
+			var n := Biz.SPOTS.size()
+			var bw := (r.size.x - 20 - 6 * (n - 1)) / n
+			for k in n:
+				var m := float(s.spots[k])
+				var here := k == int(s.spot)
+				var br := Rect2(r.position.x + 10 + k * (bw + 6), r.position.y + 26, bw, 46)
+				var c := C_GREEN if m >= 1.5 else (C_ACCENT if m >= 0.9 else C_RED)
+				_rr(br, Color(c, 0.25 if here else 0.1), 8, c if here else Color(0, 0, 0, 0), 2 if here else 0)
+				_text_c(br, br.position.y + 18, _fit(Biz.SPOTS[k], 11, bw - 4), 11, C_INK if here else C_MUTED)
+				_text_c(br, br.position.y + 38, "x" + Econ.fmt_mult(m), 15, c)
+				if not here:
+					_btn("spot:%d:%d" % [i, k], br, "content")
+		"bakery":
+			var rush := fmod(float(s.rush_t), Biz.RUSH_PERIOD) < Biz.RUSH_LEN
+			var cap := Biz.bakery_sell_cap(s, E)
+			var shelf := cap * (180.0 if mgr else 60.0)
+			_text(r.position + Vector2(10, 18), "Baking %s/s · selling up to %s/s" % [Econ.fmt_num(float(int(s.a))), Econ.fmt_num(cap * (3.0 if rush else 1.0))], 12, C_MUTED)
+			var rt := "MORNING RUSH! %s" % Econ.fmt_time(Biz.RUSH_LEN - float(s.rush_t)) if rush else "Rush in %s" % Econ.fmt_time(Biz.RUSH_PERIOD - float(s.rush_t))
+			_text_r(r.end.x - 10, r.position.y + 18, rt, 12, C_ACCENT if rush else C_DIM)
+			var bar := Rect2(r.position.x + 10, r.position.y + 30, r.size.x - 20, 10)
+			_rr(bar, Color(1, 1, 1, 0.08), 5)
+			var f := clampf(float(s.stock) / maxf(shelf, 1e-9), 0.0, 1.0)
+			_rr(Rect2(bar.position, Vector2(maxf(10.0, bar.size.x * f), 10)), col, 5)
+			var stale := "Shelf full: extra bread goes stale" if f > 0.98 else ("Stock %s loaves" % Econ.fmt_num(float(s.stock)))
+			if int(s.a) < cap * 0.8:
+				stale = "Counters idle: more ovens would sell"
+			_text(r.position + Vector2(10, 56), stale, 12, C_ORANGE if f > 0.98 else C_MUTED)
+		"catering":
+			var free := int(s.a) - Biz.busy_crew(s)
+			_text(r.position + Vector2(10, 18), "Crew free %d/%d · jobs %d/%d · new offers in %s" % [free, int(s.a), (s.jobs as Array).size(), Biz.catering_max_jobs(s), Econ.fmt_time(float(s.offer_t))], 12, C_MUTED)
+			var offers: Array = s.offers
+			var oy := r.position.y + 26
+			for k in 3:
+				var orr := Rect2(r.position.x + 10, oy, r.size.x - 20, 34)
+				if k < offers.size():
+					var o: Dictionary = offers[k]
+					var ok := Biz.can_accept(s, k)
+					_rr(orr, Color(1, 1, 1, 0.05), 8)
+					_text(orr.position + Vector2(8, 15), _fit(String(o.name), 13, orr.size.x - 120), 13, C_INK if ok else C_DIM)
+					_text(orr.position + Vector2(8, 29), "%d crew · %s" % [int(o.crew), Econ.fmt_time(float(o.dur))], 11, C_MUTED)
+					var pay := float(o.pay) * float(E.agg().twist.catering) * Biz.mult(i, E)
+					_button("accept:%d:%d" % [i, k], Rect2(orr.end.x - 104, orr.position.y + 3, 100, 28), "Take " + Econ.fmt_money(pay), "buy" if ok else "", "content", false, ok, 12)
+				oy += 38
+			var jobs: Array = s.jobs
+			var jy := r.end.y - 6
+			var jw := (r.size.x - 20) / maxf(1.0, float(Biz.catering_max_jobs(s)))
+			for k in jobs.size():
+				var j: Dictionary = jobs[k]
+				var jr := Rect2(r.position.x + 10 + k * jw, jy - 6, jw - 4, 6)
+				cv.draw_rect(jr, Color(1, 1, 1, 0.08))
+				cv.draw_rect(Rect2(jr.position, Vector2(jr.size.x * (1.0 - float(j.t) / maxf(float(j.dur), 1.0)), 6)), col)
+		"bar":
+			var m := Biz.bar_mix(s)
+			_text(r.position + Vector2(10, 18), "Rowdiness" + ("   CLOSED %s" % Econ.fmt_time(float(s.closed_t)) if float(s.closed_t) > 0.0 else ""), 12, C_RED if float(s.closed_t) > 0.0 else C_MUTED)
+			var bar := Rect2(r.position.x + 10, r.position.y + 28, r.size.x - 130, 10)
+			_rr(bar, Color(1, 1, 1, 0.08), 5)
+			var f := clampf(float(s.rowdy) / 100.0, 0.0, 1.0)
+			_rr(Rect2(bar.position, Vector2(maxf(10.0, bar.size.x * f), 10)), C_RED.lerp(C_ACCENT, 1.0 - f), 5)
+			var per_min := Biz.bar_incident_rate(s, E) * 60.0
+			_text(r.position + Vector2(10, 56), "~%s incidents/min · %d so far" % [Econ.fmt_mult(snappedf(per_min, 0.01)), int(s.incidents)], 12, C_MUTED)
+			_button("happy:%d" % i, Rect2(r.end.x - 112, r.position.y + 8, 102, 46), "Happy hour\n" + ("ON" if s.happy else "OFF"), "accent" if s.happy else "", "content", false, true, 14)
+		"hotel":
+			var sea := Biz.season(s)
+			var left := Biz.SEASON_LEN - fmod(float(s.season_t), Biz.SEASON_LEN)
+			var h := Biz.hotel_rev(i, s, E, sea, float(s.rate))
+			var best := Biz.hotel_best_rate(i, s, E, sea)
+			_text(r.position + Vector2(10, 18), "%s season (%s left) · occupancy %d%%" % [Biz.SEASONS[sea], Econ.fmt_time(left), int(round(float(h.occ) * 100.0))], 12, C_MUTED)
+			_text(r.position + Vector2(10, 42), "Room rate x" + Econ.fmt_mult(snappedf(float(s.rate), 0.01)), 15, col)
+			_text(r.position + Vector2(10, 62), "Fills every room at x%s" % Econ.fmt_mult(snappedf(best, 0.01)), 11, C_DIM)
+			var auto: bool = mgr and bool(s.rate_auto)
+			_button("rate:%d:down" % i, Rect2(r.end.x - 150, r.position.y + 24, 40, 40), "-", "", "content", true, not auto, 20)
+			_button("rate:%d:up" % i, Rect2(r.end.x - 106, r.position.y + 24, 40, 40), "+", "", "content", true, not auto, 20)
+			if mgr:
+				_button("rate:%d:auto" % i, Rect2(r.end.x - 62, r.position.y + 24, 52, 40), "Auto", "on" if auto else "ghost", "content", false, true, 12)
+		"wholesale":
+			var mp := float(s.mprice)
+			var cap := Biz.wholesale_cap(s)
+			var mc := C_GREEN if mp >= 1.3 else (C_ACCENT if mp >= 0.8 else C_RED)
+			_text(r.position + Vector2(10, 18), "Market price", 12, C_MUTED)
+			_text(r.position + Vector2(10 + _tw("Market price ", 12), 18), "x" + Econ.fmt_mult(snappedf(mp, 0.01)), 14, mc)
+			var bar := Rect2(r.position.x + 10, r.position.y + 28, r.size.x - 130, 10)
+			_rr(bar, Color(1, 1, 1, 0.08), 5)
+			_rr(Rect2(bar.position, Vector2(maxf(10.0, bar.size.x * clampf(float(s.stock) / maxf(cap, 1.0), 0.0, 1.0)), 10)), col, 5)
+			_text(r.position + Vector2(10, 56), "Food costs -%s pts empire-wide" % Econ.fmt_mult(snappedf(Biz.food_cut(s), 0.1)), 12, C_MUTED)
+			var v := float(s.stock) * Biz.wholesale_price(i, s, E) * 0.9
+			_button("ws_sell:%d" % i, Rect2(r.end.x - 112, r.position.y + 8, 102, 46), "Sell stock\n" + Econ.fmt_money(v), "accent" if mp >= 1.3 else "", "content", false, float(s.stock) > 0.0, 14)
 
 
 # ------------------------------------------------------------------ legacy tab
@@ -1347,7 +1901,7 @@ func _draw_legacy(y: float) -> float:
 	_text(r.position + Vector2(64, 34), _stars_label(E.stars), 22, C_ACCENT)
 	_text(r.position + Vector2(64, 54), "Income x%s from stars" % Econ.fmt_num(E.star_mult(a)), 14, C_MUTED)
 	var pend := E.stars_pending()
-	var lines := _wrap("Sell the company to an investor for stars. You restart from a single diner, keeping your stars and Legacy perks. Each star adds +%s%% income." % Econ.fmt_mult(snappedf((Econ.STAR_BASE + float(a.starpow)) * 100.0, 0.01)), 13, r.size.x - 32)
+	var lines := _wrap("Sell the company to an investor for stars. You restart from a single diner, keeping your stars, Grit and perks. Each star adds +%s%% income." % Econ.fmt_mult(snappedf((Econ.STAR_BASE + float(a.starpow)) * 100.0, 0.01)), 13, r.size.x - 32)
 	for i in lines.size():
 		_text(r.position + Vector2(16, 82 + i * 18), lines[i], 13, C_MUTED)
 	var br := Rect2(r.position.x + 16, r.end.y - 62, r.size.x - 32, 48)
@@ -1355,14 +1909,45 @@ func _draw_legacy(y: float) -> float:
 		_button("sell", br, "Sell company: +" + _stars_label(pend), "accent", "content", false, true, 17)
 	else:
 		var next := 1.0 + E.stars_earned
-		var need := pow(pow(next / 10.0, 5.0) * 1.0e10, Econ.COST_POW)
-		_button("noop", br, "Earn %s total for your first star" % Econ.fmt_money(need) if E.stars_earned < 1 else "Earn more to sell", "", "content", false, false, 15)
+		var need := pow(pow(next / Econ.STAR_COEF, 5.0) * 1.0e10, Econ.COST_POW)
+		_button("noop", br, "Earn %s in total for the next star" % Econ.fmt_money(need), "", "content", false, false, 14)
 	y = r.end.y + 12
-	y = _section(y, "Legacy perks", "%d / 80 owned" % E.legacy.size())
-	# next tier of each legacy line
-	var shown := {}
+	y = _perk_list(y, "star")
+	# ---- grit
+	var gr := _row_rect(y + 6, 150)
+	_rr(gr, Color("2a1710"), 14, Color(C_GRIT, 0.5), 1)
+	_grit_icon(gr.position + Vector2(34, 38), C_GRIT)
+	_text(gr.position + Vector2(64, 34), "%s Grit" % Econ.fmt_num(E.grit), 22, C_GRIT)
+	_text(gr.position + Vector2(64, 54), "Income x%s from Grit" % Econ.fmt_mult(snappedf(E.grit_mult(), 0.01)), 14, C_MUTED)
+	var gl := _wrap("Going bankrupt hurts, but you learn. Each bankruptcy pays Grit based on how much this run earned (now: %s). Grit adds +1%% income each and buys perks that make risk safer." % Econ.fmt_num(E.grit_pending()), 13, gr.size.x - 32)
+	for i in gl.size():
+		_text(gr.position + Vector2(16, 82 + i * 18), gl[i], 13, C_MUTED)
+	y = gr.end.y + 12
+	y = _perk_list(y, "grit")
+	return y
+
+
+func _grit_icon(c: Vector2, col_: Color) -> void:
+	# a clenched fist, roughly: a rounded block with knuckle lines
+	_rr(Rect2(c - Vector2(14, 12), Vector2(28, 24)), col_, 8)
+	for k in 3:
+		cv.draw_line(c + Vector2(-7 + k * 7, -12), c + Vector2(-7 + k * 7, -2), Color("2a1710"), 2)
+	cv.draw_rect(Rect2(c + Vector2(-10, 10), Vector2(20, 8)), col_)
+
+
+func _perk_list(y: float, cur: String) -> float:
+	var total := 0
+	var owned := 0
 	for u in E.upgrades:
-		if not u.legacy:
+		if u.legacy and E.currency(u) == cur:
+			total += 1
+			if E.legacy.has(int(u.id)):
+				owned += 1
+	y = _section(y, "Legacy perks" if cur == "star" else "Grit perks", "%d / %d owned" % [owned, total])
+	var shown := {}
+	var col := C_ACCENT if cur == "star" else C_GRIT
+	for u in E.upgrades:
+		if not u.legacy or E.currency(u) != cur:
 			continue
 		var kind := String(u.req[1])
 		if shown.has(kind) or E.legacy.has(int(u.id)):
@@ -1370,17 +1955,18 @@ func _draw_legacy(y: float) -> float:
 		shown[kind] = true
 		var rr := _row_rect(y, 70)
 		if _visible(rr):
-			var can := E.legacy_available(u) and float(u.star) <= E.stars
+			var can := E.legacy_available(u) and float(u.star) <= E.wallet(cur)
 			_rr(rr, C_CARD, 12)
-			cv.draw_rect(Rect2(rr.position.x, rr.position.y + 10, 4, rr.size.y - 20), C_ACCENT)
+			cv.draw_rect(Rect2(rr.position.x, rr.position.y + 10, 4, rr.size.y - 20), col)
 			_text(rr.position + Vector2(14, 28), _fit(String(u.name), 16, rr.size.x - 150), 16)
 			_text(rr.position + Vector2(14, 50), _fit(E.effect_text(u.eff), 13, rr.size.x - 150), 13, C_MUTED)
 			var b := Rect2(rr.end.x - 124, rr.position.y + 12, 114, rr.size.y - 24)
-			_button("legacy:%d" % int(u.id), b, _stars_label(float(u.star)), "accent" if can else "", "content", false, can, 15)
+			var lab := _stars_label(float(u.star)) if cur == "star" else "%s grit" % Econ.fmt_num(float(u.star))
+			_button("legacy:%d" % int(u.id), b, lab, ("accent" if cur == "star" else "red") if can else "", "content", false, can, 15)
 		y += 76
 	if shown.is_empty():
 		var rr := _row_rect(y, 50)
-		_text_c(rr, rr.position.y + 30, "Every perk owned. Legendary.", 15, C_ACCENT)
+		_text_c(rr, rr.position.y + 30, "Every perk owned. Legendary.", 15, col)
 		y += 56
 	return y
 
@@ -1425,6 +2011,10 @@ func _draw_more(y: float) -> float:
 		["Best income", Econ.fmt_money(E.best_income) + "/s"],
 		["Upgrades owned", "%d (+%d legacy)" % [E.owned.size(), E.legacy.size()]],
 		["Companies sold", str(E.prestiges)],
+		["Bankruptcies", str(E.bankruptcies)],
+		["Grit", Econ.fmt_num(E.grit)],
+		["Debt", Econ.fmt_money(E.debt)],
+		["Businesses running", "%d / %d" % [E.biz_open_count(), Biz.N]],
 		["Serves tapped", str(E.taps)],
 		["Run time", Econ.fmt_time(E.run_time)],
 		["Play time", Econ.fmt_time(E.play_time)],
@@ -1509,6 +2099,9 @@ func _draw_overlay() -> void:
 		"welcome": _modal_welcome(vs)
 		"reset": _modal_reset(vs)
 		"help": _modal_help(vs)
+		"bankrupt": _modal_bankrupt(vs)
+		"file": _modal_file(vs)
+		"sell_biz": _modal_sell_biz(vs)
 		"import": _modal_import(vs)
 
 
@@ -1524,8 +2117,9 @@ func _modal_concept(vs: Vector2) -> void:
 	var r := _modal_card(vs, h)
 	_rr(r, C_BG, 16, C_LINE, 1)
 	var g := float(modal_data.get("stars", 0.0))
-	var title := "Sold! +" + _stars_label(g) if g > 0.0 else "Open your first restaurant"
-	_text_c(r, r.position.y + 36, title, 22, C_ACCENT if g > 0.0 else C_INK)
+	var gg := float(modal_data.get("grit", 0.0))
+	var title := "Sold! +" + _stars_label(g) if g > 0.0 else ("Back on your feet" if modal_data.has("grit") else "Open your first restaurant")
+	_text_c(r, r.position.y + 36, title, 22, C_ACCENT if g > 0.0 else (C_GRIT if gg > 0.0 else C_INK))
 	_text_c(r, r.position.y + 62, "Choose a concept for this run", 14, C_MUTED)
 	var y := r.position.y + 80
 	for c in Econ.CONCEPTS:
@@ -1608,6 +2202,48 @@ func _modal_import(vs: Vector2) -> void:
 	_button("import_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Restore", "accent", "modal", false, true, 16)
 
 
+func _modal_bankrupt(vs: Vector2) -> void:
+	var r := _modal_card(vs, 330)
+	_rr(r, Color("1c0906"), 16, C_RED, 2)
+	_text_c(r, r.position.y + 46, "BANKRUPT", 30, C_RED)
+	_text_c(r, r.position.y + 76, "The bank took everything.", 15, C_MUTED)
+	_grit_icon(Vector2(r.get_center().x, r.position.y + 118), C_GRIT)
+	_text_c(r, r.position.y + 166, "+%s Grit" % Econ.fmt_num(float(modal_data.get("grit", 0.0))), 24, C_GRIT)
+	var lost := float(modal_data.get("lost_stars", 0.0))
+	var t := "Grit gives +1% income each and buys perks in the Legacy tab."
+	if lost >= 1.0:
+		t = "You lost the %s this run would have paid. " % _stars_label(lost) + t
+	var lines := _wrap(t, 13, r.size.x - 40)
+	for i in lines.size():
+		_text_c(r, r.position.y + 196 + i * 18, lines[i], 13, C_MUTED)
+	_button("after_bankrupt", Rect2(r.position.x + 16, r.end.y - 64, r.size.x - 32, 48), "Start over", "red", "modal", false, true, 17)
+
+
+func _modal_file(vs: Vector2) -> void:
+	var r := _modal_card(vs, 280)
+	_rr(r, C_BG, 16, C_RED, 1)
+	_text_c(r, r.position.y + 42, "File for bankruptcy?", 22, C_RED)
+	var lines := _wrap("Everything resets like selling the company, but you get %s Grit instead of stars, and this run's stars (%s) are lost. Debt is wiped." % [Econ.fmt_num(E.grit_pending()), Econ.fmt_num(E.stars_pending())], 14, r.size.x - 40)
+	for i in lines.size():
+		_text_c(r, r.position.y + 78 + i * 19, lines[i], 14, C_MUTED)
+	var bw := (r.size.x - 44) * 0.5
+	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Keep fighting", "", "modal", false, true, 15)
+	_button("file_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "File", "red", "modal", false, true, 16)
+
+
+func _modal_sell_biz(vs: Vector2) -> void:
+	var i := int(modal_data.get("i", 0))
+	var r := _modal_card(vs, 230)
+	_rr(r, C_BG, 16, C_LINE, 1)
+	_text_c(r, r.position.y + 42, "Sell the %s?" % Biz.DEFS[i].name, 21)
+	var v := Biz.invested(i, E.biz[i]) * E.refund_rate()
+	_text_c(r, r.position.y + 80, "+" + Econ.fmt_money(v), 24, C_GREEN)
+	_text_c(r, r.position.y + 108, "%d%% of what you put in. You can reopen it later." % int(round(E.refund_rate() * 100.0)), 13, C_MUTED)
+	var bw := (r.size.x - 44) * 0.5
+	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Keep it", "", "modal", false, true, 15)
+	_button("sell_biz_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Sell", "accent", "modal", false, true, 16)
+
+
 func _modal_help(vs: Vector2) -> void:
 	var inf := info_cache
 	var r := _modal_card(vs, 360)
@@ -1637,6 +2273,8 @@ func get_agent_state() -> Dictionary:
 		"available": vis_cache.size(), "affordable": afford_count, "locations": E.locations(), "stars": E.stars,
 		"pending_stars": E.stars_pending(), "prestiges": E.prestiges, "limit": String(info_cache.get("limit", "")),
 		"price": float(info_cache.get("price", 1.0)), "scroll": scroll[tab], "scroll_max": scroll_max.get(tab, 0.0),
+		"net": float(em_cache.get("net", 0.0)), "debt": E.debt, "grit": E.grit, "bankruptcies": E.bankruptcies,
+		"in_red": E.in_red(), "event": String(E.event.get("id", "")), "biz_open": E.biz_open_count(),
 	}
 
 
@@ -1660,3 +2298,16 @@ func dev_skip(seconds: float) -> void:
 ## Press a button by id, as a tap would.
 func press_button(id: String) -> void:
 	_do(id)
+
+
+## Shows an event card now (for testing). Pass an id from events.gd to pick one.
+func dev_event(id := "") -> void:
+	var ev := Events.make(E.rng, maxf(float(em_cache.get("gross", 1.0)), 1.0), 0.0, float(E.agg().event_cost), E.cash > 0.0)
+	if id != "":
+		for src in Events.LIST:
+			if String(src.id) == id:
+				ev = (src as Dictionary).duplicate(true)
+				ev.r = maxf(float(em_cache.get("gross", 1.0)), 1.0)
+				ev.cost_mult = float(E.agg().event_cost)
+				ev.t = Events.TIMEOUT
+	E.event = ev
