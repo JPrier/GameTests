@@ -540,7 +540,7 @@ func test_project_name_pins_save_location():
 	assert_eq(SaveStore.LS_KEY, "bistro-empire:save", "localStorage key unchanged")
 
 
-# ------------------------------------------------------------------ expenses, loans, events, bankruptcy
+# ------------------------------------------------------------------ challenge costs, loans, events, going bust
 
 func test_real_player_save_still_loads():
 	# a real save code from before businesses, loans and bankruptcy existed
@@ -557,11 +557,11 @@ func test_real_player_save_still_loads():
 	assert_eq(e.owned.size(), 69, "upgrades kept")
 	assert_eq(e.biz.size(), Biz.N, "businesses added")
 	assert_eq(e.debt, 0.0, "no debt")
-	assert_gt(e.income(), 0.0, "still profitable after costs")
+	assert_gt(e.income(), 0.0, "still earning")
 	assert_gt(e.stars_pending(), 15.0, "a worthwhile first sale is waiting")
 
 
-func test_costs_reward_balance():
+func test_costs_reward_balance_in_challenges():
 	var e := _econ_ch()
 	e.reps.ads = 30
 	e.reps.tables = 30
@@ -651,7 +651,7 @@ func test_effects_change_income_and_expire():
 	assert_true(e.effects.is_empty(), "effects expire")
 
 
-func test_bankruptcy():
+func test_challenge_bust_ends_the_run():
 	var e := _econ_ch()
 	e.challenge_level = 2
 	e.run_earned = Econ.cp(1e9)
@@ -673,7 +673,9 @@ func test_bankruptcy():
 	assert_false(e.concept_chosen, "pick a new concept")
 	assert_eq(int(e.challenge_best.get("margins", 0)), 0, "the level isn't completed")
 	assert_eq(String(e.last_bankrupt.challenge), "margins", "UI is told which challenge")
-	assert_true(e.concept_unlocked("fine"), "a bust also counts towards unlocking concepts")
+	assert_false(e.concept_unlocked("fine"), "going bust in a challenge doesn't unlock concepts")
+	e.old_busts = 1
+	assert_true(e.concept_unlocked("fine"), "bankruptcies from the old rules still do")
 
 
 func test_normal_runs_cannot_lose():
@@ -911,9 +913,24 @@ func test_hotel_rates_and_seasons():
 
 func test_wholesale_market_and_food_cut():
 	var e := _with_biz(5)
+	e.reps.ads = 40
+	e.reps.tables = 40
+	e.reps.cooks = 40
+	# normal runs: delivery trucks boost the restaurant's income, and the buy row sees it
+	var inc0 := float(e.income_info(e.agg()).total)
+	var s3: Dictionary = e.biz[5].duplicate(true)
+	s3.b = 20
+	assert_gt(e.biz_gain_with(5, s3), 0.0, "buying trucks shows a gain")
+	e.biz[5].b = 20
+	assert_gt(float(e.income_info(e.agg()).total), inc0, "delivery trucks boost restaurant income")
+	# challenges: they cut food costs instead
+	e.challenge = "margins"
+	e.mark_dirty()
+	e.biz[5].b = 1
 	var food0 := e.food_cost_pct()
 	e.biz[5].b = 20
-	assert_lt(e.food_cost_pct(), food0, "delivery trucks cut food costs everywhere")
+	assert_lt(e.food_cost_pct(), food0, "in a challenge, delivery trucks cut food costs everywhere")
+	assert_eq(e.supply_mult(), 1.0, "and don't also boost income")
 	var s: Dictionary = e.biz[5]
 	s.stock = 100.0
 	s.mprice = 2.0
@@ -942,6 +959,8 @@ func test_business_upgrades_and_save():
 
 func test_selling_off_to_survive():
 	var e := _with_biz(1)
+	e.challenge = "margins"
+	e.mark_dirty()
 	e.cities[0] = 3
 	e.cash = -1e300
 	var v := e.sell_biz(1)
@@ -1064,7 +1083,10 @@ func test_businesses_cannot_snowball():
 		var est := Biz.estimate(i, s, e)
 		assert_lt(float(est.rev) / e.biz_ref(), Biz.market(i, e) * 1.0001, "%s sales capped by its market" % Biz.DEFS[i].name)
 		assert_gt(float(est.sat), 0.9, "%s is saturated" % Biz.DEFS[i].name)
-		# and over-building costs money: each extra build adds running costs but barely any sales
+		# in a challenge over-building costs money: each extra build adds running costs but barely any sales
+		e.challenge = "margins"
+		e.mark_dirty()
+		est = Biz.estimate(i, s, e)
 		var s2 := s.duplicate(true)
 		s2.a = 901
 		var e2 := Biz.estimate(i, s2, e)
@@ -1167,7 +1189,7 @@ func test_limit_never_flips_back_to_guests():
 		assert_true(left_demand, "enough ads moves the limit to seats or kitchen (auto price %s)" % auto)
 
 
-func test_every_stat_costs_money_to_run():
+func test_every_stat_costs_money_to_run_in_challenges():
 	var e := _econ_ch()
 	e.reps.ads = 40
 	e.reps.tables = 40
@@ -1266,6 +1288,8 @@ func test_businesses_never_outgrow_the_restaurant():
 
 func test_nothing_jumps_when_trouble_starts():
 	var main = await _fresh()
+	main.E.challenge = "margins"   # debt and the red banner only exist in challenges
+	main.E.mark_dirty()
 	main.E.reps.ads = 40
 	main.E.reps.tables = 40
 	main.E.reps.cooks = 40
@@ -1385,7 +1409,7 @@ func _walk_tab(main, tab: String, where: String) -> void:
 		_check_text(main, "%s @%d" % [where, int(main.scroll[tab])])
 		if float(main.scroll[tab]) >= float(main.scroll_max[tab]) - 1.0:
 			break
-		main.scroll[tab] = minf(float(main.scroll_max[tab]), float(main.scroll[tab]) + main.content_r.size.y * 0.7)
+		main.scroll[tab] = minf(float(main.scroll_max[tab]), float(main.scroll[tab]) + main.content_r.size.y * 0.95)   # overlapping text sits together, so screen-sized steps see every pair
 		await wait_frames(1)
 
 
@@ -1450,29 +1474,29 @@ func _ui_end(main, name: String) -> void:
 		for p in uniq:
 			dump.store_line(String(p))
 		dump.close()
-	assert_gt(_ui_checked, 300, "the check really looked at the text on screen")
+	assert_gt(_ui_checked, 50, "the check really looked at the text on screen")
 	assert_eq(uniq.size(), 0, "%d text problems (see user://ui_%s.txt)" % [uniq.size(), name])
 	main.wipe_save()
 
 
-func _ui_tabs(width: int, big: bool) -> void:
+func _ui_tabs(width: int, big: bool, which := ["build", "upgrades", "business", "franchise", "legacy", "more"]) -> void:
 	var main = await _ui_begin(width, big)
 	var tag := "%dpx %s" % [width, "big" if big else "early"]
-	for t in main.TABS:
+	for t in which:
 		await _walk_tab(main, t, tag + " " + t)
-	_ui_end(main, "tabs_%d_%s" % [width, big])
+	_ui_end(main, "tabs_%d_%s_%d" % [width, big, which.size()])
 
 
-func _ui_filters(width: int, big: bool) -> void:
+func _ui_filters(width: int, big: bool, only := []) -> void:
 	var main = await _ui_begin(width, big)
 	var tag := "%dpx %s" % [width, "big" if big else "early"]
 	for f in main.UPG_FILTERS:
-		if f == "all":
-			continue   # covered by the tabs walk
+		if f == "all" or (not only.is_empty() and not only.has(f)):
+			continue   # "all" is covered by the tabs walk
 		main.upg_filter = f
 		await _walk_tab(main, "upgrades", tag + " upgrades/" + f)
 	main.upg_filter = "all"
-	_ui_end(main, "filters_%d_%s" % [width, big])
+	_ui_end(main, "filters_%d_%s_%d" % [width, big, only.size()])
 
 
 func _ui_pages(width: int, big: bool) -> void:
@@ -1488,18 +1512,10 @@ func _ui_pages(width: int, big: bool) -> void:
 func _ui_popups(width: int, big: bool) -> void:
 	var main = await _ui_begin(width, big)
 	var tag := "%dpx %s" % [width, "big" if big else "early"]
-	main.set_tab("build")
-	main.E.insured = true
-	main.E.borrow(main.E.credit_available())
-	main.E.cash = -1.0e6 - absf(main.E.cash)
-	await wait_frames(2)
-	_check_text(main, tag + " in the red")
-	await _modal_check(main, "red", {}, tag)
-	main.E.cash = 1.0e9
-	for m in ["concept", "sell", "help", "reset", "file", "rules"]:
+	main.set_tab("build")   # the red banner, bank and loans are covered by the challenge walk
+	for m in ["concept", "sell", "help", "reset", "rules"]:
 		await _modal_check(main, m, {}, tag)
 	await _modal_check(main, "welcome", {"away": 7300.0, "gain": 1.23e40}, tag)
-	await _modal_check(main, "bankrupt", {"grit": 123456.0, "lost_stars": 98765.0}, tag)
 	await _modal_check(main, "sell_biz", {"i": 5}, tag)
 	await _modal_check(main, "concept", {"stars": 12345.0}, tag)
 	for src in Events.LIST:
@@ -1539,12 +1555,18 @@ func test_text_fits_challenge_360_early(): await _ui_challenge(360, false)
 func test_text_fits_challenge_360_big(): await _ui_challenge(360, true)
 func test_text_fits_challenge_412_big(): await _ui_challenge(412, true)
 func test_text_fits_tabs_360_early(): await _ui_tabs(360, false)
-func test_text_fits_tabs_360_big(): await _ui_tabs(360, true)
+func test_text_fits_tabs_360_big(): await _ui_tabs(360, true, ["build"])
+func test_text_fits_tabs_360_big_upgrades(): await _ui_tabs(360, true, ["upgrades"])
+func test_text_fits_tabs_360_big_rest(): await _ui_tabs(360, true, ["business", "franchise", "legacy", "more"])
 func test_text_fits_tabs_412_early(): await _ui_tabs(412, false)
-func test_text_fits_tabs_412_big(): await _ui_tabs(412, true)
+func test_text_fits_tabs_412_big(): await _ui_tabs(412, true, ["build"])
+func test_text_fits_tabs_412_big_upgrades(): await _ui_tabs(412, true, ["upgrades"])
+func test_text_fits_tabs_412_big_rest(): await _ui_tabs(412, true, ["business", "franchise", "legacy", "more"])
 func test_text_fits_filters_360_early(): await _ui_filters(360, false)
-func test_text_fits_filters_360_big(): await _ui_filters(360, true)
-func test_text_fits_filters_412_big(): await _ui_filters(412, true)
+func test_text_fits_filters_360_big(): await _ui_filters(360, true, ["afford", "stats"])
+func test_text_fits_filters_360_big_more(): await _ui_filters(360, true, ["business", "growth", "cross"])
+func test_text_fits_filters_412_big(): await _ui_filters(412, true, ["afford", "stats"])
+func test_text_fits_filters_412_big_more(): await _ui_filters(412, true, ["business", "growth", "cross"])
 func test_text_fits_pages_360_early(): await _ui_pages(360, false)
 func test_text_fits_pages_360_big(): await _ui_pages(360, true)
 func test_text_fits_pages_412_big(): await _ui_pages(412, true)
@@ -1570,7 +1592,138 @@ func test_build_rows_explain_synergies():
 			seats = float(dl.d)
 	assert_gt(seats, 0.0, "with Reservations by Ad, an ad also adds seats, and the row says so")
 	var before: float = e.stat("seating", e.agg())
-	e.buy_rep("ads", 1)
+	e.cash = 1e12
+	assert_true(e.buy_rep("ads", 1), "bought")
 	assert_near(e.stat("seating", e.agg()) - before, seats, seats * 1e-6, "by exactly what it showed")
 	assert_true(e.effect_text(e.upgrades[e.by_key["s_ads_seating_0"]].eff).begins_with("Each Ad Campaign you own"), "the upgrade says what it does")
+	main.wipe_save()
+
+
+func test_every_grit_perk_helps_a_normal_run():
+	var lines := {}
+	for u in Econ.new().upgrades:
+		if String(u.get("cur", "")) == "grit":
+			lines[String(u.req[1])] = u
+	assert_eq(lines.size(), 10, "ten Grit perk lines")
+	for kind in lines:
+		var e := _econ()
+		e.reps.ads = 40
+		e.reps.tables = 40
+		e.reps.cooks = 40
+		e.reps.recipes = 30
+		e.cities[0] = 3
+		e.run_earned = 1e30
+		e.cash = 1e40
+		e.open_biz(0)
+		e.buy_biz(0, "a", 40)
+		var before := [float(e.empire().gross), e.rep_cost("tables", 1), e.city_next_cost(0), e.ceiling(e.agg()), float(e.agg().startreps)]
+		var u: Dictionary = lines[kind]
+		e.legacy[int(u.id)] = true
+		e.mark_dirty()
+		var after := [float(e.empire().gross), e.rep_cost("tables", 1), e.city_next_cost(0), e.ceiling(e.agg()), float(e.agg().startreps)]
+		var better: bool = after[0] > before[0] * 1.0001 or after[1] < before[1] * 0.9999 or after[2] < before[2] * 0.9999 \
+			or after[3] > before[3] * 1.0001 or after[4] > before[4] or float(e.agg().luck) > 0.0
+		assert_true(better, "%s does something in a normal run" % u.name)
+		var txt := e.effect_text(u.eff)
+		for word in ["Running costs", "Food costs", "Credit", "Loan", "recover from the red", "selling off"]:
+			if txt.contains(word):
+				assert_true(txt.contains("(challenges)"), "%s labels its challenge-only part" % u.name)
+
+
+func test_challenge_rewards_and_difficulty():
+	var e := _econ()
+	e.start_challenge("margins")
+	e.choose_concept("diner")
+	var g1 := e.challenge_reward_for("margins", 0, e.challenge_goal(0))
+	var g20 := e.challenge_reward_for("margins", 0, e.challenge_goal(0) * Econ.REWARD_CAP)
+	var g_farm := e.challenge_reward_for("margins", 0, e.challenge_goal(0) * 1e9)
+	assert_gt(g20, g1, "earning past the goal pays more")
+	assert_eq(g_farm, g20, "but only up to 20x the goal")
+	assert_gt(e.challenge_reward_for("margins", 1, e.challenge_goal(1)), g20, "the next level pays more than farming this one")
+	var up0 := float(e.agg().upkeep)
+	e.challenge_level = 4
+	e.mark_dirty()
+	assert_gt(float(e.agg().upkeep), up0 * 1.5, "higher levels run hotter")
+
+
+func test_events_without_running_costs_still_cost():
+	var e := _econ()
+	e.reps.ads = 40
+	e.reps.tables = 40
+	e.reps.cooks = 40
+	for id in ["supplier", "walkout"]:
+		var ev := e.new_event(100.0, {}, id)
+		var ch: Dictionary = ev.choices[0] if id == "walkout" else ev.choices[1]
+		var kinds := []
+		for op in ch.ops:
+			kinds.append(String(op[1]) if String(op[0]) == "fx" else String(op[0]))
+		assert_true(kinds.has("income"), "%s: the cost-only choice becomes an income penalty" % id)
+		assert_false(kinds.has("food") or kinds.has("wages"), "%s: nothing that only touches running costs" % id)
+	# a bill you can't cover comes out of income
+	e.cash = 10.0
+	var ev := e.new_event(1.0e6, {}, "lawsuit")
+	e.event = ev
+	var inc0 := float(e.income_info(e.agg()).total)
+	e.answer_event(0)
+	assert_eq(e.cash, 0.0, "paid what it had")
+	assert_lt(float(e.income_info(e.agg()).total), inc0 * 0.75, "the rest comes out of income for a while")
+	assert_gt(Events.shortfall_secs(ev, 1.0e6 * 100.0), 0.0, "for a time based on the shortfall")
+
+
+func test_bar_and_hotel_still_bite_without_costs():
+	var e := _with_biz(3)
+	assert_eq(Biz.bar_close_secs(e), 30.0, "a fight shuts the bar longer outside challenges")
+	e.challenge = "margins"
+	assert_eq(Biz.bar_close_secs(e), 10.0, "in a challenge the fine does the work")
+	var h := _with_biz(4)
+	var s: Dictionary = h.biz[4]
+	s.a = 40
+	var sea := Biz.season(s)
+	var best := Biz.hotel_best_rate(4, s, h, sea)
+	var full: Dictionary = Biz.hotel_rev(4, s, h, sea, best)
+	var pricey: Dictionary = Biz.hotel_rev(4, s, h, sea, best * 3.0)
+	assert_lt(float(pricey.rev), float(full.rev), "overpricing empties rooms and costs income")
+
+
+func test_fine_dining_has_a_downside():
+	var d := _econ("diner")
+	var f := _econ("fine")
+	assert_gt(f.rep_cost("tables", 1), d.rep_cost("tables", 1) / 0.75, "Fine Dining's tables cost more")
+	assert_gt(f.rep_cost("cooks", 1), d.rep_cost("cooks", 1), "and its cooks")
+
+
+func test_challenge_only_buttons_do_nothing_in_normal_runs():
+	var main = await _fresh()
+	main.E.reps.tables = 33
+	main.press_button("file_yes")
+	main.press_button("abandon_yes")
+	main.press_button("insure")
+	assert_eq(int(main.E.reps.tables), 33, "the run is untouched")
+	assert_eq(main.E.bankruptcies, 0, "no bust recorded")
+	assert_false(main.E.insured, "no insurance outside challenges")
+	# Shoestring has no bank: no emergency loan button
+	main.E.start_challenge("shoestring")
+	main.E.choose_concept("diner")
+	main.modal = ""
+	main.E.cash = -1e6
+	main.open_modal("red")
+	await wait_frames(2)
+	assert_false(_has_button(main, "rescue"), "no loan offered without a bank")
+	assert_true(_has_button(main, "file"), "giving up is")
+	main.wipe_save()
+
+
+func test_automation_waits_for_pop_ups():
+	var main = await _fresh()
+	var e = main.E
+	e.owned[e.by_key["a_ads"]] = true
+	e.mark_dirty()
+	e.cash = 1e9
+	e.event = e.new_event(100.0, {}, "outage")
+	await wait_frames(2)
+	assert_eq(main.modal, "event", "event open")
+	var ads: int = e.reps.ads
+	for k in 30:
+		await wait_frames(1)
+	assert_eq(int(e.reps.ads), ads, "managers don't spend while a pop-up waits")
 	main.wipe_save()

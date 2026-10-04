@@ -5,9 +5,11 @@ extends RefCounted
 ##   Food Truck   pick a spot; each spot's crowd changes every few minutes.
 ##   Bakery       ovens bake, counters sell; unsold stock goes stale, and a morning rush sells triple.
 ##   Catering     take contracts that tie up crew for a while and pay on completion.
-##   Bar          huge margins, but crowds get rowdy; incidents cost fines. Happy hour trades risk for volume.
-##   Hotel        set room rates per season; rent is paid on every room, full or empty.
-##   Wholesale    warehouses fill with stock you sell on a moving market; trucks cut food costs empire-wide.
+##   Bar          huge margins, but crowds get rowdy; incidents close the bar (and cost fines in a
+##                challenge). Happy hour trades risk for volume.
+##   Hotel        set room rates per season; empty rooms earn nothing (and pay rent in a challenge).
+##   Wholesale    warehouses fill with stock you sell on a moving market; trucks boost restaurant
+##                income (or cut food costs empire-wide in a challenge).
 ##
 ## Scaling: everything a business earns and costs is measured against P, the restaurant's peak
 ## income this run (see Econ.biz_ref()). A truck earns a fixed slice of P and costs a fixed number
@@ -15,8 +17,8 @@ extends RefCounted
 ## the restaurant grows every business with it. Within a business, builds get ~5% pricier each
 ## and every milestone (10, then every 25) doubles its income.
 ##
-## Every business has running costs per build (fuel, wages, rent) and some have per-sale costs,
-## so a badly run business can lose money. Money is computed two ways: step() simulates the twist
+## In challenge runs every business has running costs per build (fuel, wages, rent) and some
+## have per-sale costs, so a badly run business can lose money; normal runs have none. Money is computed two ways: step() simulates the twist
 ## in real time while the game runs; estimate() gives a steady-state rate for display, offline
 ## time and the balance bot.
 
@@ -26,8 +28,8 @@ const OPEN_SECS := 10.0           # opening costs 10 seconds of restaurant incom
 const MILESTONE_X := 1.5          # each milestone multiplies the business's income
 const MARKET := 0.2              # each business can sell at most this share of the restaurant's sales (P)
 ## Market saturation: raw sales s (as a share of P) become s / (1 + s / market). A small business
-## grows freely; a big one gets less from each new build while its running costs keep rising, so
-## over-expanding loses money. Growing the restaurant (P) grows every market. This is what keeps
+## grows freely; a big one gets less from each new build (and in a challenge its running costs
+## keep rising, so over-expanding loses money). Growing the restaurant (P) grows every market. This is what keeps
 ## businesses from snowballing past the restaurant that funds them.
 
 const DEFS := [
@@ -219,7 +221,11 @@ static func hotel_rev(i: int, s: Dictionary, e, sea: int, rate: float) -> Dictio
 	var rooms := float(int(s.a))
 	var occ := minf(rooms, hotel_demand(s, e, sea, rate))
 	var m := mult(i, e, s)
-	return {"rev": occ * rate * unit_rev(i, e) * 1.4 * m, "rent": rooms * unit_rev(i, e) * 0.6 * cost_mult(i, e, s), "occ": occ / maxf(rooms, 1.0)}
+	var full := occ / maxf(rooms, 1.0)
+	var rev := occ * rate * unit_rev(i, e) * 1.4 * m
+	if not e.costs_on():
+		rev *= 0.6 + 0.4 * full   # no rent outside challenges, but a half-empty hotel loses its buzz
+	return {"rev": rev, "rent": rooms * unit_rev(i, e) * 0.6 * cost_mult(i, e, s), "occ": full}
 
 
 static func wholesale_cap(s: Dictionary) -> float:
@@ -230,7 +236,18 @@ static func wholesale_price(i: int, s: Dictionary, e) -> float:
 	return unit_rev(i, e) * float(s.mprice) * float(e.agg().twist.wholesale) * mult(i, e, s)
 
 
-## Percentage points knocked off food costs everywhere by delivery trucks.
+## How long a bar fight shuts the bar. Normal runs have no fines, so the closure is longer.
+static func bar_close_secs(e) -> float:
+	return 10.0 if e.costs_on() else 30.0
+
+
+## Normal runs: Delivery Trucks speed up the whole supply chain, boosting restaurant income by
+## the same curve that cuts food costs in a challenge (up to +15%).
+static func supply_boost(s: Dictionary) -> float:
+	return food_cut(s) / 100.0
+
+
+## Percentage points knocked off food costs everywhere by delivery trucks (challenges).
 static func food_cut(s: Dictionary) -> float:
 	if not s.open:
 		return 0.0
@@ -299,7 +316,7 @@ static func _raw(i: int, s: Dictionary, e, offline: bool) -> Dictionary:
 			var per := unit_rev(i, e) * 1.3 * float(m.price) * mult(i, e, s)
 			var full := int(s.a) * float(m.vol) * per
 			var inc := bar_incident_rate(s, e)
-			var lost := clampf(inc * 10.0, 0.0, 1.0)   # closed 10s per incident
+			var lost := clampf(inc * bar_close_secs(e), 0.0, 1.0)   # closed after each incident
 			rev = full * (1.0 - lost)
 			cost += rev * 0.2 * food_cost(e) / 25.0 + inc * full * 30.0 * float(a.event_cost)
 		"hotel":
@@ -390,11 +407,11 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 				s.rowdy = float(s.rowdy) + bar_incident_rate(s, e) * 100.0 * dt * rng.randf_range(0.6, 1.4)
 				if float(s.rowdy) >= 100.0:
 					s.rowdy = 0.0
-					s.closed_t = 10.0
+					s.closed_t = bar_close_secs(e)
 					s.incidents = int(s.incidents) + 1
 					var fine := int(s.a) * float(m.vol) * per * 30.0 * float(a.event_cost)
 					cost += fine
-					e.notify(("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine * f)) if e.costs_on() else "Bar fight! Closed for 10s")
+					e.notify(("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine * f)) if e.costs_on() else "Bar fight! Closed for 30s")
 		"hotel":
 			var before := season(s)
 			s.season_t = fmod(float(s.season_t) + dt, SEASON_LEN * SEASONS.size())

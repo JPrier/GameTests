@@ -8,10 +8,10 @@ extends RefCounted
 ## demand into money up to a price ceiling. Franchises, ventures and stars
 ## multiply the flagship on top.
 ##
-## Money out: food costs (a % of restaurant revenue), upkeep on everything you've built,
-## loan interest, and random events. If cash stays below zero past the deadline the whole
-## empire goes bankrupt: the run resets and you earn Grit, a second prestige currency.
-## Side businesses (biz.gd) earn alongside the restaurant.
+## Normal runs have no running costs and can't lose money; events (events.gd) are the only
+## bills, and they never take more than the cash you have. Optional challenge runs (CHALLENGES)
+## add running costs, the bank and the risk of going bust, and pay Grit, a second prestige
+## currency. Side businesses (biz.gd) earn alongside the restaurant.
 
 const STATS := ["demand", "seating", "kitchen", "ticket"]
 const STAT_NAME := {"demand": "Demand", "seating": "Seating", "kitchen": "Kitchen", "ticket": "Ticket",
@@ -58,19 +58,23 @@ const VENT_GROWTH := 1.5
 
 const CONCEPTS := ["diner", "fastfood", "fine", "cafe"]
 const CONCEPT := {
-	"diner": {"name": "Diner", "blurb": "Forgiving. Running costs 8% lower and +25% all income. Keep tables and cooks level.",
+	"diner": {"name": "Diner", "blurb": "Forgiving. +25% all income and cheap tables. A good all-rounder.",
+		"cblurb": "In challenges: running costs 8% lower.",
 		"mult": {"global": 1.25}, "elastic": 2.0, "ceiling": 3.0, "rep_cost": {"tables": 0.75},
 		"costs": {"food": 0.0, "rent": 0.92, "wages": 0.92, "ads": 0.92}, "risk": {},
 		"unlock": 0, "color": "f5c451"},
-	"fastfood": {"name": "Fast Food", "blurb": "Volume. Cheap food and rent, tiny bills, price-shy guests. Kitchens run hot, so inspectors love you.",
+	"fastfood": {"name": "Fast Food", "blurb": "Volume. Huge crowds and kitchens, tiny bills and price-shy guests. Kitchens run hot, so inspectors love you.",
+		"cblurb": "In challenges: cheap food and rent.",
 		"mult": {"kitchen": 3.0, "seating": 2.5, "demand": 4.0, "ticket": 0.5}, "elastic": 2.6, "ceiling": 2.0,
 		"costs": {"food": -7.0, "rent": 0.6, "wages": 1.0, "ads": 1.15}, "risk": {"kitchen": 1.5},
 		"rep_cost": {"ads": 0.7, "cooks": 0.8}, "unlock": 0, "color": "ff7a45"},
-	"fine": {"name": "Fine Dining", "blurb": "Margins. Set prices from day one, huge bills, but pricey food, rent and chefs. Critics and reviews hit twice as hard.",
+	"fine": {"name": "Fine Dining", "blurb": "Big bills. Set prices from day one, but tables and cooks cost 40% more, and critics and reviews hit twice as hard.",
+		"cblurb": "In challenges: pricey food, rent and chefs.",
 		"mult": {"ticket": 2.5, "seating": 0.4, "demand": 0.5, "kitchen": 0.5}, "elastic": 1.6, "ceiling": 4.5,
 		"costs": {"food": 8.0, "rent": 1.5, "wages": 1.5, "ads": 0.6}, "risk": {"floor": 1.5, "queue": 1.5, "stakes": 2.0}, "flags": ["price"],
-		"rep_cost": {"recipes": 0.7}, "unlock": 1, "color": "c58bff"},
-	"cafe": {"name": "Café", "blurb": "Hands-on. Every serve is worth 10x and pays an extra second of income. Thin margins otherwise.",
+		"rep_cost": {"recipes": 0.7, "tables": 1.4, "cooks": 1.4}, "unlock": 1, "color": "c58bff"},
+	"cafe": {"name": "Café", "blurb": "Hands-on. Every serve is worth 10x and pays an extra second of income, but other income is 10% lower.",
+		"cblurb": "In challenges: food a little pricier.",
 		"mult": {"tap": 10.0, "global": 0.9}, "tappct": 1.0, "elastic": 2.0, "ceiling": 3.0,
 		"costs": {"food": 3.0, "rent": 1.0, "wages": 1.0, "ads": 1.0}, "risk": {},
 		"rep_cost": {"recipes": 0.85}, "unlock": 2, "color": "6ad1c0"},
@@ -145,7 +149,7 @@ const ECON_VERSION := 4            # 3: running costs, bankruptcy; 4: those only
 const CHALLENGE_LEVELS := 10
 const CHALLENGES := {
 	"margins": {"name": "Tight Margins", "mult": 1.0,
-		"blurb": "Every seat, cook, ad and plate costs money to run. Stay below $0 for 5 minutes and the run is over.", "mods": {}},
+		"blurb": "Every seat, cook, ad and plate costs money to run. Stay below $0 too long and the run is over. Each level runs 15% more expensive.", "mods": {}},
 	"health": {"name": "Health Code", "mult": 1.5,
 		"blurb": "Tight Margins, plus bad events cost twice as much and nobody sells you insurance.", "mods": {"stakes": 2.0, "no_insure": true}},
 	"shoestring": {"name": "Shoestring", "mult": 1.75,
@@ -153,13 +157,14 @@ const CHALLENGES := {
 	"solo": {"name": "One Restaurant", "mult": 2.0,
 		"blurb": "Tight Margins with no side businesses and no franchises. Just you and the kitchen.", "mods": {"no_biz": true, "no_franchise": true}},
 	"recession": {"name": "Recession", "mult": 2.0,
-		"blurb": "Tight Margins, your price limit is halved and running costs are 20% higher.", "mods": {"ceiling": 0.5, "upkeep": 1.2}},
+		"blurb": "Tight Margins, your price limit is halved and rent, wages and ads cost 20% more.", "mods": {"ceiling": 0.5, "upkeep": 1.2}},
 }
 const CHALLENGE_ORDER := ["margins", "health", "shoestring", "solo", "recession"]
 var challenge := ""               # the challenge this run is (empty: a normal run)
 var challenge_level := 0          # 0-based level of the current challenge run
 var challenge_best := {}          # challenge id -> levels completed
 var last_challenge := {}          # what the last sale completed, for the UI
+var old_busts := 0                # bankruptcies under the old rules (they still unlock concepts)
 var grace := 0.0                  # seconds of play with no bankruptcy clock and no events (after a rules change)
 var rules_notice := false         # tell the player the rules changed (set when an older save loads)
 var insured := false             # pays a premium on sales; insurance covers most event bills
@@ -433,18 +438,23 @@ func _build_catalogue() -> void:
 				{"legacy": true, "star": floor(sc)})
 	# ---- 15. side businesses: 6 x 40 + 10
 	Biz.add_upgrades(self)
-	# ---- 16. grit perks (earned by going bankrupt, survive every reset): 73
+	# ---- 16. grit perks (Grit is earned by completing challenges; perks survive every reset): 73
+	# Every line helps in normal runs; some also carry a smaller part that only matters in
+	# challenges (running costs, the bank, the deadline), which their text labels. The keys are
+	# fixed so saves keep what they own; names and effects can change.
+	var cost_all := func(m: float) -> Array:
+		return [["cost", "ads", m], ["cost", "tables", m], ["cost", "cooks", m], ["cost", "recipes", m]]
 	var grit_lines := [
-		["Comeback Kid", 10, "empire", [["mul", "empire", 1.5]], 5.0, 2.5],
-		["Thick Skin", 8, "skin", [["event_cost", 0.8]], 2.0, 2.0],
-		["Line of Credit", 8, "credit", [["credit", 1.5]], 2.0, 2.0],
-		["Friendly Banker", 8, "rates", [["interest", 0.8]], 2.0, 2.0],
-		["Lean Operations", 8, "lean", [["upkeep", 0.8]], 3.0, 2.0],
-		["Bulk Buyer", 6, "food", [["foodcut", 3.0]], 3.0, 2.2],
-		["Second Wind", 5, "wind", [["deadline", 60.0]], 2.0, 2.5],
-		["Side Hustle", 10, "hustle", [["mul", "market", 1.3]], 3.0, 2.2],
-		["Lucky Break", 5, "luck", [["luck", 0.08]], 4.0, 2.5],
-		["Fire Sale", 5, "sale", [["firesale", 0.1]], 2.0, 2.0],
+		["Battle-Tested", 10, "empire", [["mul", "empire", 1.5]], 5.0, 4.0],
+		["Thick Skin", 8, "skin", [["mul", "demand", 1.25], ["event_cost", 0.85]], 2.0, 4.0],
+		["Supplier Credit", 8, "credit", cost_all.call(0.85) + [["credit", 1.4]], 2.0, 4.0],
+		["Trusted Name", 8, "rates", [["citycost", 0.8], ["interest", 0.85]], 2.0, 4.0],
+		["Lean Operations", 8, "lean", [["mul", "kitchen", 1.4], ["mul", "seating", 1.4], ["upkeep", 0.9]], 3.0, 4.0],
+		["Supply Chain", 6, "food", [["mul", "ticket", 1.5], ["foodcut", 2.0]], 3.0, 4.0],
+		["Second Wind", 5, "wind", [["startreps", 5], ["deadline", 60.0]], 2.0, 4.0],
+		["Side Hustle", 10, "hustle", [["mul", "biz", 1.4]], 3.0, 4.0],
+		["Lucky Break", 5, "luck", [["luck", 0.06], ["mul", "global", 1.15]], 4.0, 4.0],
+		["Know Your Worth", 5, "sale", [["mul", "ceiling", 1.2], ["firesale", 0.08]], 2.0, 4.0],
 	]
 	for row in grit_lines:
 		for t in int(row[1]):
@@ -505,6 +515,7 @@ func new_game() -> void:
 	challenge = ""
 	challenge_level = 0
 	challenge_best = {}
+	old_busts = 0
 	reset_run_state()
 
 
@@ -517,8 +528,10 @@ func choose_concept(c: String) -> bool:
 	return true
 
 
+## Concepts unlock with sales. Bankruptcies from before challenges existed still count, so
+## nobody loses a concept they had; failing or quitting a challenge doesn't.
 func concept_unlocked(c: String) -> bool:
-	return prestiges + bankruptcies >= int(CONCEPT[c].unlock)
+	return prestiges + old_busts >= int(CONCEPT[c].unlock)
 
 
 # ================================================================= aggregate
@@ -571,7 +584,7 @@ func _aggregate(own: Dictionary) -> Dictionary:
 		a.flags[f] = true
 	if challenge != "":
 		a.ceiling *= float(cmod("ceiling", 1.0))
-		a.upkeep *= float(cmod("upkeep", 1.0))
+		a.upkeep *= float(cmod("upkeep", 1.0)) * (1.0 + 0.15 * challenge_level)   # each level runs 15% hotter
 	for id in own:
 		apply_effects(a, upgrades[id].eff)
 	for id in legacy:
@@ -731,7 +744,7 @@ func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Ar
 	var served := 0.0 if closed else smin([want, se, k])
 	var fr := franchise_mult(a, city_override)
 	var g := global_mult(a)
-	var sm := star_mult(a) * grit_mult(a) * float(a.mul.empire) * effect_mult("income")
+	var sm := star_mult(a) * grit_mult(a) * float(a.mul.empire) * effect_mult("income") * supply_mult()
 	var total := served * t * p * g * fr * sm
 	# what holds service back. When the Floor Manager prices to fill every seat, extra guests
 	# become higher prices, so the limit is whichever of seats and kitchen is smaller, unless
@@ -757,6 +770,35 @@ func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Ar
 		"food": food, "rent": rent, "wages": wages, "marketing": ads, "upkeep": up, "net": total - food - up, "closed": closed,
 		"kstrain": served / maxf(k, 1e-300), "fstrain": served / maxf(se, 1e-300),
 		"queue": maxf(0.0, want - served) / maxf(want, 1e-300)}
+
+
+## Wholesale Delivery Trucks: in normal runs they boost restaurant income (in a challenge they
+## cut food costs instead, see food_cost_pct).
+func supply_mult() -> float:
+	if costs_on():
+		return 1.0
+	var m := 1.0
+	for i in Biz.N:
+		if String(Biz.DEFS[i].id) == "wholesale":
+			m += Biz.supply_boost(biz[i])
+	return m
+
+
+## Change in the whole empire's net income from swapping in a different state for one business
+## (more builds, say). Counts knock-on effects such as Wholesale trucks boosting the restaurant.
+func biz_gain_with(i: int, s2: Dictionary) -> float:
+	var s: Dictionary = biz[i]
+	var cur: Dictionary = Biz.estimate(i, s, self)
+	var nxt: Dictionary = Biz.estimate(i, s2, self)
+	var g := (float(nxt.rev) - float(nxt.cost)) - (float(cur.rev) - float(cur.cost))
+	if String(Biz.DEFS[i].id) == "wholesale":
+		var a := agg()
+		var r0 := float(income_info(a).net)
+		biz[i] = s2
+		var r1 := float(income_info(a).net)
+		biz[i] = s
+		g += r1 - r0
+	return g
 
 
 func food_cost_pct(a: Dictionary = {}) -> float:
@@ -1048,15 +1090,25 @@ func upgrade_count_owned() -> int:
 
 func effect_text(eff: Array) -> String:
 	var parts: PackedStringArray = []
+	# the same discount on all four builds reads as one line
+	var costs := {}
 	for e in eff:
+		if String(e[0]) == "cost":
+			costs[String(e[1])] = float(e[2])
+	var all_cost: bool = costs.size() == REPS.size() and costs.values().min() == costs.values().max()
+	if all_cost:
+		parts.append("All build prices ×%s" % fmt_mult(float(costs.values()[0])))
+	for e in eff:
+		if all_cost and String(e[0]) == "cost":
+			continue
 		match String(e[0]):
 			"mul":
 				parts.append("%s ×%s" % [STAT_NAME[e[1]], fmt_mult(float(e[2]))])
-			"cost": parts.append("%s cost ×%s" % [REP_NAME[e[1]], fmt_mult(float(e[2]))])
+			"cost": parts.append("%s price ×%s" % [REP_NAME[e[1]], fmt_mult(float(e[2]))])
 			"syn": parts.append("Each %s you own: +%s%% %s" % [REP_NAME[e[1]], fmt_mult(float(e[3]) * 100.0), String(STAT_NAME[e[2]]).to_lower()])
 			"tappct": parts.append("Each serve +%ss of income" % fmt_mult(float(e[1])))
 			"city": parts.append("%s locations ×%s" % [CITY_NAMES[int(e[1])], fmt_mult(float(e[2]))])
-			"citycost": parts.append("Franchise cost ×%s" % fmt_mult(float(e[1])))
+			"citycost": parts.append("Franchise price ×%s" % fmt_mult(float(e[1])))
 			"vent": parts.append("%s effect ×%s" % [VENTURES[int(e[1])].name, fmt_mult(float(e[2]))])
 			"vent_all": parts.append("All ventures ×%s" % fmt_mult(float(e[1])))
 			"flag": parts.append(FLAG_TEXT.get(e[1], e[1]))
@@ -1067,14 +1119,14 @@ func effect_text(eff: Array) -> String:
 			"startreps": parts.append("Start with +%d of each build" % int(e[1]))
 			"biz": parts.append("%s income ×%s" % [Biz.DEFS[int(e[1])].name, fmt_mult(float(e[2]))])
 			"twist": parts.append(TWIST_TEXT.get(e[1], e[1]) % fmt_mult(float(e[2])))
-			"upkeep": parts.append("Upkeep ×%s" % fmt_mult(float(e[1])))
-			"foodcut": parts.append("Food costs -%s pts" % fmt_mult(float(e[1])))
-			"event_cost": parts.append("Event costs and fines ×%s" % fmt_mult(float(e[1])))
-			"credit": parts.append("Credit limit ×%s" % fmt_mult(float(e[1])))
-			"interest": parts.append("Loan interest ×%s" % fmt_mult(float(e[1])))
-			"deadline": parts.append("+%ds in the red before bankruptcy" % int(e[1]))
+			"upkeep": parts.append("Running costs ×%s (challenges)" % fmt_mult(float(e[1])))
+			"foodcut": parts.append("Food costs -%s pts (challenges)" % fmt_mult(float(e[1])))
+			"event_cost": parts.append("Event bills ×%s" % fmt_mult(float(e[1])))
+			"credit": parts.append("Credit limit ×%s (challenges)" % fmt_mult(float(e[1])))
+			"interest": parts.append("Loan interest ×%s (challenges)" % fmt_mult(float(e[1])))
+			"deadline": parts.append("+%ds to recover from the red (challenges)" % int(e[1]))
 			"luck": parts.append("+%d%% chance of good events" % int(round(float(e[1]) * 100.0)))
-			"firesale": parts.append("+%d%% back when selling off" % int(round(float(e[1]) * 100.0)))
+			"firesale": parts.append("+%d%% back when selling off (challenges)" % int(round(float(e[1]) * 100.0)))
 	return ", ".join(parts)
 
 
@@ -1366,7 +1418,14 @@ func challenge_reward(earned := -1.0) -> float:
 		return 0.0
 	if earned < 0.0:
 		earned = run_earned
-	return floor(maxf(1.0, grit_for(earned)) * float(CHALLENGES[challenge].mult) * (1.0 + 0.5 * challenge_level))
+	return challenge_reward_for(challenge, challenge_level, earned)
+
+
+## Earnings past 20x the goal don't add Grit, so climbing levels pays better than farming one.
+const REWARD_CAP := 20.0
+func challenge_reward_for(id: String, level: int, earned: float) -> float:
+	var e2 := minf(earned, challenge_goal(level) * REWARD_CAP)
+	return floor(maxf(1.0, grit_for(e2)) * float(CHALLENGES[id].mult) * (1.0 + 0.5 * level))
 
 
 ## Ends the current run (nothing is lost: its earnings still count towards stars) and starts
@@ -1556,8 +1615,7 @@ func _auto_biz(i: int) -> void:
 				continue
 			var s2 := s.duplicate(true)
 			s2[w] = int(s2[w]) + 1
-			var nx: Dictionary = Biz.estimate(i, s2, self)
-			var g := (float(nx.rev) - float(nx.cost)) - (float(cur.rev) - float(cur.cost))
+			var g := biz_gain_with(i, s2)
 			if g > 0.0 and c / g < best_pb:
 				best_pb = c / g
 				best = w
@@ -1639,7 +1697,7 @@ func to_dict() -> Dictionary:
 		"vents": vents.duplicate(), "price": price, "price_auto": price_auto, "auto_on": auto_on.duplicate(),
 		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income,
 		"biz": biz.duplicate(true), "debt": debt, "grit": grit, "grit_earned": grit_earned, "bankruptcies": bankruptcies,
-		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "insured": insured, "challenge": challenge, "challenge_level": challenge_level, "challenge_best": challenge_best.duplicate(), "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
+		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "insured": insured, "challenge": challenge, "challenge_level": challenge_level, "challenge_best": challenge_best.duplicate(), "old_busts": old_busts, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
 
 
 func _keys_of(d: Dictionary) -> Array:
@@ -1706,7 +1764,9 @@ func from_dict(d: Dictionary) -> void:
 		challenge = ""
 	challenge_level = int(d.get("challenge_level", 0))
 	challenge_best = (d.get("challenge_best", {}) as Dictionary).duplicate()
+	old_busts = int(d.get("old_busts", 0))
 	if int(d.get("econ", 1)) < ECON_VERSION:
+		old_busts = maxi(old_busts, bankruptcies)
 		# costs and bankruptcy moved into challenges: forgive any debt from the old rules
 		debt = 0.0
 		red_t = 0.0

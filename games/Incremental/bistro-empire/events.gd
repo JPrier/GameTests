@@ -2,11 +2,14 @@ class_name Events
 extends RefCounted
 ## Events pop up while you play as a card you must answer. Bad ones are drawn towards whatever
 ## you're running too hot (see RISK_TEXT), and the card says why. Money amounts are measured in
-## seconds of your profit (at least a quarter of sales), fixed when the card appears, and
-## insurance pays most of them. Some outcomes are gambles whose odds depend on the same risk.
+## seconds of your income (profit in a challenge), fixed when the card appears. Some outcomes are
+## gambles whose odds depend on the same risk.
+## Normal runs ("soft"): a bill takes at most the cash you have and the shortfall comes out of
+## income (shortfall_secs); choices that only touch running costs swap to their "soft" version.
+## Challenges: bills can push you into the red, and insurance (if sold) pays most of them.
 ##
 ## Outcome ops:
-##   ["pay", secs]              lose secs of income in cash (can push you into the red)
+##   ["pay", secs]              lose secs of income in cash
 ##   ["gain", secs]             gain secs of income in cash
 ##   ["cash_frac", f]           lose a fraction of your cash
 ##   ["fx", kind, mult, secs]   timed effect: demand, kitchen, seating, income, food (+pts), wages
@@ -51,10 +54,12 @@ const LIST := [
 		"default": 0},
 	{"id": "supplier", "good": false, "risk": "none", "title": "Supplier price hike", "text": "Your produce supplier doubled prices overnight.",
 		"choices": [{"label": "Lock in a contract", "ops": [["pay", 200]]},
-			{"label": "Pay market prices", "ops": [["fx", "food", 15.0, 300]], "note": "Food costs 15 points higher for 5 minutes"}],
+			{"label": "Pay market prices", "ops": [["fx", "food", 15.0, 300]], "note": "Food costs 15 points higher for 5 minutes",
+				"soft": {"ops": [["fx", "income", 0.85, 300]], "note": "15% less income for 5 minutes"}}],
 		"default": 1},
 	{"id": "walkout", "good": false, "risk": "kitchen", "title": "Staff walkout", "text": "The line cooks want a raise. Today.",
-		"choices": [{"label": "Give raises", "ops": [["fx", "wages", 1.5, 600]], "note": "Running costs 50% higher for 10 minutes"},
+		"choices": [{"label": "Give raises", "ops": [["fx", "wages", 1.5, 600]], "note": "Running costs 50% higher for 10 minutes",
+				"soft": {"ops": [["fx", "income", 0.9, 600]], "note": "Raises eat 10% of your income for 10 minutes"}},
 			{"label": "Hold firm", "fail": [0.15, 0.7], "ops": [], "else": [["fx", "kitchen", 0.3, 120]], "note": "%d%% chance the kitchen runs at 30% for 2 minutes"}],
 		"default": 1},
 	{"id": "pipe", "good": false, "risk": "none", "title": "Burst pipe", "text": "There's water coming out of the ceiling. A lot of water.",
@@ -187,7 +192,12 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 	ev["r"] = r
 	ev["cost_mult"] = cost_mult * stakes
 	ev["cover"] = cover
-	ev["soft"] = soft   # normal runs: a bill never takes you below $0
+	ev["soft"] = soft   # normal runs: a bill never takes you below $0; what you can't pay comes out of income
+	if soft:
+		for ch in ev.choices:
+			if ch.has("soft"):   # effects on running costs mean nothing without them
+				ch.ops = (ch.soft.ops as Array).duplicate(true)
+				ch.note = String(ch.soft.note)
 	ev["t"] = TIMEOUT
 	ev["level"] = lvl
 	if RISK_TEXT.has(key) and not bool(ev.good):
@@ -203,23 +213,30 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 	return ev
 
 
-static func op_amount(ev: Dictionary, op: Array, cash: float) -> float:
+static func op_amount(ev: Dictionary, op: Array, cash: float, capped := true) -> float:
 	match String(op[0]):
 		"pay":
 			var amt := float(op[1]) * float(ev.r) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
-			return minf(amt, maxf(cash, 0.0)) if bool(ev.get("soft", false)) else amt
+			return minf(amt, maxf(cash, 0.0)) if bool(ev.get("soft", false)) and capped else amt
 		"gain": return float(op[1]) * float(ev.r)
 		"cash_frac": return maxf(0.0, cash) * float(op[1]) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
 	return 0.0
 
 
-## The price shown on a choice button (upfront costs only).
-static func upfront(ev: Dictionary, choice: Dictionary, cash: float) -> float:
+## The price shown on a choice button (upfront costs only). capped=false gives the full bill.
+static func upfront(ev: Dictionary, choice: Dictionary, cash: float, capped := true) -> float:
 	var tot := 0.0
 	for op in choice.ops:
 		if String(op[0]) == "pay" or String(op[0]) == "cash_frac":
-			tot += op_amount(ev, op, cash)
+			tot += op_amount(ev, op, cash, capped)
 	return tot
+
+
+## In a normal run, the part of a bill you can't pay comes out of income: half your income for
+## twice as many seconds as the shortfall is worth, so paying is never free.
+const SHORT_MULT := 0.5
+static func shortfall_secs(ev: Dictionary, shortfall: float) -> float:
+	return minf(1800.0, shortfall / maxf(float(ev.r), 1e-300) / (1.0 - SHORT_MULT))
 
 
 ## Applies a choice to the econ. Returns a short line describing what happened.
@@ -239,7 +256,15 @@ static func resolve(e, ev: Dictionary, idx: int) -> String:
 			line = "Unlucky."
 	for op in ops:
 		match String(op[0]):
-			"pay", "cash_frac":
+			"pay":
+				var full := op_amount(ev, op, e.cash, false)
+				var paid := op_amount(ev, op, e.cash)
+				e.cash -= paid
+				if full > paid + 1e-9:
+					var secs := shortfall_secs(ev, full - paid)
+					e.add_effect("income", SHORT_MULT, secs, String(ev.title))
+					line = (line + " " if line != "" else "") + "Paid what you had; half your income for %s covers the rest." % e.fmt_time(secs)
+			"cash_frac":
 				e.cash -= op_amount(ev, op, e.cash)
 			"gain":
 				var g := op_amount(ev, op, e.cash)

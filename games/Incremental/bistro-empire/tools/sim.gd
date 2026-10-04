@@ -1,8 +1,10 @@
 extends SceneTree
 ## Balance simulator: a greedy bot plays Bistro Empire and logs progress.
 ##   godot --headless --path . --script res://tools/sim.gd -- hours=12 concept=diner taps=1
-## Options: noprestige=1 nobiz=1 events=0 stars=N log=SECONDS
-## Decisions use net income (after food, upkeep and interest), including side businesses.
+## Options: noprestige=1 nobiz=1 events=0 stars=N log=SECONDS reserve=SECONDS taps=N
+##   policy=greedy|skilled|random|cheapest challenge=ID audit=SECONDS dump=SECONDS
+## Decisions use net income, including side businesses (food, upkeep and interest only exist
+## in challenge runs).
 ## Not exported (tools/* is excluded).
 
 var e
@@ -14,7 +16,7 @@ var next_log := 0.0
 var events: Array = []
 var start_stars := 0.0
 var real_agg := {}
-var reserve_s := 60.0   # careful players keep this many seconds of income in the bank
+var reserve_s := 60.0   # careful players keep this many seconds of income as cash
 var audit_every := 0.0
 var dump_at := -1.0
 var next_audit := 0.0
@@ -58,7 +60,7 @@ func _init() -> void:
 		e.choose_concept(concept)
 	if policy == "skilled":
 		reserve_s = maxf(reserve_s, 150.0)
-		e.insured = true
+		e.insured = challenge_id != ""
 	e.stars = start_stars
 	e.stars_earned = start_stars
 	_autos_off()
