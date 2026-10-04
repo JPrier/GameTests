@@ -1,2 +1,3 @@
 _site/
 .godot/
+__pycache__/
