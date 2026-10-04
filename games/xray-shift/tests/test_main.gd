@@ -90,7 +90,8 @@ func test_perfect_run_scripted():
 	assert_eq(main.base_score(), main.contraband_total() * main.FIND_PTS, "base score")
 	assert_gt(main.time_bonus(), 0, "fast run earns a time bonus")
 	var st: String = main.share_text()
-	assert_true(st.contains("?day=" + DAY), "share link carries the day")
+	assert_false(st.contains("?day=") or st.contains("&day="), "share link has no day in it")
+	assert_true(st.ends_with(main.base_url), "share links to the game itself")
 	assert_false(st.contains("dev=1"), "share link has no dev flag")
 	assert_true(st.contains("🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩"), "all bags green")
 	assert_true(st.contains("X-Ray Shift #1"), "game name and number")
@@ -249,3 +250,45 @@ func test_far_future_days_are_fair():
 	var main = await _fresh()
 	for d in _far_future_days():
 		assert_true(main.bags_valid(main.generate(d)), d + ": valid shift")
+
+
+func test_past_shifts_picker():
+	var main = await _fresh()
+	main.load_day(main.today)
+	main.open_archive()
+	await wait_frames(2)
+	assert_true(main.archive_open, "picker opens from the menu")
+	var first: Array = main.archive_page_days(0)
+	assert_eq(String(first[0]), main.today, "newest day first")
+	assert_true(first.size() <= main.ARCHIVE_ROWS, "one page of rows")
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("day_" + main.today), "today is a row")
+	assert_true(ids.has("arch_close"), "picker has a close button")
+	main._do("day_" + main.EPOCH)
+	assert_false(main.archive_open, "picking closes the picker")
+	assert_eq(main.date, main.EPOCH, "picked day loads")
+	main.pick_day("2099-01-01")
+	assert_eq(main.date, main.EPOCH, "future days can't be picked")
+	main.dev_win()
+	await wait_frames(2)
+	ids.clear()
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("today") and ids.has("share"), "past shift end screen offers today's shift")
+	main._do("today")
+	assert_eq(main.date, main.today, "back to today")
+	main.start_shift()
+	main.open_archive()
+	assert_false(main.archive_open, "no picker mid-shift")
+
+
+func test_results_listed_in_picker():
+	var main = await _fresh()
+	var p: String = main._results_path()
+	if FileAccess.file_exists(p):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	main._record_result(DAY, "900 pts")
+	assert_eq(String(main._load_results().get(DAY, "")), "900 pts", "result remembered for the picker")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))

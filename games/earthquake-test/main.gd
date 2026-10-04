@@ -128,11 +128,15 @@ func _ready() -> void:
 	var url := _read_url()
 	if String(url.get("base", "")) != "":
 		base_url = String(url.base)
-	if _valid_date(String(url.get("d", ""))):
-		want = String(url.d)
 	dev_open = String(url.get("dev", "")) == "1"
-	var s := String(url.get("s", ""))
-	target_score = int(s) if s.is_valid_int() else 0
+	# Links always open today's quake; past days are picked in-game. Only ?dev=1 honours ?d= / ?s=.
+	if dev_open:
+		if _valid_date(String(url.get("d", ""))):
+			want = String(url.d)
+		var s := String(url.get("s", ""))
+		target_score = int(s) if s.is_valid_int() else 0
+	elif String(url.get("d", "")) != "" or String(url.get("s", "")) != "":
+		_clean_url()
 	load_day(want)
 	_load_prefs()
 	if not dev_open and not tutorial_seen():
@@ -600,6 +604,8 @@ func _enter_final() -> void:
 	phase = Phase.FINAL
 	sim = null
 	show_try = best_index()
+	if not tries.is_empty():
+		_mark_played()
 
 
 func best_index() -> int:
@@ -692,8 +698,200 @@ func _flush_storage() -> void:
 
 # ------------------------------------------------------------------ sharing
 
+## Always the plain game URL, so an old share still opens on today's quake.
 func share_link() -> String:
-	return "%s?d=%s&s=%d" % [base_url, date, best_score()]
+	return base_url
+
+
+## Remembers the day's best for the past-days picker and the GameTests home page.
+func _mark_played() -> void:
+	var label := fmt_m(best_score())
+	_record_result(date, label)
+	if OS.has_feature("web"):
+		var js := "try{localStorage.setItem(%s,%s)}catch(e){}" % [
+			JSON.stringify("gametests:earthquake-test:" + date), JSON.stringify(JSON.stringify({"result": label}))]
+		JavaScriptBridge.eval(js, true)
+
+
+# ------------------------------------------------------------------ past days
+
+const ARCHIVE_ROWS := 7
+var archive_open := false
+var archive_page := 0
+var archive_results: Dictionary = {}
+var cal_rect := Rect2()             # the past-days button in the header
+
+
+## Drops ?d= (and anything else) from the address bar so a refresh stays on today.
+func _clean_url() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{history.replaceState(null,'',location.pathname)}catch(e){}", true)
+
+
+func _date_add(d: String, days: int) -> String:
+	return Time.get_date_string_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00") + days * 86400)
+
+
+func archive_count() -> int:
+	return maxi(1, day_number(today))
+
+
+func archive_pages() -> int:
+	return ceili(float(archive_count()) / ARCHIVE_ROWS)
+
+
+## The days on one page of the picker, newest first (page 0 starts with today).
+func archive_page_days(page: int) -> Array:
+	var out: Array = []
+	for i in range(page * ARCHIVE_ROWS, mini((page + 1) * ARCHIVE_ROWS, archive_count())):
+		out.append(_date_add(today, -i))
+	return out
+
+
+func open_archive() -> void:
+	if phase == Phase.RUN:
+		return
+	archive_results = _picker_results()
+	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
+	archive_page = int(idx / ARCHIVE_ROWS)
+	archive_open = true
+	selected = Vector2i(-1, -1)
+	_build_buttons()
+
+
+func archive_shift(pages: int) -> void:
+	archive_page = clampi(archive_page + pages, 0, archive_pages() - 1)
+	_build_buttons()
+
+
+## Opens a past (or today's) quake from the picker.
+func pick_day(d: String) -> void:
+	archive_open = false
+	if d < EPOCH or d > today:
+		_build_buttons()
+		return
+	if d != date:
+		target_score = 0
+		load_day(d)
+	_layout()
+
+
+func _results_path() -> String:
+	return "user://quake_results.json"
+
+
+func _load_results() -> Dictionary:
+	var out: Dictionary = {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			out = data
+	return out
+
+
+## Recorded results, plus days with saved tries from before results were kept.
+func _picker_results() -> Dictionary:
+	var out := _load_results()
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return out
+	var re := RegEx.create_from_string("^quake2_(\\d{4}-\\d{2}-\\d{2})\\.json$")
+	for f in dir.get_files():
+		var m := re.search(f)
+		if m == null or out.has(m.get_string(1)):
+			continue
+		var data = JSON.parse_string(FileAccess.get_file_as_string("user://" + f))
+		if not data is Dictionary or (data.get("tries", []).is_empty() and data.get("design", []).is_empty()):
+			continue
+		var best := 0
+		for t in data.get("tries", []):
+			best = maxi(best, int(t.get("score", 0)))
+		var done: bool = data.get("finished", false) or data.get("tries", []).size() >= MAX_TRIES
+		out[m.get_string(1)] = fmt_m(best) if done else "In progress"
+	return out
+
+
+func _record_result(d: String, label: String) -> void:
+	var all := _load_results()
+	if String(all.get(d, "")) == label:
+		return
+	all[d] = label
+	var f := FileAccess.open(_results_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all))
+		f.close()
+
+
+func _short_date(d: String) -> String:
+	var t := Time.get_datetime_dict_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00"))
+	var wd: String = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)]
+	var mo: String = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(t.month) - 1]
+	return "%s %s %d" % [wd, mo, int(t.day)]
+
+
+func _archive_row_h() -> float:
+	var vs := get_viewport_rect().size
+	return clampf((vs.y - 40.0 - 210.0) / ARCHIVE_ROWS, 64.0, 92.0)
+
+
+func _archive_card() -> Rect2:
+	var vs := get_viewport_rect().size
+	var w: float = min(vs.x - 40.0, 680.0)
+	var h := 100.0 + ARCHIVE_ROWS * _archive_row_h() + 110.0
+	return Rect2((vs.x - w) / 2.0, max(20.0, (vs.y - h) / 2.0), w, h)
+
+
+func _archive_buttons() -> void:
+	var c := _archive_card()
+	var rh := _archive_row_h()
+	var days := archive_page_days(archive_page)
+	for i in days.size():
+		buttons.append({"id": "day_" + String(days[i]), "label": "", "primary": false, "enabled": true, "kind": "row",
+			"rect": Rect2(c.position.x + 20, c.position.y + 100 + i * rh, c.size.x - 40, rh - 10)})
+	var bw := (c.size.x - 40 - 24) / 3.0
+	var by := c.end.y - 90
+	buttons.append({"id": "arch_newer", "label": "< Newer", "primary": false, "enabled": archive_page > 0,
+		"rect": Rect2(c.position.x + 20, by, bw, 70)})
+	buttons.append({"id": "arch_close", "label": "Close", "primary": true, "enabled": true,
+		"rect": Rect2(c.position.x + 32 + bw, by, bw, 70)})
+	buttons.append({"id": "arch_older", "label": "Older >", "primary": false, "enabled": archive_page < archive_pages() - 1,
+		"rect": Rect2(c.position.x + 44 + bw * 2, by, bw, 70)})
+
+
+func _draw_archive() -> void:
+	var vs := get_viewport_rect().size
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
+	var c := _archive_card()
+	_box(c, C_PANEL, 20, Color(C_INK, 0.15))
+	draw_string(font, c.position + Vector2(30, 64), "Past quakes", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, C_INK)
+	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
+	var pw := font.get_string_size(pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+	draw_string(font, Vector2(c.end.x - 30 - pw, c.position.y + 62), pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, C_MUTED)
+	for b in buttons:
+		if b.get("kind", "") != "row":
+			continue
+		var d := String(b.id).substr(4)
+		var r: Rect2 = b.rect
+		_box(r, C_BTN, 14, C_ACCENT if d == date else Color(0, 0, 0, 0))
+		var mid := r.get_center().y + 10
+		draw_string(font, Vector2(r.position.x + 22, mid), "#%d" % day_number(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_ACCENT)
+		draw_string(font, Vector2(r.position.x + 120, mid), "Today" if d == today else _short_date(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_INK)
+		var res := String(archive_results.get(d, ""))
+		var txt := res if res != "" else "Not played"
+		var sz := 26 if res != "" else 22
+		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
+		draw_string(font, Vector2(r.end.x - 22 - tw, mid), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, C_ACCENT if res != "" else C_MUTED)
+
+
+## Calendar glyph for the past-days button.
+func _draw_calendar(c: Vector2, col_: Color) -> void:
+	var r := Rect2(c.x - 12, c.y - 10, 24, 22)
+	draw_rect(r, col_, false, 2.4)
+	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 6.5), col_)
+	draw_line(Vector2(c.x - 6, c.y - 15), Vector2(c.x - 6, c.y - 7), col_, 2.4)
+	draw_line(Vector2(c.x + 6, c.y - 15), Vector2(c.x + 6, c.y - 7), col_, 2.4)
+	for i in 3:
+		draw_rect(Rect2(c.x - 9 + i * 6.5, c.y + 2, 4.5, 4.5), col_)
 
 
 func share_text() -> String:
@@ -778,11 +976,7 @@ func _poll_share() -> void:
 
 
 func play_today() -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("location.href=%s" % JSON.stringify(base_url), true)
-	else:
-		target_score = 0
-		load_day(today)
+	pick_day(today)
 
 
 func _read_url() -> Dictionary:
@@ -839,11 +1033,14 @@ func _input(ev: InputEvent) -> void:
 		if ev.pressed:
 			if gesture:
 				return
-			if dev_open or tut_open:
+			if dev_open or tut_open or archive_open:
 				_press_button(p)
 				return
 			if help_rect.grow(10).has_point(p):
 				tut_open = true
+				return
+			if cal_rect.has_area() and cal_rect.grow(8).has_point(p):
+				open_archive()
 				return
 			if title_rect.grow(8).has_point(p):
 				_dev_tap()
@@ -1194,6 +1391,14 @@ func _press_button(p: Vector2) -> bool:
 					"dev_all": dev_reset_all()
 					"dev_close": dev_open = false
 					"tut_close": close_tutorial()
+					"arch_newer": archive_shift(-1)
+					"arch_older": archive_shift(1)
+					"arch_close":
+						archive_open = false
+						_build_buttons()
+					_:
+						if String(b.id).begins_with("day_"):
+							pick_day(String(b.id).substr(4))
 			return true
 	return false
 
@@ -1259,6 +1464,9 @@ func _build_buttons() -> void:
 		var r := Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
 		buttons.append({"id": "tut_close", "label": "Let's build", "primary": true, "enabled": true,
 			"rect": Rect2(r.position.x + 24, r.end.y - 24 - 64, r.size.x - 48, 64)})
+		return
+	if archive_open and not dev_open:
+		_archive_buttons()
 		return
 	if dev_open:
 		var w := minf(vs.x - 80, 420.0)
@@ -1338,13 +1546,16 @@ func _draw() -> void:
 	_draw_help_button()
 	if tut_open and not dev_open:
 		_draw_tutorial()
+	if archive_open and not dev_open:
+		_draw_archive()
 	if dev_open:
 		var vs := get_viewport_rect().size
 		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
 		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 172), 32, C_ACCENT)
 		_text_c("Reset saved progress for #%d (%s)" % [quake_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 136), 20, C_MUTED)
 	for b in buttons:
-		_draw_button(b)
+		if b.get("kind", "") != "row":
+			_draw_button(b)
 	if loupe_active():
 		_draw_loupe()
 	if toast_t > 0.0 and toast != "":
@@ -1372,7 +1583,7 @@ func _draw_header() -> void:
 	var r := head_rect
 	var title_sz := _title_size()
 	draw_string(font, r.position + Vector2(0, 46), "Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_sz, C_INK)
-	draw_string(font, r.position + Vector2(0, 80), "#%d · %s" % [quake_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 22, C_MUTED)
+	draw_string(font, r.position + Vector2(0, 80), "#%d · %s" % [quake_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 22, C_MUTED if date == today else C_ACCENT)
 	var st := _stat()
 	var label: String = st[0]
 	var big: String = st[1]
@@ -1772,6 +1983,11 @@ func _draw_help_button() -> void:
 	draw_circle(help_rect.get_center(), 18, C_BTN)
 	draw_arc(help_rect.get_center(), 18, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
 	_text_c("?", help_rect.get_center() + Vector2(0, 9), 24, C_INK)
+	cal_rect = Rect2(help_rect.end.x + 12, help_rect.position.y, 38, 38)
+	var a := 0.4 if phase == Phase.RUN else 1.0
+	draw_circle(cal_rect.get_center(), 18, Color(C_BTN, a))
+	draw_arc(cal_rect.get_center(), 18, 0, TAU, 32, Color(C_INK, 0.35 * a), 2.0)
+	_draw_calendar(cal_rect.get_center() + Vector2(0, 1), Color(C_INK, a))
 
 
 ## [label, big value] for the header's right-hand stat.
@@ -1789,7 +2005,7 @@ func _stat() -> Array:
 ## Title font size that leaves room for the "?" button and the big stat on the right.
 func _title_size() -> int:
 	var stat_w := font.get_string_size("18.00 m", HORIZONTAL_ALIGNMENT_LEFT, -1, 44).x
-	var room := head_rect.size.x - stat_w - 16.0 - 56.0
+	var room := head_rect.size.x - stat_w - 16.0 - 56.0 - 52.0   # "?" and past-days buttons
 	var sz := 44
 	while sz > 24 and font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > room:
 		sz -= 2
@@ -2027,5 +2243,6 @@ func get_agent_state() -> Dictionary:
 		"broken": sim.broken_count() if sim != null else 0,
 		"tries": tries.map(func(t): return t.score), "best": best_score(),
 		"target": target_score, "tutorial": tut_open,
+		"archive_open": archive_open, "archive_page": archive_page, "today": today,
 		"share": share_text() if not tries.is_empty() else "",
 	}

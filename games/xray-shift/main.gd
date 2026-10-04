@@ -97,6 +97,10 @@ var toast := ""
 var toast_t := 0.0
 var share_pending := false
 var last_share_text := ""
+const ARCHIVE_ROWS := 7
+var archive_open := false
+var archive_page := 0
+var archive_results: Dictionary = {}
 
 
 func _ready() -> void:
@@ -115,8 +119,11 @@ func _ready() -> void:
 	dev_mode = OS.is_debug_build() or String(url.get("dev", "")) == "1"
 	var want := today
 	var d := String(url.get("day", ""))
-	if _valid_date(d):
+	# Links always open today's shift; past shifts are picked in-game. Only dev mode honours ?day=.
+	if dev_mode and _valid_date(d):
 		want = d
+	elif d != "":
+		_clean_url()
 	load_day(want)
 
 
@@ -694,6 +701,8 @@ func _advance(delta: float) -> void:
 func _finish() -> void:
 	screen = Screen.END
 	_save_state()
+	if not dev_mode:
+		_record_result(date, "%s pts" % _num(total_score()))
 	if OS.has_feature("web") and not dev_mode:
 		var key := "gametests:%s:%s" % [GAME, date]
 		var val := JSON.stringify({"result": "%s pts" % _num(total_score())})
@@ -754,8 +763,114 @@ func _flush_storage() -> void:
 
 # ------------------------------------------------------------------ sharing
 
+## Always the plain game URL, so an old share still opens on today's shift.
 func share_link() -> String:
-	return "%s?day=%s" % [base_url, date]
+	return base_url
+
+
+# ------------------------------------------------------------------ past shifts
+
+## Drops ?day= (and anything else) from the address bar so a refresh stays on today.
+func _clean_url() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{history.replaceState(null,'',location.pathname)}catch(e){}", true)
+
+
+func archive_count() -> int:
+	return maxi(1, day_number(today))
+
+
+func archive_pages() -> int:
+	return ceili(float(archive_count()) / ARCHIVE_ROWS)
+
+
+## The days on one page of the picker, newest first (page 0 starts with today).
+func archive_page_days(page: int) -> Array:
+	var out: Array = []
+	for i in range(page * ARCHIVE_ROWS, mini((page + 1) * ARCHIVE_ROWS, archive_count())):
+		out.append(_date_add(today, -i))
+	return out
+
+
+func open_archive() -> void:
+	if screen == Screen.PLAY:
+		return
+	archive_results = _add_unfinished(_load_results())
+	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
+	archive_page = int(idx / ARCHIVE_ROWS)
+	archive_open = true
+	legend_open = false
+
+
+func archive_shift(pages: int) -> void:
+	archive_page = clampi(archive_page + pages, 0, archive_pages() - 1)
+
+
+## Opens a past (or today's) shift from the picker.
+func pick_day(d: String) -> void:
+	archive_open = false
+	if d < EPOCH or d > today:
+		return
+	if d != date:
+		load_day(d)
+
+
+func _results_path() -> String:
+	return "user://xray_results.json"
+
+
+## date -> result label for every finished shift on this device (also reads what the
+## home page knows from localStorage).
+func _load_results() -> Dictionary:
+	var out: Dictionary = {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			out = data
+	if OS.has_feature("web") and not dev_mode:
+		var r = JavaScriptBridge.eval("""(function(){var o={},p='gametests:%s:';try{for(var i=0;i<localStorage.length;i++){
+			var k=localStorage.key(i);if(k&&k.indexOf(p)===0){try{o[k.substr(p.length)]=JSON.parse(localStorage.getItem(k)).result||'';}catch(e){}}}}catch(e){}
+			return JSON.stringify(o);})()""" % GAME, true)
+		if typeof(r) == TYPE_STRING:
+			var ls = JSON.parse_string(r)
+			if ls is Dictionary:
+				for k in ls:
+					if not out.has(k):
+						out[k] = ls[k]
+	return out
+
+
+## Days with a save but no recorded result (unfinished, or played before results were kept).
+func _add_unfinished(out: Dictionary) -> Dictionary:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return out
+	var re := RegEx.create_from_string("^xray_(\\d{4}-\\d{2}-\\d{2})\\.json$")
+	for f in dir.get_files():
+		var m := re.search(f)
+		if m and not out.has(m.get_string(1)):
+			out[m.get_string(1)] = "In progress"
+	return out
+
+
+func _record_result(d: String, label: String) -> void:
+	var all := {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			all = data
+	all[d] = label
+	var f := FileAccess.open(_results_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all))
+		f.close()
+
+
+func _pretty_date(d: String) -> String:
+	var t := Time.get_datetime_dict_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00"))
+	var wd: String = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)]
+	var mo: String = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(t.month) - 1]
+	return "%s %s %d" % [wd, mo, int(t.day)]
 
 
 func _num(v: int) -> String:
@@ -961,7 +1076,8 @@ func get_agent_state() -> Dictionary:
 		"total": total_score(), "time_bonus": time_bonus(), "elapsed": snappedf(elapsed, 0.01),
 		"found": found_total(), "contraband": contraband_total(), "false_alarms": false_alarms(),
 		"wrong": wrong_total(), "legend_open": legend_open, "dev_mode": dev_mode, "dev_open": dev_open,
-		"current_items": cur_items, "current_bad": cur_bad, "answers": answers, "share_text": share_text()}
+		"current_items": cur_items, "current_bad": cur_bad, "answers": answers, "share_text": share_text(),
+		"archive_open": archive_open, "archive_page": archive_page, "today": today}
 
 
 # ------------------------------------------------------------------ frame
@@ -993,8 +1109,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("back"):
 		if dev_open:
 			dev_open = false
+		elif archive_open:
+			archive_open = false
 		elif legend_open:
 			legend_open = false
+	elif archive_open:
+		return
 	elif ev.is_action_pressed("legend"):
 		legend_open = not legend_open
 	elif screen == Screen.MENU and ev.is_action_pressed("confirm"):
@@ -1029,7 +1149,7 @@ func _on_press(p: Vector2) -> void:
 		if b.rect.has_point(p):
 			_do(String(b.id))
 			return
-	if dev_open:
+	if dev_open or archive_open:
 		return
 	if legend_open:
 		legend_open = false
@@ -1045,12 +1165,20 @@ func _on_press(p: Vector2) -> void:
 
 
 func _do(id: String) -> void:
+	if id.begins_with("day_"):
+		pick_day(id.substr(4))
+		return
 	match id:
 		"start": start_shift()
 		"flag": flag_bag()
 		"clear": clear_bag()
 		"done": done_bag()
 		"share": share()
+		"archive": open_archive()
+		"arch_newer": archive_shift(-1)
+		"arch_older": archive_shift(1)
+		"arch_close": archive_open = false
+		"today": pick_day(today)
 		"legend_close": legend_open = false
 		"dev_prev": dev_shift(-1)
 		"dev_next": dev_shift(1)
@@ -1086,9 +1214,14 @@ func _layout() -> void:
 	if dev_open:
 		_layout_dev()
 		return
+	if archive_open:
+		_layout_archive(vs)
+		return
 	if legend_open:
 		_btn("legend_close", Rect2(col.end.x - 44, legend_rect.position.y + 6, 38, 38), "X", "ghost")
 		return
+	if screen != Screen.PLAY:
+		_btn("archive", Rect2(col.end.x - 44, 10, 44, 42), "", "icon")
 	match screen:
 		Screen.MENU:
 			mon.size.y = minf(mon.size.y, 250.0)
@@ -1096,7 +1229,34 @@ func _layout() -> void:
 		Screen.PLAY:
 			_layout_play()
 		Screen.END:
-			_btn("share", ctrl, "Share result", "primary")
+			if date != today:
+				var hw := (ctrl.size.x - 12) * 0.5
+				_btn("share", Rect2(ctrl.position.x, ctrl.position.y, hw, ctrl.size.y), "Share result", "primary")
+				_btn("today", Rect2(ctrl.position.x + hw + 12, ctrl.position.y, hw, ctrl.size.y), "Today's shift", "ghost_big")
+			else:
+				_btn("share", ctrl, "Share result", "primary")
+
+
+func _archive_row_h(vs: Vector2) -> float:
+	return clampf((vs.y - 62 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+
+
+func _archive_card(vs: Vector2) -> Rect2:
+	var w := minf(col.size.x, 440.0)
+	return Rect2((vs.x - w) * 0.5, 62, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+
+
+func _layout_archive(vs: Vector2) -> void:
+	var c := _archive_card(vs)
+	var rh := _archive_row_h(vs)
+	var days := archive_page_days(archive_page)
+	for i in days.size():
+		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "arch")
+	var bw := (c.size.x - 24 - 16) / 3.0
+	var by := c.end.y - 58
+	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "arch")
+	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close", "arch")
+	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "arch")
 
 
 func _layout_play() -> void:
@@ -1213,10 +1373,15 @@ func _draw() -> void:
 		Screen.END: _draw_end()
 	_draw_legend_strip()
 	for b in buttons:
-		if not String(b.style) in ["dev"] and not String(b.id) == "legend_close":
+		if not String(b.style) in ["dev", "arch", "icon"] and not String(b.id) == "legend_close":
 			_draw_button(b)
+		elif String(b.style) == "icon":
+			_round_rect(b.rect, C_PANEL_HI, 10)
+			_draw_calendar(b.rect.get_center(), C_INK)
 	if legend_open:
 		_draw_legend_panel()
+	if archive_open:
+		_draw_archive()
 	for p in popups:
 		var k: float = p.t / 1.1
 		var c: Color = p.color
@@ -1239,6 +1404,9 @@ func _draw_header() -> void:
 	var x := col.position.x
 	_text(Vector2(x, 32), "X-RAY SHIFT", 24, C_ACCENT)
 	_text(Vector2(x, 50), "Shift #%d  ·  %s%s" % [puzzle_no, date, "  ·  DEV" if dev_mode else ""], 12, C_MUTED)
+	if date != today and screen != Screen.PLAY:
+		var sw := font.get_string_size("Shift #%d  ·  %s%s" % [puzzle_no, date, "  ·  DEV" if dev_mode else ""], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		_text(Vector2(x + sw + 10, 50), "PAST SHIFT", 12, C_ACCENT)
 	if screen == Screen.PLAY:
 		var shown := base_score()
 		_text(Vector2(col.end.x - 200, 30), _num(shown), 24, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, 200)
@@ -1521,7 +1689,7 @@ func _draw_end() -> void:
 		y += 28
 	var left := 86400 - int(Time.get_unix_time_from_system()) % 86400
 	if y < card.end.y - 16:
-		var nxt := "Next shift in %d:%02d:%02d" % [left / 3600, (left / 60) % 60, left % 60] if date == today else "Today's shift: open without ?day="
+		var nxt := "Next shift in %d:%02d:%02d" % [left / 3600, (left / 60) % 60, left % 60] if date == today else "Past shift · %s" % _pretty_date(date)
 		_center_text(cx, card.end.y - 16, nxt, 12, C_MUTED)
 
 
@@ -1558,6 +1726,45 @@ func _draw_button(b: Dictionary) -> void:
 		var hint := "Space" if style == "clear" else "F"
 		_center_text(r.get_center().x, r.end.y - 10, hint, 11, Color(1, 1, 1, 0.55))
 	_center_text(r.get_center().x, ty, String(b.label), size, fg)
+
+
+## Small calendar glyph for the past-shifts button.
+func _draw_calendar(c: Vector2, col_: Color) -> void:
+	var r := Rect2(c.x - 9, c.y - 8, 18, 17)
+	draw_rect(r, col_, false, 1.8)
+	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5), col_)
+	draw_line(Vector2(c.x - 4.5, c.y - 11), Vector2(c.x - 4.5, c.y - 6), col_, 1.8)
+	draw_line(Vector2(c.x + 4.5, c.y - 11), Vector2(c.x + 4.5, c.y - 6), col_, 1.8)
+	for i in 3:
+		draw_rect(Rect2(c.x - 6.5 + i * 4.5, c.y + 1.5, 3, 3), col_)
+
+
+func _draw_archive() -> void:
+	var vs := get_viewport_rect().size
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
+	var c := _archive_card(vs)
+	_round_rect(c, C_PANEL, 14)
+	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past shifts", 20, C_INK)
+	_text(Vector2(c.position.x, c.position.y + 34), "Page %d of %d" % [archive_page + 1, archive_pages()], 12, C_MUTED,
+		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	for b in buttons:
+		var id := String(b.id)
+		var r: Rect2 = b.rect
+		if id.begins_with("day_"):
+			var d := id.substr(4)
+			_round_rect(r, C_PANEL_HI, 8)
+			if d == date:
+				draw_rect(r, C_ACCENT, false, 2.0)
+			var mid := r.position.y + r.size.y * 0.5 + 6
+			_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
+			_text(Vector2(r.position.x + 64, mid), "Today" if d == today else _pretty_date(d), 15, C_INK)
+			var res := String(archive_results.get(d, ""))
+			_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12,
+				C_GREEN if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
+		elif id.begins_with("arch_"):
+			var en := not ((id == "arch_newer" and archive_page == 0) or (id == "arch_older" and archive_page >= archive_pages() - 1))
+			_round_rect(r, C_PANEL_HI if en else C_BG, 10)
+			_center_text(r.get_center().x, r.position.y + r.size.y * 0.5 + 5, String(b.label), 14, C_INK if en else C_MUTED)
 
 
 func _draw_dev() -> void:

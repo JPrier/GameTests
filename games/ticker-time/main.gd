@@ -77,6 +77,10 @@ var title_taps: Array = []
 var press_t := -1.0
 var press_pos := Vector2.ZERO
 var col := Rect2()
+const ARCHIVE_ROWS := 7
+var archive_open := false
+var archive_page := 0
+var archive_results: Dictionary = {}
 
 
 func _ready() -> void:
@@ -98,8 +102,11 @@ func _ready() -> void:
 	var d := String(url.get("day", ""))
 	if d == "":
 		d = String(url.get("d", ""))
-	if _valid_date(d):
+	# Links always open today's game; past days are picked in-game. Only dev mode honours ?day=.
+	if dev_mode and _valid_date(d):
 		want = d
+	elif d != "":
+		_clean_url()
 	load_day(want)
 
 
@@ -424,10 +431,12 @@ func next_round() -> void:
 		year_i += 1
 		if year_done():
 			screen = Screen.YEAR_END
+			_mark_played()
 	elif screen == Screen.UD:
 		ud_i += 1
 		if ud_done():
 			screen = Screen.UD_END
+			_mark_played()
 
 
 # ------------------------------------------------------------------ saving
@@ -476,8 +485,117 @@ func _flush_storage() -> void:
 
 # ------------------------------------------------------------------ sharing
 
+## Always the plain game URL, so an old share still opens on today's game.
 func share_link() -> String:
-	return "%s?day=%s" % [base_url, date]
+	return base_url
+
+
+func result_label() -> String:
+	var parts: Array = []
+	if year_done():
+		parts.append("%d pts" % year_score())
+	if ud_done():
+		parts.append(money(cash()))
+	return " · ".join(parts)
+
+
+## Remembers the day's result for the past-days picker and the GameTests home page (never in dev mode).
+func _mark_played() -> void:
+	if dev_mode or result_label() == "":
+		return
+	_record_result(date, result_label())
+	if OS.has_feature("web"):
+		var js := "try{localStorage.setItem(%s,%s)}catch(e){}" % [
+			JSON.stringify("gametests:ticker-time:" + date), JSON.stringify(JSON.stringify({"result": result_label()}))]
+		JavaScriptBridge.eval(js, true)
+
+
+# ------------------------------------------------------------------ past days
+
+## Drops ?day= (and anything else) from the address bar so a refresh stays on today.
+func _clean_url() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{history.replaceState(null,'',location.pathname)}catch(e){}", true)
+
+
+func archive_count() -> int:
+	return maxi(1, day_number(today))
+
+
+func archive_pages() -> int:
+	return ceili(float(archive_count()) / ARCHIVE_ROWS)
+
+
+## The days on one page of the picker, newest first (page 0 starts with today).
+func archive_page_days(page: int) -> Array:
+	var out: Array = []
+	for i in range(page * ARCHIVE_ROWS, mini((page + 1) * ARCHIVE_ROWS, archive_count())):
+		out.append(_date_add(today, -i))
+	return out
+
+
+func open_archive() -> void:
+	archive_results = _add_unfinished(_load_results())
+	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
+	archive_page = int(idx / ARCHIVE_ROWS)
+	archive_open = true
+
+
+func archive_shift(pages: int) -> void:
+	archive_page = clampi(archive_page + pages, 0, archive_pages() - 1)
+
+
+## Opens a past (or today's) game from the picker, on its menu.
+func pick_day(d: String) -> void:
+	archive_open = false
+	if d < EPOCH or d > today:
+		return
+	if d != date:
+		load_day(d)
+	screen = Screen.MENU
+
+
+func _results_path() -> String:
+	return "user://ticker_results.json"
+
+
+func _load_results() -> Dictionary:
+	var out: Dictionary = {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			out = data
+	return out
+
+
+## Days with a save but no recorded result (unfinished, or played before results were kept).
+func _add_unfinished(out: Dictionary) -> Dictionary:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return out
+	var re := RegEx.create_from_string("^ticker_(\\d{4}-\\d{2}-\\d{2})\\.json$")
+	for f in dir.get_files():
+		var m := re.search(f)
+		if m and not out.has(m.get_string(1)):
+			var data = JSON.parse_string(FileAccess.get_file_as_string("user://" + f))
+			var done: bool = data is Dictionary and (data.get("year", []).size() >= ROUNDS or data.get("ud", []).size() >= ROUNDS)
+			out[m.get_string(1)] = "Played" if done else "In progress"
+	return out
+
+
+func _record_result(d: String, label: String) -> void:
+	var all := _load_results()
+	all[d] = label
+	var f := FileAccess.open(_results_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all))
+		f.close()
+
+
+func _short_date(d: String) -> String:
+	var t := Time.get_datetime_dict_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00"))
+	var wd: String = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)]
+	return "%s %s %d" % [wd, MONTHS[int(t.month) - 1], int(t.day)]
 
 
 func money(v: float, sign := false) -> String:
@@ -694,7 +812,8 @@ func get_agent_state() -> Dictionary:
 		"screen": Screen.keys()[screen], "state": state, "round_year": year_i, "round_ud": ud_i, "revealed": revealed,
 		"guess": cur_guess, "stake": stake, "year_score": year_score(), "year_done": year_done(),
 		"cash": cash(), "ud_done": ud_done(), "dev_mode": dev_mode, "dev_open": dev_open,
-		"year_answers": ya, "ud_answers": ua, "share_text": share_text()}
+		"year_answers": ya, "ud_answers": ua, "share_text": share_text(),
+		"archive_open": archive_open, "archive_page": archive_page, "today": today}
 
 
 # ------------------------------------------------------------------ frame
@@ -726,8 +845,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("back"):
 		if dev_open:
 			dev_open = false
+		elif archive_open:
+			archive_open = false
 		else:
 			screen = Screen.MENU
+	elif archive_open:
+		return
 	elif screen == Screen.YEAR and not revealed:
 		if ev.is_action_pressed("left", true):
 			set_guess(cur_guess - 1)
@@ -774,7 +897,7 @@ func _on_press(p: Vector2) -> void:
 			if b.enabled:
 				_do(String(b.id))
 			return
-	if dev_open:
+	if dev_open or archive_open:
 		return
 	if (screen == Screen.YEAR or screen == Screen.UD) and not revealed and slider_rect.grow_individual(12, 18, 12, 18).has_point(p):
 		slider_drag = true
@@ -790,7 +913,15 @@ func _slider_to(x: float) -> void:
 
 
 func _do(id: String) -> void:
+	if id.begins_with("day_"):
+		pick_day(id.substr(4))
+		return
 	match id:
+		"archive": open_archive()
+		"arch_newer": archive_shift(-1)
+		"arch_older": archive_shift(1)
+		"arch_close": archive_open = false
+		"today": pick_day(today)
 		"menu": screen = Screen.MENU
 		"play_year": open_mode(Screen.YEAR)
 		"play_ud": open_mode(Screen.UD)
@@ -832,6 +963,9 @@ func _layout() -> void:
 	if dev_open:
 		_layout_dev(vs)
 		return
+	if archive_open:
+		_layout_archive(vs)
+		return
 	match screen:
 		Screen.MENU: _layout_menu(vs)
 		Screen.YEAR: _layout_year(vs)
@@ -856,8 +990,35 @@ func _layout_menu(vs: Vector2) -> void:
 		"See results" if year_done() else ("Continue" if year_guesses.size() > 0 else "Play"), "primary")
 	_btn("play_ud", Rect2(b.position.x + 16, b.end.y - 62, b.size.x - 32, 46),
 		"See results" if ud_done() else ("Continue" if ud_bets.size() > 0 else "Play"), "primary")
-	if year_done() or ud_done():
+	_btn("archive", Rect2(col.end.x - 44, 12, 44, 42), "", "icon")
+	if date != today:
+		var hw := (col.size.x - 12) * 0.5
+		_btn("share", Rect2(col.position.x, b.end.y + 16, hw, 46), "Share results", "accent", year_done() or ud_done())
+		_btn("today", Rect2(col.position.x + hw + 12, b.end.y + 16, hw, 46), "Today's game", "primary")
+	elif year_done() or ud_done():
 		_btn("share", Rect2(col.position.x, b.end.y + 16, col.size.x, 46), "Share today's results", "accent")
+
+
+func _archive_row_h(vs: Vector2) -> float:
+	return clampf((vs.y - 64 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+
+
+func _archive_card(vs: Vector2) -> Rect2:
+	var w := minf(col.size.x, 440.0)
+	return Rect2((vs.x - w) * 0.5, 64, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+
+
+func _layout_archive(vs: Vector2) -> void:
+	var c := _archive_card(vs)
+	var rh := _archive_row_h(vs)
+	var days := archive_page_days(archive_page)
+	for i in days.size():
+		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "arch_row")
+	var bw := (c.size.x - 24 - 16) / 3.0
+	var by := c.end.y - 58
+	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "", archive_page > 0)
+	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close")
+	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "", archive_page < archive_pages() - 1)
 
 
 func _content_rects(vs: Vector2, bottom_h: float) -> Dictionary:
@@ -959,8 +1120,14 @@ func _draw() -> void:
 		Screen.UD_END: _draw_ud_end(vs)
 	if dev_open:
 		_draw_dev(vs)
+	if archive_open:
+		_draw_archive(vs)
 	for b in buttons:
-		_draw_button(b)
+		if String(b.style) == "icon":
+			_round_rect(b.rect, Color(1, 1, 1, 0.06), 12)
+			_draw_calendar(b.rect.get_center(), C_INK)
+		elif String(b.style) != "arch_row":
+			_draw_button(b)
 	if toast_t > 0.0 and toast != "":
 		var a := clampf(toast_t / 0.3, 0.0, 1.0)
 		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 36
@@ -976,7 +1143,51 @@ func _draw_header() -> void:
 	draw_rect(Rect2(x + 18, 12, 6, 28), C_ACCENT)
 	_text(Vector2(x + 34, 38), "TICKER TIME", 24, C_INK)
 	if screen == Screen.MENU:
-		_text(Vector2(x + 34, 56), "#%d · %s%s" % [puzzle_no, _pretty_date(date), "  [dev]" if dev_mode else ""], 14, C_MUTED)
+		var sub := "#%d · %s%s" % [puzzle_no, _pretty_date(date), "  [dev]" if dev_mode else ""]
+		_text(Vector2(x + 34, 56), sub, 14, C_MUTED)
+		if date != today:
+			var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+			_text(Vector2(x + 34 + sw + 8, 56), "PAST DAY", 14, C_ACCENT)
+
+
+## Small calendar glyph for the past-days button.
+func _draw_calendar(c: Vector2, col_: Color) -> void:
+	var r := Rect2(c.x - 9, c.y - 8, 18, 17)
+	draw_rect(r, col_, false, 1.8)
+	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5), col_)
+	draw_line(Vector2(c.x - 4.5, c.y - 11), Vector2(c.x - 4.5, c.y - 6), col_, 1.8)
+	draw_line(Vector2(c.x + 4.5, c.y - 11), Vector2(c.x + 4.5, c.y - 6), col_, 1.8)
+	for i in 3:
+		draw_rect(Rect2(c.x - 6.5 + i * 4.5, c.y + 1.5, 3, 3), col_)
+
+
+func _draw_archive(vs: Vector2) -> void:
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
+	var c := _archive_card(vs)
+	_round_rect(c, C_CARD_HI, 16)
+	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past days", 20, C_INK)
+	_text(Vector2(c.position.x, c.position.y + 34), "Page %d of %d" % [archive_page + 1, archive_pages()], 12, C_MUTED,
+		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	for b in buttons:
+		var id := String(b.id)
+		if not id.begins_with("day_"):
+			continue
+		var d := id.substr(4)
+		var r: Rect2 = b.rect
+		_round_rect(r, C_CARD, 10)
+		if d == date:
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color(0, 0, 0, 0)
+			sb.border_color = C_ACCENT
+			sb.set_border_width_all(2)
+			sb.set_corner_radius_all(10)
+			draw_style_box(sb, r)
+		var mid := r.position.y + r.size.y * 0.5 + 6
+		_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
+		_text(Vector2(r.position.x + 64, mid), "Today" if d == today else _short_date(d), 15, C_INK)
+		var res := String(archive_results.get(d, ""))
+		_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12,
+			C_UP if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
 
 
 func _pretty_date(d: String) -> String:
@@ -1000,6 +1211,7 @@ func _draw_button(b: Dictionary) -> void:
 		"down": bg = C_DOWN; fg = Color("2b0509")
 	if not b.enabled:
 		bg = Color(bg, 0.35)
+		fg = Color(fg, 0.45)
 	_round_rect(r, bg, 12)
 	var size := 20 if r.size.y >= 50 else 17
 	if style == "up" or style == "down":

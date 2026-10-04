@@ -217,7 +217,9 @@ func test_attempt_flow_ideal_view_and_share():
 	var text: String = main.share_text()
 	assert_true(text.contains("Daily Bridge #1"), "share names the puzzle")
 	assert_true(text.contains("💥 ✅"), "share shows the attempts")
-	assert_true(text.contains("?day=" + DAY), "share link carries the day")
+	assert_true(text.ends_with(main.base_url), "share links to the game itself")
+	assert_false(text.contains("?day=") or text.contains("&s="), "share link has no day or score in it")
+	assert_eq(String(main._load_results().get(DAY, "")), "Score 100", "result remembered for the picker")
 	assert_false(text.contains("dev=1"), "no dev flag in share links")
 	main.load_puzzle(DAY)
 	assert_eq(main.tries.size(), 2, "tries saved")
@@ -337,3 +339,35 @@ func test_far_future_days_are_solvable():
 		var s := BridgeSim.IdealSearch.new(BridgeSim.make_level(d))
 		s.run()
 		assert_true(s.index() >= 0 and s.cost > 0, d + ": has an ideal bridge")
+
+
+func test_past_days_picker():
+	var main = await _fresh(DAY)
+	main.load_puzzle(main.today)
+	main.open_archive()
+	await wait_frames(2)
+	assert_true(main.archive_open, "picker opens")
+	var first: Array = main.archive_page_days(0)
+	assert_eq(String(first[0]), main.today, "newest day first")
+	assert_true(first.size() <= main.ARCHIVE_ROWS, "one page of rows")
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("day_" + main.today), "today is a row")
+	assert_true(ids.has("arch_close"), "picker has a close button")
+	main.dev_sandbox = true
+	main._do("day_" + main.EPOCH)
+	assert_false(main.archive_open, "picking closes the picker")
+	assert_eq(main.date, main.EPOCH, "picked day loads")
+	assert_false(main.dev_sandbox, "picked days are real play")
+	main.pick_day("2099-01-01")
+	assert_eq(main.date, main.EPOCH, "future days can't be picked")
+	main.finished = true
+	main.phase = main.Phase.FINAL
+	main._build_buttons()
+	ids.clear()
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("today"), "past day end offers today's bridge")
+	main._do("today")
+	assert_eq(main.date, main.today, "back to today")

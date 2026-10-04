@@ -146,7 +146,14 @@ func test_tries_final_share_and_save():
 	assert_eq(main.tries.size(), main.MAX_TRIES, "three tries")
 	var txt: String = main.share_text()
 	assert_true(txt.contains("Earthquake Test #1"), "share text has the quake number")
-	assert_true(txt.contains("?d=" + DAY), "share link pins the day")
+	assert_true(txt.ends_with(main.base_url), "share links to the game itself")
+	assert_false(txt.contains("?d=") or txt.contains("&s="), "share link has no day or score in it")
+	assert_eq(String(main._load_results().get(DAY, "")), main.fmt_m(main.best_score()), "result remembered for the picker")
+	await wait_frames(2)
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("today") and ids.has("share"), "past day end offers today's quake")
 	# reload keeps everything
 	main.load_day(DAY)
 	assert_eq(main.tries.size(), main.MAX_TRIES, "tries persist")
@@ -392,3 +399,36 @@ func test_far_future_days_generate():
 		assert_gt(main.budget, 0, d + ": has a budget")
 		assert_not_null(main.quake, d + ": has a quake")
 		assert_gt(main.quake_no, 0, d + ": has a quake number")
+
+
+func test_past_days_picker():
+	var main = await _fresh(DAY)
+	main.load_day(main.today)
+	main.open_archive()
+	await wait_frames(2)
+	assert_true(main.archive_open, "picker opens")
+	var first: Array = main.archive_page_days(0)
+	assert_eq(String(first[0]), main.today, "newest day first")
+	assert_true(first.size() <= main.ARCHIVE_ROWS, "one page of rows")
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("day_" + main.today), "today is a row")
+	main.archive_shift(main.archive_pages())
+	assert_eq(main.archive_page, main.archive_pages() - 1, "older pages stop at the first quake")
+	var row := Rect2()
+	ids.clear()
+	for b in main.buttons:
+		ids.append(String(b.id))
+		if String(b.id) == "day_" + main.EPOCH:
+			row = b.rect
+	assert_true(ids.has("arch_close"), "picker has a close button")
+	assert_true(row.has_area(), "first quake is on the last page")
+	main._press_button(row.get_center())
+	assert_false(main.archive_open, "picking closes the picker")
+	assert_eq(main.date, main.EPOCH, "picked day loads")
+	assert_eq(main.quake_no, 1, "quake #1")
+	main.pick_day("2099-01-01")
+	assert_eq(main.date, main.EPOCH, "future days can't be picked")
+	main.play_today()
+	assert_eq(main.date, main.today, "back to today")

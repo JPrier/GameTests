@@ -153,11 +153,15 @@ func _ready() -> void:
 	var d := String(url.get("day", ""))
 	if d == "":
 		d = String(url.get("d", ""))
-	if _valid_date(d):
-		want = d
 	dev_mode = String(url.get("dev", "")) == "1" or (OS.is_debug_build() and not OS.has_feature("web"))
-	var s := String(url.get("s", ""))
-	target_score = int(s) if s.is_valid_int() else -1
+	# Links always open today's bridge; past days are picked in-game. Only ?dev=1 honours ?day= / ?s=.
+	if String(url.get("dev", "")) == "1":
+		if _valid_date(d):
+			want = d
+		var s := String(url.get("s", ""))
+		target_score = int(s) if s.is_valid_int() else -1
+	elif d != "" or String(url.get("s", "")) != "":
+		_clean_url()
 	load_puzzle(want)
 	_load_prefs()
 	if not tutorial_seen() and String(url.get("dev", "")) != "1":
@@ -652,6 +656,7 @@ func finish() -> void:
 	phase = Phase.FINAL
 	ensure_ideal()
 	_show_best()
+	_mark_played()
 
 
 func _show_best() -> void:
@@ -771,8 +776,188 @@ func _flush_storage() -> void:
 
 # ------------------------------------------------------------------ sharing
 
+## Always the plain game URL, so an old share still opens on today's bridge.
 func share_link() -> String:
-	return "%s?day=%s&s=%d" % [base_url, date, best_score()]
+	return base_url
+
+
+## Remembers the day's score for the past-days picker and the GameTests home page.
+func _mark_played() -> void:
+	if dev_sandbox:
+		return
+	var label := "Score %d" % maxi(0, best_score())
+	_record_result(date, label)
+	if OS.has_feature("web"):
+		var js := "try{localStorage.setItem(%s,%s)}catch(e){}" % [
+			JSON.stringify("gametests:daily-bridge:" + date), JSON.stringify(JSON.stringify({"result": label}))]
+		JavaScriptBridge.eval(js, true)
+
+
+# ------------------------------------------------------------------ past days
+
+const ARCHIVE_ROWS := 7
+var archive_open := false
+var archive_page := 0
+var archive_results: Dictionary = {}
+var cal_rect := Rect2()
+
+
+## Drops ?day= (and anything else) from the address bar so a refresh stays on today.
+func _clean_url() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{history.replaceState(null,'',location.pathname)}catch(e){}", true)
+
+
+func archive_count() -> int:
+	return maxi(1, day_number(today))
+
+
+func archive_pages() -> int:
+	return ceili(float(archive_count()) / ARCHIVE_ROWS)
+
+
+## The days on one page of the picker, newest first (page 0 starts with today).
+func archive_page_days(page: int) -> Array:
+	var out: Array = []
+	for i in range(page * ARCHIVE_ROWS, mini((page + 1) * ARCHIVE_ROWS, archive_count())):
+		out.append(shift_date(today, -i))
+	return out
+
+
+func open_archive() -> void:
+	if phase == Phase.RUN:
+		return
+	archive_results = _picker_results()
+	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
+	archive_page = int(idx / ARCHIVE_ROWS)
+	archive_open = true
+	_build_buttons()
+
+
+func archive_shift(pages: int) -> void:
+	archive_page = clampi(archive_page + pages, 0, archive_pages() - 1)
+	_build_buttons()
+
+
+## Opens a past (or today's) bridge from the picker. Always real play, never the dev sandbox.
+func pick_day(d: String) -> void:
+	archive_open = false
+	if d < EPOCH or d > today:
+		_build_buttons()
+		return
+	if d != date or dev_sandbox:
+		dev_sandbox = false
+		target_score = -1
+		load_puzzle(d)
+	_build_buttons()
+
+
+func _results_path() -> String:
+	return "user://bridge_results.json"
+
+
+func _load_results() -> Dictionary:
+	var out: Dictionary = {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			out = data
+	return out
+
+
+## Recorded results, plus days with a save from before results were kept.
+func _picker_results() -> Dictionary:
+	var out := _load_results()
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return out
+	var re := RegEx.create_from_string("^" + SAVE_PREFIX + "(\\d{4}-\\d{2}-\\d{2})\\.json$")
+	for f in dir.get_files():
+		var m := re.search(f)
+		if m == null or out.has(m.get_string(1)):
+			continue
+		var data = JSON.parse_string(FileAccess.get_file_as_string("user://" + f))
+		if not data is Dictionary or (data.get("tries", []).is_empty() and data.get("design", []).is_empty()):
+			continue
+		var done: bool = data.get("finished", false) or data.get("tries", []).size() >= MAX_TRIES
+		out[m.get_string(1)] = "Played" if done else "In progress"
+	return out
+
+
+func _record_result(d: String, label: String) -> void:
+	var all := _load_results()
+	all[d] = label
+	var f := FileAccess.open(_results_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all))
+		f.close()
+
+
+func _short_date(d: String) -> String:
+	var t := Time.get_datetime_dict_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00"))
+	var wd: String = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)]
+	var mo: String = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(t.month) - 1]
+	return "%s %s %d" % [wd, mo, int(t.day)]
+
+
+func _archive_row_h() -> float:
+	var vs := get_viewport_rect().size
+	return clampf((vs.y - 40.0 - 170.0 * ui) / ARCHIVE_ROWS, 44.0 * ui, 60.0 * ui)
+
+
+func _archive_card() -> Rect2:
+	var vs := get_viewport_rect().size
+	var w := minf(vs.x - 24.0, 560.0 * ui)
+	var h := 70.0 * ui + ARCHIVE_ROWS * _archive_row_h() + 80.0 * ui
+	return Rect2((vs.x - w) * 0.5, maxf(12.0, (vs.y - h) * 0.5), w, h)
+
+
+func _archive_buttons() -> void:
+	var c := _archive_card()
+	var rh := _archive_row_h()
+	var days := archive_page_days(archive_page)
+	for i in days.size():
+		_btn("day_" + String(days[i]), Rect2(c.position.x + 16, c.position.y + 70 * ui + i * rh, c.size.x - 32, rh - 8), "", false, true, false, "row")
+	var bw := (c.size.x - 32 - 20) / 3.0
+	var by := c.end.y - 66 * ui
+	_btn("arch_newer", Rect2(c.position.x + 16, by, bw, 50 * ui), "< Newer", false, archive_page > 0)
+	_btn("arch_close", Rect2(c.position.x + 26 + bw, by, bw, 50 * ui), "Close", true)
+	_btn("arch_older", Rect2(c.position.x + 36 + bw * 2, by, bw, 50 * ui), "Older >", false, archive_page < archive_pages() - 1)
+
+
+func _draw_archive() -> void:
+	var vs := get_viewport_rect().size
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.55))
+	var c := _archive_card()
+	_box(c, Color(0.96, 0.97, 0.98), 16)
+	_text("Past bridges", c.position + Vector2(20, 44 * ui), 24, C_INK)
+	_text("Page %d of %d" % [archive_page + 1, archive_pages()], Vector2(c.position.x, c.position.y + 42 * ui), 14, C_MUTED,
+		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 20)
+	for b in buttons:
+		if b.kind == "row":
+			var d := String(b.id).substr(4)
+			var r: Rect2 = b.rect
+			_box(r, C_BTN, 10, C_BTN_PRIMARY if d == date and not dev_sandbox else Color(0, 0, 0, 0))
+			var mid := r.get_center().y + 6 * ui
+			_text("#%d" % day_number(d), Vector2(r.position.x + 14, mid), 17, C_BTN_PRIMARY)
+			_text("Today" if d == today else _short_date(d), Vector2(r.position.x + 14 + 62 * ui, mid), 17, C_INK)
+			var res := String(archive_results.get(d, ""))
+			_text(res if res != "" else "Not played", Vector2(r.position.x, mid), 16 if res != "" else 14,
+				C_GOOD if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 14)
+		else:
+			_draw_button(b)
+
+
+## Calendar glyph for the past-days button.
+func _draw_calendar(c: Vector2, col_: Color) -> void:
+	var k := ui
+	var r := Rect2(c.x - 9 * k, c.y - 8 * k, 18 * k, 17 * k)
+	draw_rect(r, col_, false, 1.8 * k)
+	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5 * k), col_)
+	draw_line(Vector2(c.x - 4.5 * k, c.y - 11 * k), Vector2(c.x - 4.5 * k, c.y - 6 * k), col_, 1.8 * k)
+	draw_line(Vector2(c.x + 4.5 * k, c.y - 11 * k), Vector2(c.x + 4.5 * k, c.y - 6 * k), col_, 1.8 * k)
+	for i in 3:
+		draw_rect(Rect2(c.x + (-6.5 + i * 4.5) * k, c.y + 1.5 * k, 3 * k, 3 * k), col_)
 
 
 func share_text() -> String:
@@ -854,12 +1039,7 @@ func _poll_share() -> void:
 
 
 func play_today() -> void:
-	if OS.has_feature("web") and not dev_sandbox:
-		JavaScriptBridge.eval("location.href=%s" % JSON.stringify(base_url), true)
-	else:
-		target_score = -1
-		dev_sandbox = false
-		load_puzzle(today)
+	pick_day(today)
 
 
 func _read_url() -> Dictionary:
@@ -1267,11 +1447,14 @@ func _on_press(p: Vector2) -> void:
 	drag_pos = p
 	press_pos = p
 	pan_last = p
-	if dev_open or tut_open:
+	if dev_open or tut_open or archive_open:
 		_press_button(p)
 		return
 	if help_rect.grow(10).has_point(p):
 		open_tutorial()
+		return
+	if cal_rect.grow(6).has_point(p):
+		open_archive()
 		return
 	if dev_mode and dev_rect.has_point(p):
 		dev_open = true
@@ -1340,6 +1523,9 @@ func _press_button(p: Vector2) -> bool:
 
 
 func _do(id: String) -> void:
+	if id.begins_with("day_"):
+		pick_day(id.substr(4))
+		return
 	match id:
 		"road": set_tool(Tool.ROAD)
 		"wood": set_tool(Tool.WOOD)
@@ -1359,6 +1545,11 @@ func _do(id: String) -> void:
 		"ideal": toggle_ideal()
 		"share": share()
 		"today": play_today()
+		"arch_newer": archive_shift(-1)
+		"arch_older": archive_shift(1)
+		"arch_close":
+			archive_open = false
+			_build_buttons()
 		"zoom_in": zoom_at(view_rect.get_center(), 1.5)
 		"lock": set_auto_lock(not auto_lock)
 		"zoom_out":
@@ -1392,6 +1583,7 @@ func _layout() -> void:
 	var head_h := 64.0 * ui
 	head_rect = Rect2(m, m, vs.x - m * 2, head_h)
 	help_rect = Rect2(head_rect.end.x - 46 * ui, head_rect.position.y + (head_h - 40 * ui) * 0.5, 40 * ui, 40 * ui)
+	cal_rect = Rect2(help_rect.position.x - 48 * ui, help_rect.position.y, 40 * ui, 40 * ui)
 	var panel_h := 128.0 * ui
 	panel_rect = Rect2(m, vs.y - panel_h - m, vs.x - m * 2, panel_h)
 	view_rect = Rect2(0, head_rect.end.y + 4, vs.x, panel_rect.position.y - head_rect.end.y - 50 * ui)
@@ -1412,6 +1604,9 @@ func _build_buttons() -> void:
 	if tut_open:
 		var card := _tut_card()
 		_btn("tut_close", Rect2(card.position.x + 24, card.end.y - 70 * ui, card.size.x - 48, 50 * ui), "Start building", true)
+		return
+	if archive_open and not dev_open:
+		_archive_buttons()
 		return
 	if dev_open:
 		var card := _dev_card()
@@ -1513,6 +1708,8 @@ func _draw() -> void:
 		_draw_toast()
 	if tut_open:
 		_draw_tutorial()
+	if archive_open and not dev_open:
+		_draw_archive()
 	if dev_open:
 		_draw_dev()
 
@@ -1956,12 +2153,18 @@ func _draw_header() -> void:
 	var pad := 14.0 * ui
 	_text("Daily Bridge", r.position + Vector2(pad, r.size.y * 0.47), 24, C_INK)
 	_text("#%d · %s" % [puzzle_no, date], r.position + Vector2(pad, r.size.y * 0.84), 14, C_MUTED)
-	var right := help_rect.position.x - 12 * ui
+	var right := cal_rect.position.x - 12 * ui
 	_text("Attempts left: %d" % tries_left(), Vector2(r.position.x, r.position.y + r.size.y * 0.47), 16, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
 	if target_score > 0:
 		_text("Score to beat: %d" % target_score, Vector2(r.position.x, r.position.y + r.size.y * 0.84), 14, C_BTN_ON, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
 	_box(help_rect, C_BTN, 20 * ui)
 	_text_c("?", help_rect.get_center(), 22, C_INK)
+	var cal_a := 0.4 if phase == Phase.RUN else 1.0
+	_box(cal_rect, Color(C_BTN, cal_a), 20 * ui)
+	_draw_calendar(cal_rect.get_center() + Vector2(0, 1), Color(C_INK, cal_a))
+	if date != today and not dev_sandbox:
+		var sub_w := font.get_string_size("#%d · %s" % [puzzle_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, int(14 * ui)).x
+		_text("PAST DAY", r.position + Vector2(pad + sub_w + 10 * ui, r.size.y * 0.84), 14, C_BTN_PRIMARY)
 	# today's job, as a label in the sky
 	var info := _level_line()
 	var fs := int(15 * ui)
@@ -1988,6 +2191,8 @@ func _draw_panel() -> void:
 			var br := Rect2(r.position.x, r.position.y - 42 * ui, r.size.x, 36 * ui)
 			_box(br, C_PANEL, 10)
 			_draw_budget(br.grow(-6), cost())
+	if archive_open:
+		return
 	for b in buttons:
 		if b.kind != "zoom":
 			_draw_button(b)
@@ -2198,6 +2403,7 @@ func get_agent_state() -> Dictionary:
 		"best_score": best_score(), "finished": finished, "tool": ["road", "wood", "erase"][tool],
 		"piece_len": piece_len, "auto_lock": auto_lock, "loupe": loupe_active(), "zoom": snappedf(zoom, 0.01), "show_ideal": show_ideal,
 		"tutorial": tut_open, "dev_mode": dev_mode, "share_text": share_text() if phase == Phase.FINAL else "",
+		"archive_open": archive_open, "archive_page": archive_page, "today": today,
 	}
 	if sim != null:
 		st["sim"] = sim.summary()

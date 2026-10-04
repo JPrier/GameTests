@@ -85,7 +85,8 @@ func test_year_mode_scripted_play():
 	assert_eq(main.screen, main.Screen.YEAR_END, "reaches the end screen")
 	assert_eq(main.year_score(), 100 * 3 + 45 * 2, "points by distance")
 	var s: String = main.share_text()
-	assert_true(s.contains("?day=" + DAY), "share has the day link")
+	assert_false(s.contains("?day=") or s.contains("&day="), "share link has no day in it")
+	assert_true(s.ends_with(main.base_url), "share links to the game itself")
 	assert_false(s.contains("dev=1"), "share never has dev")
 	assert_true(s.contains("390/500"), "share has the score")
 	assert_false(s.contains(main.stocks[int(main.year_rounds[0].stock)].t), "share doesn't spoil tickers")
@@ -208,3 +209,42 @@ func test_far_future_days_are_valid():
 	for d in _far_future_days():
 		assert_eq(main.generate_year_rounds(d).size(), 5, d + ": five year rounds")
 		assert_eq(main.generate_ud_rounds(d).size(), 5, d + ": five up/down rounds")
+
+
+func test_past_days_picker():
+	var main = await _fresh()
+	main.load_day(main.today)
+	main.open_archive()
+	await wait_frames(2)
+	assert_true(main.archive_open, "picker opens")
+	var first: Array = main.archive_page_days(0)
+	assert_eq(String(first[0]), main.today, "newest day first")
+	assert_true(first.size() <= main.ARCHIVE_ROWS, "one page of rows")
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("day_" + main.today), "today is a row")
+	assert_true(ids.has("arch_close"), "picker has a close button")
+	main._do("day_" + main.EPOCH)
+	assert_false(main.archive_open, "picking closes the picker")
+	assert_eq(main.date, main.EPOCH, "picked day loads")
+	assert_eq(main.screen, main.Screen.MENU, "picked day opens on its menu")
+	main.pick_day("2099-01-01")
+	assert_eq(main.date, main.EPOCH, "future days can't be picked")
+	await wait_frames(2)
+	ids.clear()
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("today") and ids.has("archive"), "past day menu offers today's game and the picker")
+	main._do("today")
+	assert_eq(main.date, main.today, "back to today")
+
+
+func test_results_listed_in_picker():
+	var main = await _fresh()
+	var p: String = main._results_path()
+	if FileAccess.file_exists(p):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	main._record_result(DAY, "420 pts")
+	assert_eq(String(main._load_results().get(DAY, "")), "420 pts", "result remembered for the picker")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))

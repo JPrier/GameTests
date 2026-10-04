@@ -117,7 +117,14 @@ func test_five_tries_then_share():
 	var text: String = main.share_text()
 	assert_true(text.contains("Bloom #1"), "share has puzzle number")
 	assert_true(text.contains("Impact %d" % main.best_score()), "share has best score")
-	assert_true(text.contains("?d=2026-10-01&s=%d" % main.best_score()), "share has a link to this map")
+	assert_true(text.ends_with(main.base_url), "share links to the game itself")
+	assert_false(text.contains("?d=") or text.contains("&s="), "share link has no day or score in it")
+	assert_eq(String(main._load_results().get(DAY, "")), "Impact %d" % main.best_score(), "result remembered for the picker")
+	await wait_frames(2)
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("today") and ids.has("share"), "past day end offers today's puzzle")
 	main.share()  # headless -> clipboard, must not crash
 	main.wipe_save()
 
@@ -365,3 +372,34 @@ func test_far_future_days_generate():
 		assert_gt(main.puzzle_no, 0, d + ": has a puzzle number")
 		seen[hash(main.tiles)] = true
 	assert_eq(seen.size(), _far_future_days().size(), "every sampled day has its own map")
+
+
+func test_past_days_picker():
+	var main = await _fresh(DAY)
+	main.load_puzzle(main.today)
+	main.open_archive()
+	await wait_frames(2)
+	assert_true(main.archive_open, "picker opens")
+	var first: Array = main.archive_page_days(0)
+	assert_eq(String(first[0]), main.today, "newest day first")
+	assert_true(first.size() <= main.ARCHIVE_ROWS, "one page of rows")
+	var ids: Array = []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	assert_true(ids.has("day_" + main.today), "today is a row")
+	assert_true(ids.has("arch_close"), "picker has a close button")
+	var row: Rect2
+	for b in main.buttons:
+		if String(b.id) == "day_" + main.EPOCH:
+			row = b.rect
+	if row.has_area():
+		main._press_button(row.get_center())
+	else:
+		main.pick_day(main.EPOCH)
+	assert_false(main.archive_open, "picking closes the picker")
+	assert_eq(main.date, main.EPOCH, "picked day loads")
+	assert_eq(main.puzzle_no, 1, "puzzle #1")
+	main.pick_day("2099-01-01")
+	assert_eq(main.date, main.EPOCH, "future days can't be picked")
+	main.play_today()
+	assert_eq(main.date, main.today, "back to today")

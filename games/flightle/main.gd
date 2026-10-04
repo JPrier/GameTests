@@ -92,6 +92,10 @@ var clue_rect := Rect2()
 var list_rect := Rect2()
 var input_rect := Rect2()
 var dev_date_edit: LineEdit
+const ARCHIVE_ROWS := 7
+var archive_open := false
+var archive_page := 0
+var archive_results: Dictionary = {}
 
 
 func _ready() -> void:
@@ -109,8 +113,11 @@ func _ready() -> void:
 	dev_mode = OS.is_debug_build() or String(url.get("dev", "")) == "1"
 	var want := today
 	var d := String(url.get("day", ""))
-	if _valid_date(d):
+	# Links always open today's flight; past days are picked in-game. Only dev mode honours ?day=.
+	if dev_mode and _valid_date(d):
 		want = d
+	elif d != "":
+		_clean_url()
 	load_day(want)
 	_layout()
 
@@ -643,7 +650,10 @@ func _flush_storage() -> void:
 
 ## Lets the GameTests home page show today's result (never from dev mode).
 func _mark_played() -> void:
-	if dev_mode or not OS.has_feature("web"):
+	if dev_mode:
+		return
+	_record_result(date, result_label())
+	if not OS.has_feature("web"):
 		return
 	var js := "try{localStorage.setItem(%s,%s)}catch(e){}" % [
 		JSON.stringify("gametests:flightle:" + date), JSON.stringify(JSON.stringify({"result": result_label()}))]
@@ -656,8 +666,9 @@ func result_label() -> String:
 	return "%d/%d" % [guesses.size(), MAX_GUESSES] if phase == Phase.WON else "X/%d" % MAX_GUESSES
 
 
+## Always the plain game URL, so an old share still opens on today's flight.
 func share_link() -> String:
-	return "%s?day=%s" % [base_url, date]
+	return base_url
 
 
 func share_text() -> String:
@@ -744,6 +755,109 @@ func _toast(msg: String) -> void:
 func next_puzzle_text() -> String:
 	var s := 86400 - int(Time.get_unix_time_from_system()) % 86400
 	return "Next flight in %dh %02dm" % [s / 3600, (s % 3600) / 60]
+
+
+# ------------------------------------------------------------------ past days
+
+## Drops ?day= (and anything else) from the address bar so a refresh stays on today.
+func _clean_url() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{history.replaceState(null,'',location.pathname)}catch(e){}", true)
+
+
+func archive_count() -> int:
+	return maxi(1, day_number(today))
+
+
+func archive_pages() -> int:
+	return ceili(float(archive_count()) / ARCHIVE_ROWS)
+
+
+## The days on one page of the picker, newest first (page 0 starts with today).
+func archive_page_days(page: int) -> Array:
+	var out: Array = []
+	for i in range(page * ARCHIVE_ROWS, mini((page + 1) * ARCHIVE_ROWS, archive_count())):
+		out.append(_date_add(today, -i))
+	return out
+
+
+func open_archive() -> void:
+	archive_results = _add_unfinished(_load_results())
+	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
+	archive_page = int(idx / ARCHIVE_ROWS)
+	archive_open = true
+	help_open = false
+
+
+func archive_shift(pages: int) -> void:
+	archive_page = clampi(archive_page + pages, 0, archive_pages() - 1)
+
+
+## Opens a past (or today's) flight from the picker.
+func pick_day(d: String) -> void:
+	archive_open = false
+	if d < EPOCH or d > today:
+		return
+	if d != date:
+		load_day(d)
+
+
+func _results_path() -> String:
+	return "user://flightle_results.json"
+
+
+## date -> result label for every finished day (this device), including results only the
+## home page knew about (localStorage).
+func _load_results() -> Dictionary:
+	var out: Dictionary = {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			out = data
+	if OS.has_feature("web") and not dev_mode:
+		var r = JavaScriptBridge.eval("""(function(){var o={},p='gametests:flightle:';try{for(var i=0;i<localStorage.length;i++){
+			var k=localStorage.key(i);if(k&&k.indexOf(p)===0){try{o[k.substr(p.length)]=JSON.parse(localStorage.getItem(k)).result||'';}catch(e){}}}}catch(e){}
+			return JSON.stringify(o);})()""", true)
+		if typeof(r) == TYPE_STRING:
+			var ls = JSON.parse_string(r)
+			if ls is Dictionary:
+				for k in ls:
+					if not out.has(k):
+						out[k] = ls[k]
+	return out
+
+
+## Days with a save but no recorded result (unfinished, or played before results were kept).
+func _add_unfinished(out: Dictionary) -> Dictionary:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return out
+	var re := RegEx.create_from_string("^flightle_(\\d{4}-\\d{2}-\\d{2})\\.json$")
+	for f in dir.get_files():
+		var m := re.search(f)
+		if m and not out.has(m.get_string(1)):
+			out[m.get_string(1)] = "In progress"
+	return out
+
+
+func _record_result(d: String, label: String) -> void:
+	var all := {}
+	if FileAccess.file_exists(_results_path()):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(_results_path()))
+		if data is Dictionary:
+			all = data
+	all[d] = label
+	var f := FileAccess.open(_results_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all))
+		f.close()
+
+
+func _pretty_date(d: String) -> String:
+	var t := Time.get_datetime_dict_from_unix_time(Time.get_unix_time_from_datetime_string(d + "T00:00:00"))
+	var wd: String = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)]
+	var mo: String = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(t.month) - 1]
+	return "%s %s %d" % [wd, mo, int(t.day)]
 
 
 # ------------------------------------------------------------------ dev mode
@@ -840,7 +954,8 @@ func get_agent_state() -> Dictionary:
 		"answer": "%s-%s" % [route.f, route.t], "state": ["playing", "won", "lost"][phase],
 		"guesses": guesses, "feedback": fb, "misses": misses(), "clues_revealed": clues_revealed(),
 		"slot": slot, "texts": texts, "picks": picks, "suggestions": current_suggestions(),
-		"dev_mode": dev_mode, "dev_open": dev_open, "help_open": help_open, "share_text": share_text()}
+		"dev_mode": dev_mode, "dev_open": dev_open, "help_open": help_open, "share_text": share_text(),
+		"archive_open": archive_open, "archive_page": archive_page, "today": today}
 
 
 # ------------------------------------------------------------------ frame
@@ -900,8 +1015,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if ev.is_action_pressed("back"):
 		dev_open = false
 		help_open = false
+		archive_open = false
 		return
-	if dev_open or help_open:
+	if dev_open or help_open or archive_open:
 		return
 	if ev.is_action_pressed("erase", true):
 		erase()
@@ -959,6 +1075,9 @@ func _do(id: String) -> void:
 		else:
 			type_char(k)
 		return
+	if id.begins_with("day_"):
+		pick_day(id.substr(4))
+		return
 	if id.begins_with("sug_"):
 		choose(id.substr(4))
 		return
@@ -968,6 +1087,11 @@ func _do(id: String) -> void:
 		"go": submit()
 		"share": share()
 		"help": help_open = not help_open
+		"archive": open_archive()
+		"arch_newer": archive_shift(-1)
+		"arch_older": archive_shift(1)
+		"arch_close": archive_open = false
+		"today": pick_day(today)
 		"help_close": help_open = false
 		"dev_prev": dev_shift(-1)
 		"dev_next": dev_shift(1)
@@ -998,10 +1122,14 @@ func _layout() -> void:
 	if dev_open:
 		_layout_dev(vs)
 		return
+	if archive_open:
+		_layout_archive(vs)
+		return
 	if help_open:
 		_btn("help_close", _help_card(vs).grow(-0), "", "none")
 		return
 	_btn("help", Rect2(col.end.x - 36, 10, 36, 36), "?", "ghost")
+	_btn("archive", Rect2(col.end.x - 80, 10, 36, 36), "", "ghost")
 	var bottom := vs.y - 10.0
 	if phase == Phase.PLAYING:
 		var key_h := clampf((vs.y - 560.0) / 4.0, 36.0, 46.0)
@@ -1012,7 +1140,11 @@ func _layout() -> void:
 	else:
 		var h := 214.0
 		input_rect = Rect2(col.position.x, bottom - h, col.size.x, h)
-		_btn("share", Rect2(input_rect.position.x + 14, input_rect.end.y - 60, input_rect.size.x - 28, 46), "Share result", "accent")
+		var bw := input_rect.size.x - 28
+		if date != today:
+			bw = (bw - 10) * 0.5
+			_btn("today", Rect2(input_rect.position.x + 24 + bw, input_rect.end.y - 60, bw, 46), "Today's flight", "accent")
+		_btn("share", Rect2(input_rect.position.x + 14, input_rect.end.y - 60, bw, 46), "Share result", "accent")
 	var rows := guesses.size()
 	var row_h := 24.0
 	list_rect = Rect2(col.position.x, input_rect.position.y - 8 - rows * row_h, col.size.x, rows * row_h)
@@ -1054,6 +1186,28 @@ func _layout_input(key_h: float) -> void:
 			for ch in row:
 				_btn("k_" + ch, Rect2(x, y, kw, key_h), ch, "key")
 				x += kw + gap
+
+
+func _archive_card(vs: Vector2) -> Rect2:
+	var w := minf(col.size.x, 420.0)
+	return Rect2((vs.x - w) * 0.5, 64, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+
+
+func _archive_row_h(vs: Vector2) -> float:
+	return clampf((vs.y - 64 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+
+
+func _layout_archive(vs: Vector2) -> void:
+	var c := _archive_card(vs)
+	var rh := _archive_row_h(vs)
+	var days := archive_page_days(archive_page)
+	for i in days.size():
+		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "row")
+	var bw := (c.size.x - 24 - 16) / 3.0
+	var by := c.end.y - 58
+	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "", archive_page > 0)
+	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close")
+	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "", archive_page < archive_pages() - 1)
 
 
 func _help_card(vs: Vector2) -> Rect2:
@@ -1116,6 +1270,8 @@ func _draw() -> void:
 		_text(Vector2(map_rect.position.x + 12, map_rect.end.y - 10), "DEV · tap the title 5x, hold it, or press `", 10, Color(C_ACCENT, 0.8))
 	if help_open:
 		_draw_help(vs)
+	if archive_open:
+		_draw_archive(vs)
 	if dev_open:
 		_draw_dev(vs)
 	if dev_reveal and dev_mode and not dev_open:
@@ -1163,17 +1319,25 @@ func _draw_header() -> void:
 	_draw_plane(Vector2(x + 12, 28), deg_to_rad(45.0), 11.0, C_ACCENT)
 	_text(Vector2(x + 30, 37), "FLIGHTLE", 26, C_INK)
 	var tw := font.get_string_size("FLIGHTLE", HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x
-	_text(Vector2(x + 38 + tw, 37), "#%d · %s" % [puzzle_no, date], 13, C_MUTED)
+	var sub := "#%d · %s" % [puzzle_no, date]
+	if x + 38 + tw + font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x > col.end.x - 88:
+		sub = "#%d" % puzzle_no
+	_text(Vector2(x + 38 + tw, 37), sub, 13, C_MUTED)
 	var goal := "Name both airports of this flight · %d tries" % MAX_GUESSES
 	if phase == Phase.PLAYING and guesses.size() > 0:
 		goal = "Guess %d of %d · each miss unlocks a clue" % [guesses.size() + 1, MAX_GUESSES]
 	elif phase != Phase.PLAYING:
-		goal = "Today's flight, revealed"
-	_text(Vector2(x, 66), goal, 14, C_MUTED)
+		goal = "Today's flight, revealed" if date == today else "Past flight, revealed"
+	if date != today and phase == Phase.PLAYING:
+		goal = "Past flight · %s" % _pretty_date(date)
+	_text(Vector2(x, 66), goal, 14, C_ACCENT if date != today and phase == Phase.PLAYING else C_MUTED)
 	for b in buttons:
 		if String(b.id) == "help":
 			_outline_rect(b.rect, C_DIM, 18.0, 2)
 			_text(Vector2(b.rect.position.x, b.rect.position.y + 25), "?", 18, C_INK, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
+		elif String(b.id) == "archive":
+			_outline_rect(b.rect, C_DIM, 18.0, 2)
+			_draw_calendar(b.rect.get_center(), C_INK)
 
 
 func _to_screen(km: Vector2, scale: float) -> Vector2:
@@ -1536,10 +1700,58 @@ func _draw_end() -> void:
 		_fit("%s km · about %s · departs %s" % [thousands(int(route.km)), duration_text(int(route.min)), route.dep], 13, r.size.x - 28), 13, C_MUTED)
 	_text(Vector2(r.position.x, r.end.y - 68), next_puzzle_text(), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 	for b in buttons:
-		if String(b.id) == "share":
-			var c := C_ACCENT.lightened(0.3 * float(key_flash.get("share", 0.0)))
+		if String(b.id) == "share" or String(b.id) == "today":
+			var c := C_ACCENT if String(b.id) == "share" else C_BTN
+			c = c.lightened(0.3 * float(key_flash.get(String(b.id), 0.0)))
 			_round_rect(b.rect, c, 10.0)
-			_text(Vector2(b.rect.position.x, b.rect.position.y + 29), "Share result", 17, C_BG, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
+			_text(Vector2(b.rect.position.x, b.rect.position.y + 29), String(b.label), 17,
+				C_BG if String(b.id) == "share" else C_INK, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
+
+
+## Small calendar glyph for the past-days button.
+func _draw_calendar(c: Vector2, col_: Color) -> void:
+	var r := Rect2(c.x - 8, c.y - 7, 16, 15)
+	draw_rect(r, col_, false, 1.6)
+	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 4), col_)
+	draw_line(Vector2(c.x - 4, c.y - 10), Vector2(c.x - 4, c.y - 5), col_, 1.6)
+	draw_line(Vector2(c.x + 4, c.y - 10), Vector2(c.x + 4, c.y - 5), col_, 1.6)
+	for i in 3:
+		draw_rect(Rect2(c.x - 5.5 + i * 4, c.y + 1, 2.5, 2.5), col_)
+
+
+func _draw_archive(vs: Vector2) -> void:
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
+	var c := _archive_card(vs)
+	_round_rect(c, C_CARD_HI, 14.0)
+	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past flights", 20, C_INK)
+	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
+	_text(Vector2(c.position.x, c.position.y + 34), pg, 12, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	for b in buttons:
+		var id := String(b.id)
+		var hl := float(key_flash.get(id, 0.0))
+		if id.begins_with("day_"):
+			var d := id.substr(4)
+			var r: Rect2 = b.rect
+			_round_rect(r, C_CARD.lightened(0.15 * hl), 8.0)
+			if d == date:
+				_outline_rect(r, C_ACCENT, 8.0, 2)
+			var mid := r.position.y + r.size.y * 0.5 + 6
+			_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
+			var name := "Today" if d == today else _pretty_date(d)
+			_text(Vector2(r.position.x + 64, mid), name, 15, C_INK)
+			var res := String(archive_results.get(d, ""))
+			var rc := C_DIM
+			if res.begins_with("X"):
+				rc = C_MID
+			elif res != "":
+				rc = C_HIT
+			_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12, rc,
+				HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
+		elif id.begins_with("arch_"):
+			var en: bool = b.enabled
+			_round_rect(b.rect, (C_BTN if en else C_CARD).lightened(0.25 * hl), 8.0)
+			_text(Vector2(b.rect.position.x, b.rect.position.y + b.rect.size.y * 0.5 + 5), String(b.label), 14,
+				C_INK if en else C_DIM, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
 
 
 func _draw_help(vs: Vector2) -> void:
