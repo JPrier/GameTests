@@ -52,18 +52,18 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 | Boutique Hotel | Set the room rate. The season changes every 4 minutes. Empty rooms earn nothing and a half-empty hotel earns less per guest (in a challenge, rent is due on every room instead). |
 | Wholesale Co. | Stock piles up in warehouses; sell it when the moving market price is high. Delivery trucks boost the restaurant's income by up to 15% (in a challenge they cut food costs across the empire instead). |
 
-**Every business has its own page.** The Business tab lists your businesses (and the bank, in a challenge), each with its income, how much of its market it has captured, and a badge for upgrades ready to buy. Tap one to open its page:
+**Every business has its own page.** The Business tab lists your businesses (and the bank, in a challenge), each with its income, progress to its next milestone, and a badge for upgrades ready to buy. Tap one to open its page:
 
-- The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, what it has earned this run (its costs, in a challenge) and its market share underneath. Tapping the scene sells by hand.
-- Below that are its twist controls, the market meter, its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
+- The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, what it has earned this run (its costs, in a challenge) and its next milestone underneath. Tapping the scene sells by hand.
+- Below that are its twist controls, a growth card (next milestone, what its upgrades and your stars and Grit multiply it by), its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
 - Business upgrades live only on their business's page. The Upgrades tab keeps the restaurant's and the company-wide ones.
 - Tap Back, the Business tab again, or Escape to return to the list.
 
-**How businesses scale.** Everything about a business is measured against your restaurant's best income this run (ignoring events), so a truck matters as much at $1B/s as at $1K/s:
+**How businesses scale: on their own.** A business doesn't depend on the restaurant at all. It has its own fixed prices and earnings (bigger for the ones that unlock later), so it costs the same to open after your tenth sale as after your first, and restaurant upgrades never change it. It grows through:
 
-- Each build adds a fixed share of that income, and its price is a number of seconds of it, rising about 5% per build. The first builds pay back in a minute or two, and each buy button shows its payback time.
-- Milestones (10, then every 25 up to 1,000) give that business ×1.5, and its upgrades are priced in seconds of income too.
-- **Market saturation.** Each business's sales level off as it fills its market, which is worth up to 20% of your restaurant's best sales this run. Company-wide upgrades and a Grit perk grow it with diminishing returns, up to 30%. Past that point, extra builds barely add anything, and in a challenge their running costs make them a loss. A well-run business adds 10–30% on top of the restaurant. No business can outgrow the restaurant that feeds it, and upgrading the restaurant grows every market.
+- **Its own builds.** Each build adds income; prices rise about 12% per build. The first builds pay back in seconds, and each buy button shows its payback time.
+- **Its own upgrades.** Milestones (10, then every 25 builds, forever) give that business ×1.5, extras along the way give ×1.3, and company-wide upgrades give every business ×1.25. All of these go on forever.
+- **Prestige.** Stars, Grit and Grit's Battle-Tested perk multiply every business exactly as they multiply the restaurant.
 - Each business has an optional manager that runs its twist, and an **Expansion Manager** (from 25 builds) that buys whichever build pays back fastest, using at most a quarter of your cash.
 
 ## Events
@@ -81,7 +81,7 @@ The card says why it happened and how to avoid it, and the odds of any gamble de
 
 ## Challenges and Grit
 
-Challenges are optional runs, started from the Legacy tab, where you can actually lose. Each has 10 levels. Reach the level's goal (earn $X in one run), then sell the company to collect Grit as well as your stars. The more you earned, the more Grit, and harder challenges and higher levels multiply it.
+Challenges are optional runs, started from the Legacy tab, where you can actually lose. Each one has endless levels. Reach the level's goal (earn $X in one run), then sell the company to collect Grit as well as your stars. The more you earned, the more Grit, and harder challenges and higher levels multiply it.
 
 | Challenge | Rules | Grit |
 |---|---|---|
@@ -96,7 +96,7 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 - **Running costs.** In a challenge the restaurant pays for food on every plate (35% of a plate's base value, adjusted by concept), rent on every seat, wages for every cook and ads for every guest they bring in, busy or not. A lopsided restaurant bleeds money, and the Profit & loss card shows where it goes. Costs are measured against a plate's base value, so raising prices widens your margin. Franchise royalties carry half the costs. Stars and Grit widen your margin too, by their square root.
 - **Bank.** Borrow up to 10 minutes of income to expand faster. Interest climbs as you max out your credit. **Insurance** pays 75% of every event bill for 2.5% of your sales.
 - **Going bust.** If cash drops below $0, the strip under the restaurant turns red with a 5-minute countdown (it replaces the stats strip, so nothing moves). Tap it for options: an emergency loan, selling a franchise location or a side business, or giving up. If time runs out, the challenge is over and you're back to a normal run. Nothing else is lost: that run's earnings still count towards your next sale's stars.
-- **Grit.** Every Grit you have ever earned adds +1% income for good, even after you spend it. Spend it on Grit perks (73 across 10 lines, each tier 4× the price of the last). Every line helps in normal runs, and some carry a smaller part marked "(challenges)" that only matters there:
+- **Grit.** Every Grit you have ever earned adds +1% income for good, even after you spend it. Spend it on Grit perks (73 tiers across 10 lines to start, each tier 4× the price of the last, and every line goes on forever past them). Every line helps in normal runs, and some carry a smaller part marked "(challenges)" that only matters there:
 
   | Perk | Every run | Challenges |
   |---|---|---|
