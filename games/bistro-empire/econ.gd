@@ -31,14 +31,23 @@ const PRICE_MIN := 0.25
 const MAX_MONEY := 1.0e300
 ## Every cash price is raised to this power. Larger = slower growth per order of magnitude.
 const COST_POW := 1.2
+const PRICE_K := 0.5
 const STAR_BASE := 0.02
 const OFFLINE_BASE := 0.25
 const OFFLINE_HOURS_BASE := 2.0
 const CITY_GROWTH := 1.8
-const FOOD_BASE := 25.0           # % of a plate's base value spent on ingredients
-const RENT_K := 0.1              # per idle seat, as a share of a plate's base value
-const WAGE_K := 0.1              # per idle kitchen slot
-const MARKETING_K := 0.05         # per guest turned away (ads that brought people you can't serve)
+# Running costs, measured against a plate's base value (ticket x ambience), half the franchise
+# royalty and the square root of the prestige bonus, never price, so pricing, franchising and
+# prestige all widen your margin without ever making costs irrelevant. Every unit of
+# capacity costs money to run whether it is busy or not, so a lopsided restaurant bleeds money.
+const FOOD_BASE := 35.0           # % of a plate's base value spent on ingredients, per plate served
+const RENT_K := 0.15              # per seat per second
+const WAGE_K := 0.15              # per unit of kitchen per second
+const AD_K := 0.15                # per guest per second your ads bring in (before price)
+const FR_COST := 0.5              # franchise royalties carry half the running costs of your own plates
+const SMOOTH := 8.0               # how sharply the weakest of guests, seats and kitchen limits service
+const INSURE_RATE := 0.025        # insurance premium, share of gross sales
+const INSURE_COVER := 0.75        # share of event bills insurance pays
 const CREDIT_SECS := 600.0        # credit limit = this many seconds of gross income
 const INTEREST_BASE := 0.005 / 60.0  # 0.5% per minute at low borrowing
 const DEADLINE_BASE := 300.0      # seconds you can stay in the red
@@ -49,16 +58,21 @@ const VENT_GROWTH := 1.5
 
 const CONCEPTS := ["diner", "fastfood", "fine", "cafe"]
 const CONCEPT := {
-	"diner": {"name": "Diner", "blurb": "Balanced and forgiving. Cheap tables, +25% all income.",
-		"mult": {"global": 1.25}, "elastic": 2.0, "ceiling": 3.0, "rep_cost": {"tables": 0.75}, "unlock": 0, "color": "f5c451"},
-	"fastfood": {"name": "Fast Food", "blurb": "Huge volume, tiny bills. Guests flee high prices.",
-		"mult": {"kitchen": 3.0, "seating": 2.5, "demand": 4.0, "ticket": 0.5}, "elastic": 2.4, "ceiling": 2.2,
+	"diner": {"name": "Diner", "blurb": "Forgiving. Running costs 8% lower and +25% all income. Keep tables and cooks level.",
+		"mult": {"global": 1.25}, "elastic": 2.0, "ceiling": 3.0, "rep_cost": {"tables": 0.75},
+		"costs": {"food": 0.0, "rent": 0.92, "wages": 0.92, "ads": 0.92}, "risk": {},
+		"unlock": 0, "color": "f5c451"},
+	"fastfood": {"name": "Fast Food", "blurb": "Volume. Cheap food and rent, tiny bills, price-shy guests. Kitchens run hot, so inspectors love you.",
+		"mult": {"kitchen": 3.0, "seating": 2.5, "demand": 4.0, "ticket": 0.5}, "elastic": 2.6, "ceiling": 2.0,
+		"costs": {"food": -7.0, "rent": 0.6, "wages": 1.0, "ads": 1.15}, "risk": {"kitchen": 1.5},
 		"rep_cost": {"ads": 0.7, "cooks": 0.8}, "unlock": 0, "color": "ff7a45"},
-	"fine": {"name": "Fine Dining", "blurb": "Few seats, enormous bills. Prices barely scare guests.",
-		"mult": {"ticket": 2.5, "seating": 0.4, "demand": 0.5}, "elastic": 1.7, "ceiling": 4.0,
+	"fine": {"name": "Fine Dining", "blurb": "Margins. Set prices from day one, huge bills, but pricey food, rent and chefs. Critics and reviews hit twice as hard.",
+		"mult": {"ticket": 2.5, "seating": 0.4, "demand": 0.5, "kitchen": 0.5}, "elastic": 1.6, "ceiling": 4.5,
+		"costs": {"food": 8.0, "rent": 1.5, "wages": 1.5, "ads": 0.6}, "risk": {"floor": 1.5, "queue": 1.5, "stakes": 2.0}, "flags": ["price"],
 		"rep_cost": {"recipes": 0.7}, "unlock": 1, "color": "c58bff"},
-	"cafe": {"name": "Café", "blurb": "Hands-on. Every serve is worth 10x and pays an extra second of income.",
+	"cafe": {"name": "Café", "blurb": "Hands-on. Every serve is worth 10x and pays an extra second of income. Thin margins otherwise.",
 		"mult": {"tap": 10.0, "global": 0.9}, "tappct": 1.0, "elastic": 2.0, "ceiling": 3.0,
+		"costs": {"food": 3.0, "rent": 1.0, "wages": 1.0, "ads": 1.0}, "risk": {},
 		"rep_cost": {"recipes": 0.85}, "unlock": 2, "color": "6ad1c0"},
 }
 
@@ -125,6 +139,10 @@ var effects: Array = []           # [{kind, mult, t, dur, src}] timed effects fr
 var event: Dictionary = {}        # the event card waiting for an answer
 var event_t := Events.MIN_GAP     # seconds of active play until the next event
 var peak_gross := 0.0             # best gross income per second this run
+const ECON_VERSION := 3            # 3: running costs on all capacity, risk-driven events
+var grace := 0.0                  # seconds of play with no bankruptcy clock and no events (after a rules change)
+var rules_notice := false         # tell the player the rules changed (set when an older save loads)
+var insured := false             # pays a premium on sales; insurance covers most event bills
 var rest_peak := 0.0              # best restaurant income per second this run, ignoring events (businesses scale on it)
 var events_on := true
 var last_bankrupt: Dictionary = {}
@@ -151,8 +169,10 @@ func _init() -> void:
 
 # ================================================================= catalogue
 
+## Every price and earnings threshold goes through here. PRICE_K scales the whole price list,
+## which sets the pace now that running costs take most of each sale.
 static func cp(c: float) -> float:
-	return pow(c, COST_POW)
+	return pow(c, COST_POW) * PRICE_K
 
 
 ## Cost exponent (log10) for tier t of n, with the step widening from s0 to s1 decades.
@@ -524,6 +544,8 @@ func _aggregate(own: Dictionary) -> Dictionary:
 	a.elastic = float(cc.elastic)
 	a.ceiling = float(cc.ceiling)
 	a.tappct += float(cc.get("tappct", 0.0))
+	for f in cc.get("flags", []):
+		a.flags[f] = true
 	for id in own:
 		apply_effects(a, upgrades[id].eff)
 	for id in legacy:
@@ -632,20 +654,29 @@ func price_unlocked(a: Dictionary) -> bool:
 	return a.flags.has("price") or a.flags.has("auto_price")
 
 
-## Smooth minimum of seating and kitchen: the weaker side dominates, but both always help.
+## Smooth minimum: the weakest value dominates, but anything less than ~30% above it still
+## drags a little, so a small buffer in the other two pays.
+static func smin(vals: Array) -> float:
+	var acc := 0.0
+	for v in vals:
+		var x := float(v)
+		if x <= 0.0:
+			return 0.0
+		acc += pow(x, -SMOOTH)
+	return pow(acc, -1.0 / SMOOTH)
+
+
 static func capacity(se: float, k: float) -> float:
-	var lo := minf(se, k)
-	if lo <= 0.0:
-		return 0.0
-	var x := se / lo
-	var y := k / lo
-	return lo * pow(pow(x, -3.0) + pow(y, -3.0), -1.0 / 3.0)
+	return smin([se, k])
 
 
+## The price that earns the most from the guests you have: it fills your capacity.
 func best_price(a: Dictionary, rep_override: Dictionary = {}) -> float:
-	var d := stat("demand", a, rep_override)
-	var c := capacity(stat("seating", a, rep_override), stat("kitchen", a, rep_override))
-	return clampf(pow(d / maxf(c, 1e-300), 1.0 / float(a.elastic)), PRICE_MIN, ceiling(a))
+	var d := stat("demand", a, rep_override) * effect_mult("demand")
+	var c := capacity(stat("seating", a, rep_override) * effect_mult("seating"), stat("kitchen", a, rep_override) * effect_mult("kitchen"))
+	var e := float(a.elastic)
+	var x := pow(maxf(e - 1.0, 0.05), -1.0 / SMOOTH)
+	return clampf(pow(x * d / maxf(c, 1e-300), 1.0 / e), PRICE_MIN, ceiling(a))
 
 
 func effective_price(a: Dictionary, rep_override: Dictionary = {}, force_best := false) -> float:
@@ -654,6 +685,10 @@ func effective_price(a: Dictionary, rep_override: Dictionary = {}, force_best :=
 	if not price_unlocked(a):
 		return 1.0
 	return clampf(price, PRICE_MIN, ceiling(a))
+
+
+func cost_mod(kind: String, a: Dictionary) -> float:
+	return float((CONCEPT[concept].costs as Dictionary).get(kind, 1.0)) * float(a.upkeep) * effect_mult("wages" if kind != "ads" else "adcost")
 
 
 ## Full breakdown of income per second for an aggregate.
@@ -665,29 +700,34 @@ func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Ar
 	var p := effective_price(a, rep_override, force_best)
 	var want := d * pow(p, -float(a.elastic))
 	var cap := capacity(se, k)
-	var served := minf(want, cap)
+	var closed := effect_mult("closed") <= 0.0
+	var served := 0.0 if closed else smin([want, se, k])
 	var fr := franchise_mult(a, city_override)
 	var g := global_mult(a)
 	var sm := star_mult(a) * grit_mult(a) * float(a.mul.empire) * effect_mult("income")
-	var closed := effect_mult("closed") <= 0.0
-	var total := 0.0 if closed else served * t * p * g * fr * sm
+	var total := served * t * p * g * fr * sm
+	# what holds service back. When the Floor Manager prices to fill every seat, extra guests
+	# become higher prices, so the limit is whichever of seats and kitchen is smaller, unless
+	# even the lowest price can't fill them.
 	var limit := "demand"
-	if want > cap:
+	var priced: bool = (force_best or (a.flags.has("auto_price") and price_auto))
+	if priced and p > PRICE_MIN * 1.0001:
 		limit = "seating" if se <= k else "kitchen"
-	# costs are measured against a plate's base value (ticket x ambience), not price or royalties,
-	# so raising prices widens your margin and franchise royalties are pure profit
-	var unit := t * g
-	var srv := 0.0 if closed else served
-	var food := srv * unit * food_cost_pct(a) / 100.0
-	var wm := float(a.upkeep) * effect_mult("wages")
-	# idle capacity and turned-away guests are what cost you: balance pays
-	var rent := maxf(0.0, se - srv) * unit * RENT_K * wm
-	var wages := maxf(0.0, k - srv) * unit * WAGE_K * wm
-	var mkt := maxf(0.0, want - srv) * unit * MARKETING_K * wm
-	var up := rent + wages + mkt
+	elif want > minf(se, k):
+		limit = "seating" if se <= k else "kitchen"
+	# a bigger name (stars, Grit) means busier, pricier operations too: prestige widens your
+	# margin, but only by its square root, so costs always matter
+	var unit := t * g * (1.0 + FR_COST * (fr - 1.0)) * sqrt(star_mult(a) * grit_mult(a) * float(a.mul.empire))
+	var food := served * unit * food_cost_pct(a) / 100.0
+	var rent := se * unit * RENT_K * cost_mod("rent", a)
+	var wages := k * unit * WAGE_K * cost_mod("wages", a)
+	var ads := d / maxf(effect_mult("demand"), 1e-9) * unit * AD_K * cost_mod("ads", a)
+	var up := rent + wages + ads
 	return {"demand": d, "seating": se, "kitchen": k, "ticket": t, "price": p, "want": want, "cap": cap,
-		"served": srv, "fr": fr, "global": g, "star": sm, "total": total, "limit": limit,
-		"food": food, "rent": rent, "wages": wages, "marketing": mkt, "upkeep": up, "net": total - food - up, "closed": closed}
+		"served": served, "fr": fr, "global": g, "star": sm, "total": total, "limit": limit,
+		"food": food, "rent": rent, "wages": wages, "marketing": ads, "upkeep": up, "net": total - food - up, "closed": closed,
+		"kstrain": served / maxf(k, 1e-300), "fstrain": served / maxf(se, 1e-300),
+		"queue": maxf(0.0, want - served) / maxf(want, 1e-300)}
 
 
 func food_cost_pct(a: Dictionary = {}) -> float:
@@ -697,7 +737,7 @@ func food_cost_pct(a: Dictionary = {}) -> float:
 	for i in Biz.N:
 		if String(Biz.DEFS[i].id) == "wholesale":
 			cut += Biz.food_cut(biz[i])
-	return clampf(FOOD_BASE - cut + effect_add("food"), 5.0, 80.0)
+	return clampf(FOOD_BASE + float(CONCEPT[concept].costs.food) - cut + effect_add("food"), 5.0, 80.0)
 
 
 func grit_mult(_a: Dictionary = {}) -> float:
@@ -718,9 +758,15 @@ func empire(offline := false) -> Dictionary:
 		bc += float(est.cost)
 	var it := interest_per_s()
 	var gross := float(inf.total) + br
-	var costs := float(inf.food) + float(inf.upkeep) + bc + it
+	var ins := insurance_per_s(gross)
+	var costs := float(inf.food) + float(inf.upkeep) + bc + it + ins
 	return {"rest_rev": float(inf.total), "food": float(inf.food), "rest_upkeep": float(inf.upkeep),
-		"biz_rev": br, "biz_cost": bc, "interest": it, "gross": gross, "costs": costs, "net": gross - costs, "per": per}
+		"rent": float(inf.rent), "wages": float(inf.wages), "ads": float(inf.marketing),
+		"biz_rev": br, "biz_cost": bc, "interest": it, "insurance": ins, "gross": gross, "costs": costs, "net": gross - costs, "per": per}
+
+
+func insurance_per_s(gross: float) -> float:
+	return maxf(0.0, gross) * INSURE_RATE if insured else 0.0
 
 
 ## Net money per second for the whole empire.
@@ -1050,6 +1096,7 @@ func tick(dt: float, active := true) -> float:
 		s.earned = float(s.earned) + float(r.rev)
 		gross += float(r.rev) / maxf(dt, 1e-9)
 	flow -= interest_per_s() * dt
+	flow -= insurance_per_s(gross) * dt
 	cash = minf(cash + flow, MAX_MONEY)
 	if flow > 0.0:
 		run_earned += flow
@@ -1060,6 +1107,7 @@ func tick(dt: float, active := true) -> float:
 	peak_gross = maxf(peak_gross, gross)
 	update_rest_peak()
 	if active:
+		grace = maxf(0.0, grace - dt)
 		_tick_events(dt, gross)
 		_tick_red(dt)
 	return flow
@@ -1110,19 +1158,34 @@ func _tick_events(dt: float, gross: float) -> void:
 	if not events_on or not concept_chosen:
 		return
 	if not event.is_empty():
-		event.t = float(event.t) - dt
-		if float(event.t) <= 0.0:
-			var line := answer_event(int(event.default))
-			notify("%s: no answer, so %s" % [event.get("title", ""), line])
+		return   # waits for an answer
+	if grace > 0.0:
 		return
 	# no surprises until the restaurant is up and running
-	if run_time < 120.0 or run_earned < cp(3.0e6):
+	if run_time < 120.0 or run_earned < cp(2.0e4):
 		return
 	event_t -= dt
 	if event_t <= 0.0:
-		event_t = rng.randf_range(Events.MIN_GAP, Events.MAX_GAP)
-		var a := agg()
-		event = Events.make(rng, maxf(gross, 1.0), float(a.luck), float(a.event_cost), cash > 0.0)
+		var rk := Events.risks(self)
+		event_t = Events.next_gap(rng, rk)
+		event = new_event(event_ref(gross), rk)
+
+
+## Event bills are measured in seconds of profit (at least a quarter of sales), so they sting
+## the same whether your margins are thin or fat.
+func event_ref(gross := -1.0) -> float:
+	var em := empire()
+	if gross < 0.0:
+		gross = float(em.gross)
+	return maxf(maxf(float(em.net), 0.25 * gross), 1.0)
+
+
+func new_event(gross: float, rk: Dictionary = {}, only := "") -> Dictionary:
+	if rk.is_empty():
+		rk = Events.risks(self)
+	var a := agg()
+	return Events.make(rng, gross, float(a.luck), float(a.event_cost), rk, CONCEPT[concept].get("risk", {}),
+		INSURE_COVER if insured else 0.0, only)
 
 
 ## Answers the open event card. Returns a short description of what happened.
@@ -1156,7 +1219,7 @@ func interest_rate(at_debt := -1.0) -> float:
 	var d := debt if at_debt < 0.0 else at_debt
 	var lim := maxf(credit_limit(), 1.0)
 	var u := minf(d / lim, 2.0)
-	return INTEREST_BASE * float(agg().interest) * (1.0 + 2.0 * u * u)
+	return INTEREST_BASE * float(agg().interest) * (1.0 + 2.0 * u * u) * effect_mult("rate")
 
 
 func interest_per_s() -> float:
@@ -1196,7 +1259,7 @@ func in_red() -> bool:
 
 
 func _tick_red(dt: float) -> void:
-	if cash >= 0.0:
+	if cash >= 0.0 or grace > 0.0:
 		red_t = 0.0
 		return
 	red_t += dt
@@ -1205,7 +1268,7 @@ func _tick_red(dt: float) -> void:
 
 
 static func grit_for(earned: float) -> float:
-	return floor(3.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e8, 0.2))
+	return floor(3.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e6, 0.2))
 
 
 func grit_pending() -> float:
@@ -1341,25 +1404,41 @@ func automation_active(key: String) -> bool:
 	return automation_owned(key) and bool(auto_on.get(key, true))
 
 
+## Managers only buy what pays: a build must raise profit and pay for itself within 10 minutes,
+## an upgrade must not lower profit, and neither spends more than half your cash.
 func run_automation() -> void:
 	for r in REPS:
-		if automation_active("auto_" + r):
-			var k := rep_max_affordable(r)
-			if k > 0:
-				# spend at most half the cash on any one build so the others keep up
-				var g := rep_growth(r)
-				var c0 := rep_cost_at(r, int(reps[r]), float(agg().cost[r]))
-				var lim := int(floor(log(cash * 0.5 * (g - 1.0) / c0 + 1.0) / log(g)))
-				if lim > 0:
-					buy_rep(r, lim)
+		if not automation_active("auto_" + r):
+			continue
+		for n in 25:
+			var c := rep_cost(r, 1)
+			if c > cash * 0.5:
+				break
+			var a := agg()
+			var cur := float(income_info(a).net)
+			var nxt := float(income_info(a, {r: int(reps[r]) + 1}).net)
+			var g := nxt - cur
+			if g <= 0.0 or c / g > 600.0:
+				break
+			buy_rep(r, 1)
 	for i in Biz.N:
 		var bs: Dictionary = biz[i]
 		if bs.open and automation_active("auto_" + String(Biz.DEFS[i].id)):
 			_auto_biz(i)
 	if automation_active("auto_upg"):
-		var vis := visible_upgrades()
-		if not vis.is_empty() and upgrade_cost(vis[0]) <= cash * 0.5:
-			buy_upgrade(int(vis[0].id))
+		var a := agg()
+		var cur := float(income_info(a).net)
+		var k := 0
+		for u in visible_upgrades():
+			k += 1
+			if k > 12:
+				break
+			if upgrade_cost(u) > cash * 0.5 or String(u.cat) == "cross":
+				continue
+			if float(income_info(copy_with(a, u.eff)).net) < cur - absf(cur) * 1e-9:
+				continue
+			buy_upgrade(int(u.id))
+			break
 
 
 ## Expansion Manager: buys whichever build of this business pays back fastest, with up to a
@@ -1441,13 +1520,13 @@ func prestige() -> float:
 # ================================================================= save
 
 func to_dict() -> Dictionary:
-	return {"v": 1, "cash": cash, "run_earned": run_earned, "life_earned": life_earned, "stars": stars,
+	return {"v": 1, "econ": ECON_VERSION, "grace": grace, "cash": cash, "run_earned": run_earned, "life_earned": life_earned, "stars": stars,
 		"stars_earned": stars_earned, "prestiges": prestiges, "concept": concept, "concept_chosen": concept_chosen,
 		"reps": reps.duplicate(), "owned": _keys_of(owned), "legacy": _keys_of(legacy), "cities": cities.duplicate(),
 		"vents": vents.duplicate(), "price": price, "price_auto": price_auto, "auto_on": auto_on.duplicate(),
 		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income,
 		"biz": biz.duplicate(true), "debt": debt, "grit": grit, "grit_earned": grit_earned, "bankruptcies": bankruptcies,
-		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
+		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "insured": insured, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
 
 
 func _keys_of(d: Dictionary) -> Array:
@@ -1507,6 +1586,13 @@ func from_dict(d: Dictionary) -> void:
 	red_t = float(d.get("red_t", 0.0))
 	peak_gross = float(d.get("peak_gross", 0.0))
 	rest_peak = float(d.get("rest_peak", 0.0))
+	insured = bool(d.get("insured", false))
+	grace = float(d.get("grace", 0.0))
+	if int(d.get("econ", 1)) < ECON_VERSION and concept_chosen:
+		# a run that started under the old rules gets time to rebalance before anything can bite
+		grace = maxf(grace, 600.0)
+		red_t = 0.0
+		rules_notice = true
 	effects = d.get("effects", [])
 	event = d.get("event", {})
 	event_t = float(d.get("event_t", Events.MIN_GAP))

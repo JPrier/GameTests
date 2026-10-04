@@ -24,7 +24,7 @@ const UNIT_SHARE := 4.0e-4        # one A build earns this fraction of P per sec
 const UNIT_COST := 8.0e-3         # the first A build costs this many seconds of P (pays back in ~20s)
 const OPEN_SECS := 10.0           # opening costs 10 seconds of restaurant income
 const MILESTONE_X := 1.5          # each milestone multiplies the business's income
-const MARKET := 0.5               # market size: a business's sales level off near this share of P
+const MARKET := 0.2              # each business can sell at most this share of the restaurant's sales (P)
 ## Market saturation: raw sales s (as a share of P) become s / (1 + s / market). A small business
 ## grows freely; a big one gets less from each new build while its running costs keep rising, so
 ## over-expanding loses money. Growing the restaurant (P) grows every market. This is what keeps
@@ -240,8 +240,10 @@ static func food_cut(s: Dictionary) -> float:
 # ------------------------------------------------------------------ steady-state estimates
 
 ## Size of this business's market, as a share of P.
+## Market upgrades help with diminishing returns and stop at x1.5, so no business can ever
+## outgrow the restaurant that feeds it.
 static func market(_i: int, e) -> float:
-	return MARKET * float(e.agg().mul.market)
+	return MARKET * minf(sqrt(float(e.agg().mul.market)), 1.5)
 
 
 ## Fraction of raw sales that actually happen once the market is this saturated.

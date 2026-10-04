@@ -18,6 +18,7 @@ var reserve_s := 60.0   # careful players keep this many seconds of income in th
 var audit_every := 0.0
 var dump_at := -1.0
 var next_audit := 0.0
+var policy := "greedy"   # greedy | skilled (greedy + spare capacity, insurance, bigger reserve) | random (buys any affordable thing) | cheapest (always the cheapest thing)
 
 
 func _init() -> void:
@@ -40,6 +41,7 @@ func _init() -> void:
 			"reserve": reserve_s = float(kv[1])
 			"audit": audit_every = float(kv[1])
 			"dump": dump_at = float(kv[1])
+			"policy": policy = kv[1]
 	e = load("res://econ.gd").new()
 	e.rng.seed = 12345
 	e.events_on = ev_on
@@ -48,6 +50,9 @@ func _init() -> void:
 	e.prestiges = 2
 	e.choose_concept(concept)
 	e.prestiges = 0
+	if policy == "skilled":
+		reserve_s = maxf(reserve_s, 150.0)
+		e.insured = true
 	e.stars = start_stars
 	e.stars_earned = start_stars
 	_autos_off()
@@ -132,6 +137,10 @@ func _step(concept: String) -> void:
 		var ev: Dictionary = e.event
 		var c0: float = Events.upfront(ev, ev.choices[0], e.cash)
 		var pick := 0 if (c0 <= e.cash * 0.5 or (ev.choices as Array).size() == 1 or bool(ev.good)) else 1
+		if policy == "random" or policy == "cheapest":
+			pick = e.rng.randi() % (ev.choices as Array).size()
+		elif policy == "skilled" and (ev.choices as Array).size() > 1 and not bool(ev.good):
+			pick = 0 if c0 <= e.cash * 0.8 else 1
 		var line: String = e.answer_event(pick)
 		_event("event %s -> %s" % [ev.title, line])
 	if e.cash < 0.0:
@@ -150,6 +159,9 @@ func _step(concept: String) -> void:
 		_autos_off()
 		return
 	var a: Dictionary = e.agg()
+	if policy == "random" or policy == "cheapest":
+		_sloppy()
+		return
 	if e.price_unlocked(a):
 		e.price = e.best_price(a)
 	var cur := _inc(a)
@@ -170,6 +182,11 @@ func _step(concept: String) -> void:
 		var nm: int = e.next_milestone(r)
 		if nm > 0 and nm - int(e.reps[r]) <= 3:
 			g += absf(cur) * 0.15
+		if policy == "skilled":
+			# keep the kitchen and dining room out of the danger zone
+			var inf: Dictionary = e.income_info(a)
+			if (r == "cooks" and float(inf.kstrain) > 0.8) or (r == "tables" and float(inf.fstrain) > 0.8):
+				g = maxf(g, 0.0) + absf(cur) * 0.02
 		var sc := _score(c, g, cur)
 		if sc < best_score:
 			best_score = sc
@@ -272,6 +289,34 @@ func _step(concept: String) -> void:
 	else:
 		var inc_total := maxf(cur, 0.0) + _tap_rate()
 		_wait(clampf((float(best.c) + reserve - e.cash) / maxf(inc_total, 1e-9), 0.2, 30.0))
+
+
+## A player who clicks whatever they can afford: never checks profit, never keeps a reserve.
+func _sloppy() -> void:
+	var opts: Array = []
+	for r in e.REPS:
+		if e.rep_cost(r, 1) <= e.cash:
+			opts.append(["rep", r, e.rep_cost(r, 1)])
+	for u in e.visible_upgrades():
+		if e.upgrade_cost(u) <= e.cash:
+			opts.append(["upg", u.id, e.upgrade_cost(u)])
+	for i in e.NC:
+		if e.city_unlocked(i) and e.city_next_cost(i) <= e.cash:
+			opts.append(["city", i, e.city_next_cost(i)])
+	if opts.is_empty():
+		_wait(2.0)
+		return
+	var o: Array
+	if policy == "cheapest":
+		opts.sort_custom(func(x, y): return float(x[2]) < float(y[2]))
+		o = opts[0]
+	else:
+		o = opts[e.rng.randi() % opts.size()]
+	match String(o[0]):
+		"rep": e.buy_rep(o[1], 1)
+		"upg": e.buy_upgrade(int(o[1]))
+		"city": e.buy_city(int(o[1]))
+	_wait(1.0)
 
 
 func _tap_rate() -> float:

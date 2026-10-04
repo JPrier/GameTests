@@ -254,7 +254,7 @@ func test_save_roundtrip():
 	assert_true(f.owned.has(e.by_key["x_1_0_b"]), "owned upgrades by key")
 	assert_true(f.legacy.has(e.by_key["l_tap_0"]), "legacy by key")
 	assert_eq(int(f.cities[0]), 2, "franchises")
-	assert_near(f.income(), e.income(), e.income() * 1e-9, "same income after load")
+	assert_near(f.income(), e.income(), absf(e.income()) * 1e-9, "same income after load")
 
 
 func test_offline_gain_is_capped():
@@ -564,11 +564,13 @@ func test_costs_reward_balance():
 	var lop := e.income_info(e.agg())
 	assert_gt(float(lop.rent), float(bal.rent), "empty seats cost rent")
 	assert_lt(float(lop.net) / float(lop.total), float(bal.net) / float(bal.total), "lopsided builds have thinner margins")
-	# franchise royalties are pure profit
+	# franchise royalties carry half the running costs of your own plates, so they widen the margin
 	var before := float(bal.food)
 	e.reps.tables = 30
 	e.cities[0] = 10
-	assert_near(float(e.income_info(e.agg()).food), before, before * 1e-9, "royalties add no food cost")
+	var fr := e.income_info(e.agg())
+	assert_near(float(fr.food), before * (1.0 + Econ.FR_COST * (float(fr.fr) - 1.0)), before * 1e-6, "royalties carry half the costs")
+	assert_gt(float(fr.net) / float(fr.total), float(bal.net) / float(bal.total), "so franchising widens the margin")
 
 
 func test_loans():
@@ -608,11 +610,10 @@ func test_events_appear_and_resolve():
 	assert_false(e.event.is_empty(), "an event shows up")
 	var ev: Dictionary = e.event
 	assert_true((ev.choices as Array).size() >= 1, "it has choices")
-	# no answer: the default happens when time runs out
+	# it waits for an answer
 	for k in 50:
 		e.tick(1.0)
-	assert_true(e.event.is_empty(), "times out")
-	assert_false(e.notes.is_empty(), "the player is told what happened")
+	assert_false(e.event.is_empty(), "waits for the player")
 	# every event resolves without errors, both ways
 	for src in Events.LIST:
 		var ev2: Dictionary = (src as Dictionary).duplicate(true)
@@ -746,7 +747,7 @@ func test_truck_spots():
 	assert_eq(float(r.rev), 0.0, "no sales while driving")
 	s.move_t = 0.0
 	r = Biz.step(0, s, e, 1.0)
-	assert_near(float(r.rev), low * 4.0, low * 0.01, "the busy spot sells 4x the quiet one")
+	assert_near(float(r.rev), low * 4.0, low * 0.04, "the busy spot sells 4x the quiet one (less a little saturation)")
 
 
 func test_bakery_balance():
@@ -882,13 +883,21 @@ func test_event_card_and_bankruptcy_ui():
 	main.E.reps.tables = 30
 	main.E.reps.cooks = 30
 	main.E.run_earned = Econ.cp(1e9)
-	main.E.event = Events.make(main.E.rng, 100.0, 0.0, 1.0, true)
+	main.E.event = main.E.new_event(100.0)
 	main._refresh_cache(true)
 	await wait_frames(2)
+	assert_eq(main.modal, "event", "an event opens as a pop-up")
 	assert_true(_has_button(main, "event:0"), "event card has buttons")
 	main.press_button("event:0")
+	assert_false(main.E.event.is_empty(), "a tap right as it appears is ignored")
+	main.modal_t -= 1.0
+	main.press_button("event:0")
 	assert_true(main.E.event.is_empty(), "answered")
+	assert_eq(main.modal, "", "and closed")
 	main.E.cash = -1e9
+	await wait_frames(2)
+	assert_true(_has_button(main, "red"), "the red banner replaces the stats strip")
+	main.press_button("red")
 	await wait_frames(2)
 	assert_true(_has_button(main, "file"), "in-the-red options shown")
 	main.press_button("file")
@@ -1029,3 +1038,181 @@ func test_every_business_page_draws():
 	main.set_tab("build")
 	await wait_frames(2)
 	assert_false(main._on_biz_page(), "other tabs show the restaurant")
+
+
+func test_limit_never_flips_back_to_guests():
+	for auto in [false, true]:
+		var e := _econ()
+		e.reps.tables = 40
+		e.reps.cooks = 40
+		if auto:
+			e.owned[e.by_key["a_price"]] = true
+			e.mark_dirty()
+		var left_demand := false
+		for n in 200:
+			e.reps.ads = n
+			var lim := String(e.income_info(e.agg()).limit)
+			if lim != "demand":
+				left_demand = true
+			elif left_demand:
+				assert_true(false, "buying guests made guests the limit again at %d ads (auto price %s)" % [n, auto])
+				return
+		assert_true(left_demand, "enough ads moves the limit to seats or kitchen (auto price %s)" % auto)
+
+
+func test_every_stat_costs_money_to_run():
+	var e := _econ()
+	e.reps.ads = 40
+	e.reps.tables = 40
+	e.reps.cooks = 40
+	var base := e.income_info(e.agg())
+	for r in ["ads", "tables", "cooks"]:
+		var ro := {r: 400}
+		var big := e.income_info(e.agg(), ro)
+		assert_lt(float(big.net), float(base.net), "overbuilding %s loses money" % r)
+	# far too many seats sinks the restaurant
+	assert_lt(float(e.income_info(e.agg(), {"tables": 2000}).net), 0.0, "a lopsided restaurant runs at a loss")
+	# when the kitchen is the limit, cooks are what pay
+	e.reps.cooks = 20
+	var inf := e.income_info(e.agg())
+	assert_eq(String(inf.limit), "kitchen", "kitchen limited")
+	assert_gt(float(e.income_info(e.agg(), {"cooks": 30}).net), float(inf.net), "and more cooks raise profit")
+
+
+func test_events_follow_how_you_run_it():
+	var e := _econ()
+	e.rng.seed = 3
+	e.reps.ads = 60
+	e.reps.tables = 60
+	e.reps.cooks = 25    # kitchen flat out
+	e.owned[e.by_key["a_price"]] = true   # prices clear the queue, so the kitchen is the whole story
+	e.mark_dirty()
+	var rk := Events.risks(e)
+	assert_gt(float(rk.r.kitchen), 0.8, "an overloaded kitchen is high risk")
+	var kitchen_bad := 0
+	var bad := 0
+	for k in 300:
+		var ev := e.new_event(100.0, rk)
+		if not bool(ev.good):
+			bad += 1
+			if String(ev.get("risk", "")) == "kitchen":
+				kitchen_bad += 1
+				assert_true(String(ev.get("why", "")).contains("kitchen"), "the card says why")
+	assert_gt(bad, 200, "a badly run restaurant mostly gets bad news")
+	assert_gt(float(kitchen_bad) / bad, 0.6, "and mostly from the kitchen")
+	# with spare cooks, inspections pass and good news dominates
+	e = _econ()
+	e.reps.ads = 20
+	e.reps.tables = 60
+	e.reps.cooks = 60
+	rk = Events.risks(e)
+	assert_eq(float(rk.r.kitchen), 0.0, "spare kitchen is safe")
+	var good := 0
+	for k in 300:
+		if bool(e.new_event(100.0, rk).good):
+			good += 1
+	assert_gt(good, 150, "a calm restaurant mostly gets good news")
+	# gamble odds depend on the risk
+	var hot := Events.make(e.rng, 100.0, 0.0, 1.0, {"r": {"kitchen": 1.0, "none": 0.0}, "raw": {"kitchen": 1.0}}, {}, 0.0, "inspection")
+	var calm := Events.make(e.rng, 100.0, 0.0, 1.0, {"r": {"kitchen": 0.0, "none": 0.0}, "raw": {"kitchen": 0.5}}, {}, 0.0, "inspection")
+	assert_lt(float(hot.choices[1].chance), float(calm.choices[1].chance), "winging it is riskier with a hot kitchen")
+
+
+func test_insurance_hedges_events():
+	var e := _econ()
+	e.reps.ads = 40
+	e.reps.tables = 40
+	e.reps.cooks = 40
+	var bare := e.new_event(1000.0, {}, "lawsuit")
+	e.insured = true
+	var covered := e.new_event(1000.0, {}, "lawsuit")
+	var c0 := Events.upfront(bare, bare.choices[0], e.cash)
+	var c1 := Events.upfront(covered, covered.choices[0], e.cash)
+	assert_near(c1, c0 * (1.0 - Econ.INSURE_COVER), c0 * 1e-6, "insurance pays most of the bill")
+	var em := e.empire()
+	assert_near(float(em.insurance), float(em.gross) * Econ.INSURE_RATE, float(em.gross) * 1e-6, "for a premium on sales")
+	var f := Econ.new()
+	f.from_dict(e.to_dict())
+	assert_true(f.insured, "the choice is saved")
+
+
+func test_businesses_never_outgrow_the_restaurant():
+	var e := _econ()
+	for t in 10:
+		e.legacy[e.by_key["gr_hustle_%d" % t]] = true
+	e.mark_dirty()
+	assert_true(Biz.market(0, e) <= Biz.MARKET * 1.5 + 1e-9, "market perks stop at x1.5")
+	e.reps.ads = 60
+	e.reps.tables = 60
+	e.reps.cooks = 60
+	e.run_earned = 1e30
+	e.cash = 1e40
+	for i in Biz.N:
+		e.open_biz(i)
+		e.buy_biz(i, "a", 900)
+		e.buy_biz(i, "b", 300)
+	var em := e.empire()
+	assert_lt(float(em.biz_rev), float(em.rest_rev) * Biz.N * Biz.MARKET * 1.5, "all businesses together stay under their markets")
+	for x in em.per:
+		assert_lt(float(x.rev), float(em.rest_rev) * 0.31, "no single business rivals the restaurant")
+
+
+func test_nothing_jumps_when_trouble_starts():
+	var main = await _fresh()
+	main.E.reps.ads = 40
+	main.E.reps.tables = 40
+	main.E.reps.cooks = 40
+	main.E.run_earned = 1e12
+	main.E.cash = 1e9
+	main._refresh_cache(true)
+	var heights := {}
+	for t in ["build", "business"]:
+		main.press_button("tab:" + t)
+		await wait_frames(2)
+		heights[t] = main.scroll_max[t]
+	var first_btn := {}
+	for b in main.buttons:
+		first_btn[String(b.id)] = b.rect
+	# an event, debt and being in the red must not push anything around
+	main.E.borrow(main.E.credit_available() * 0.5)
+	main.E.event = main.E.new_event(100.0, {}, "lawsuit")
+	main.E.cash = -1e6
+	main.modal = ""
+	main._refresh_cache(true)
+	for t in ["build", "business"]:
+		main.set_tab(t)
+		main.modal = ""
+		await wait_frames(2)
+		assert_near(float(main.scroll_max[t]), float(heights[t]), 0.5, "%s tab keeps its height" % t)
+	main.modal = ""
+	await wait_frames(1)
+	for b in main.buttons:
+		var id := String(b.id)
+		if first_btn.has(id) and String(b.layer) == "content":
+			assert_true((b.rect as Rect2).position.is_equal_approx((first_btn[id] as Rect2).position), "%s stayed put" % id)
+	main.wipe_save()
+
+
+func test_older_saves_get_time_to_adapt():
+	var e := _econ()
+	e.reps.ads = 300   # a demand-heavy restaurant from the old rules
+	e.reps.tables = 10
+	e.reps.cooks = 10
+	var d := e.to_dict()
+	d.erase("econ")
+	d.erase("grace")
+	var f := Econ.new()
+	f.from_dict(d)
+	assert_true(f.rules_notice, "the player is told the rules changed")
+	assert_gt(f.grace, 0.0, "and gets a grace period")
+	f.cash = -1e6
+	f.run_time = 1000.0
+	f.run_earned = 1e12
+	f.event_t = 0.0
+	for k in 300:
+		f.tick(1.0)
+	assert_eq(f.bankruptcies, 0, "no bankruptcy during the grace period")
+	assert_true(f.event.is_empty(), "and no events")
+	var g := Econ.new()
+	g.from_dict(f.to_dict())
+	assert_false(g.rules_notice, "only once")
