@@ -1216,3 +1216,203 @@ func test_older_saves_get_time_to_adapt():
 	var g := Econ.new()
 	g.from_dict(f.to_dict())
 	assert_false(g.rules_notice, "only once")
+
+
+# ------------------------------------------------------------------ text never overlaps or gets cut off
+
+var _ui_problems: Array = []
+var _ui_checked := 0
+
+
+## Checks the frame just drawn: no two pieces of text overlap, nothing runs off screen,
+## nothing is shrunk to an unreadable size.
+func _check_text(main, where: String) -> void:
+	var vs: Vector2 = main.get_viewport_rect().size
+	var items: Array = []
+	for t in main.text_log:
+		if bool(t.deco):
+			continue
+		var r: Rect2 = t.r
+		if t.cv == main.content and not r.intersects(main.content_r):
+			continue
+		if main.modal != "" and t.cv != main.overlay:
+			continue   # covered by the pop-up
+		items.append(t)
+		_ui_checked += 1
+		if r.position.x < -0.5 or r.end.x > vs.x + 0.5:
+			_ui_problems.append("%s: off screen \"%s\" x %d..%d (screen %d)" % [where, t.s, r.position.x, r.end.x, vs.x])
+		if int(t.size) < mini(10, int(t.req)) or int(t.size) < int(t.req) * 0.7:
+			_ui_problems.append("%s: \"%s\" shrunk from %d to %d" % [where, t.s, t.req, t.size])
+		if float(t.limit) > 0.0 and r.size.x > float(t.limit) + 0.5:
+			_ui_problems.append("%s: \"%s\" wider than its box (%d > %d)" % [where, t.s, r.size.x, t.limit])
+	for t in items:
+		var tr: Rect2 = (t.r as Rect2).grow(-1.0)
+		for b in main.button_log:
+			if b.cv != t.cv:
+				continue
+			if main.modal != "" and b.cv != main.overlay:
+				continue
+			var br: Rect2 = b.r
+			if b.cv == main.content and not br.intersects(main.content_r):
+				continue
+			if String(t.owner) == String(b.id):
+				if not br.encloses(tr):
+					_ui_problems.append("%s: label \"%s\" spills out of its button" % [where, t.s])
+			elif tr.intersects(br):
+				_ui_problems.append("%s: \"%s\" runs into the %s button" % [where, t.s, b.id])
+	for i in items.size():
+		for j in range(i + 1, items.size()):
+			var a: Dictionary = items[i]
+			var b: Dictionary = items[j]
+			if a.cv != b.cv:
+				continue
+			var ra: Rect2 = (a.r as Rect2).grow(-1.0)
+			var rb: Rect2 = (b.r as Rect2).grow(-1.0)
+			if ra.intersects(rb):
+				_ui_problems.append("%s: \"%s\" overlaps \"%s\"" % [where, a.s, b.s])
+
+
+func _walk_tab(main, tab: String, where: String) -> void:
+	if main.tab != tab:
+		main.set_tab(tab)
+	main.scroll[tab] = 0.0
+	await wait_frames(2)
+	var guard := 0
+	while guard < 60:
+		guard += 1
+		_check_text(main, "%s @%d" % [where, int(main.scroll[tab])])
+		if float(main.scroll[tab]) >= float(main.scroll_max[tab]) - 1.0:
+			break
+		main.scroll[tab] = minf(float(main.scroll_max[tab]), float(main.scroll[tab]) + main.content_r.size.y * 0.7)
+		await wait_frames(1)
+
+
+func _modal_check(main, m: String, data: Dictionary, where: String) -> void:
+	main.open_modal(m, data)
+	await wait_frames(2)
+	_check_text(main, where + " modal " + m)
+	main.modal = ""
+
+
+func _stress_state(main, big: bool) -> void:
+	var e = main.E
+	e.reps.ads = 1234 if big else 30
+	e.reps.tables = 1234 if big else 34
+	e.reps.cooks = 1234 if big else 26
+	e.reps.recipes = 1234 if big else 20
+	e.cash = 1.234e95 if big else 5000.0
+	e.run_earned = 1e120 if big else 1e12
+	e.life_earned = 1e125 if big else 1e12
+	e.stars = 123456.0 if big else 0.0
+	e.grit = 3260.0 if big else 0.0
+	e.bankruptcies = 3 if big else 0
+	e.prestiges = 4 if big else 0
+	for i in e.NC:
+		e.cities[i] = 250 if big else (7 if i == 0 else 0)
+	for i in e.NV:
+		e.vents[i] = 300 if big else 0
+	e.mark_dirty()
+	for i in Biz.N:
+		e.open_biz(i)
+		e.buy_biz(i, "a", 400 if big else 30)
+		e.buy_biz(i, "b", 120 if big else 8)
+	main._refresh_cache(true)
+
+
+func _ui_begin(width: int, big: bool):
+	var main = await _fresh()
+	main.log_text = true
+	_ui_problems = []
+	_ui_checked = 0
+	get_tree().root.size = Vector2i(width, 780)
+	main.E.new_game()
+	main.E.prestiges = 3
+	main.E.choose_concept("fastfood")
+	main.modal = ""
+	_stress_state(main, big)
+	return main
+
+
+func _ui_end(main, name: String) -> void:
+	get_tree().root.size = Vector2i(390, 844)
+	main.log_text = false
+	var uniq := {}
+	for p in _ui_problems:
+		uniq[p] = true
+	var dump := FileAccess.open("user://ui_%s.txt" % name, FileAccess.WRITE)
+	if dump:
+		for p in uniq:
+			dump.store_line(String(p))
+		dump.close()
+	assert_gt(_ui_checked, 300, "the check really looked at the text on screen")
+	assert_eq(uniq.size(), 0, "%d text problems (see user://ui_%s.txt)" % [uniq.size(), name])
+	main.wipe_save()
+
+
+func _ui_tabs(width: int, big: bool) -> void:
+	var main = await _ui_begin(width, big)
+	var tag := "%dpx %s" % [width, "big" if big else "early"]
+	for t in main.TABS:
+		await _walk_tab(main, t, tag + " " + t)
+	_ui_end(main, "tabs_%d_%s" % [width, big])
+
+
+func _ui_filters(width: int, big: bool) -> void:
+	var main = await _ui_begin(width, big)
+	var tag := "%dpx %s" % [width, "big" if big else "early"]
+	for f in main.UPG_FILTERS:
+		if f == "all":
+			continue   # covered by the tabs walk
+		main.upg_filter = f
+		await _walk_tab(main, "upgrades", tag + " upgrades/" + f)
+	main.upg_filter = "all"
+	_ui_end(main, "filters_%d_%s" % [width, big])
+
+
+func _ui_pages(width: int, big: bool) -> void:
+	var main = await _ui_begin(width, big)
+	var tag := "%dpx %s" % [width, "big" if big else "early"]
+	for i in Biz.N:
+		main.open_biz_page(i)
+		await _walk_tab(main, "business", tag + " page " + Biz.DEFS[i].name)
+	main.biz_page = -1
+	_ui_end(main, "pages_%d_%s" % [width, big])
+
+
+func _ui_popups(width: int, big: bool) -> void:
+	var main = await _ui_begin(width, big)
+	var tag := "%dpx %s" % [width, "big" if big else "early"]
+	main.set_tab("build")
+	main.E.insured = true
+	main.E.borrow(main.E.credit_available())
+	main.E.cash = -1.0e6 - absf(main.E.cash)
+	await wait_frames(2)
+	_check_text(main, tag + " in the red")
+	await _modal_check(main, "red", {}, tag)
+	main.E.cash = 1.0e9
+	for m in ["concept", "sell", "help", "reset", "file", "rules"]:
+		await _modal_check(main, m, {}, tag)
+	await _modal_check(main, "welcome", {"away": 7300.0, "gain": 1.23e40}, tag)
+	await _modal_check(main, "bankrupt", {"grit": 123456.0, "lost_stars": 98765.0}, tag)
+	await _modal_check(main, "sell_biz", {"i": 5}, tag)
+	await _modal_check(main, "concept", {"stars": 12345.0}, tag)
+	for src in Events.LIST:
+		main.E.event = main.E.new_event(1.0e40, {}, String(src.id))
+		await _modal_check(main, "event", {}, tag + " " + String(src.id))
+	main.E.event = {}
+	_ui_end(main, "popups_%d_%s" % [width, big])
+
+
+func test_text_fits_tabs_360_early(): await _ui_tabs(360, false)
+func test_text_fits_tabs_360_big(): await _ui_tabs(360, true)
+func test_text_fits_tabs_412_early(): await _ui_tabs(412, false)
+func test_text_fits_tabs_412_big(): await _ui_tabs(412, true)
+func test_text_fits_filters_360_early(): await _ui_filters(360, false)
+func test_text_fits_filters_360_big(): await _ui_filters(360, true)
+func test_text_fits_filters_412_big(): await _ui_filters(412, true)
+func test_text_fits_pages_360_early(): await _ui_pages(360, false)
+func test_text_fits_pages_360_big(): await _ui_pages(360, true)
+func test_text_fits_pages_412_big(): await _ui_pages(412, true)
+func test_text_fits_popups_360_early(): await _ui_popups(360, false)
+func test_text_fits_popups_360_big(): await _ui_popups(360, true)
+func test_text_fits_popups_412_big(): await _ui_popups(412, true)

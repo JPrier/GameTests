@@ -696,7 +696,7 @@ func _do(id: String) -> void:
 			_refresh_cache(true)
 		"spot":
 			if Biz.move_truck(E.biz[int(parts[1])], int(parts[2])):
-				_toast("Driving to %s..." % Biz.SPOTS[int(parts[2])])
+				_toast("Driving to %s (%ds)" % [Biz.SPOTS[int(parts[2])], int(Biz.MOVE_TIME)])
 		"accept":
 			if Biz.accept(E.biz[int(parts[1])], int(parts[2])):
 				_toast("Contract accepted")
@@ -869,29 +869,78 @@ func _layout() -> void:
 
 # =================================================================== drawing helpers
 
+## Text never gets cut off or "..."-ed: anything given a width shrinks until it fits.
+## With `log_text` on, every string drawn is recorded so tests can prove nothing overlaps,
+## nothing runs off screen and nothing is shrunk too small to read.
+var log_text := false
+var text_log: Array = []
+var deco := false            # decorative text (floaters, scene labels) is drawn but not checked
+var _req_size := 0           # the size a shrink-to-fit call asked for, for the log
+var button_log: Array = []   # visible buttons drawn this frame (not invisible tap areas)
+var _owner := ""             # the button whose label is being drawn
+
+
+func _log_text(x: float, y: float, s: String, size: int, limit: float) -> void:
+	if not log_text or s.strip_edges() == "":
+		return
+	var w := _tw(s, size)
+	var asc := size * 0.74   # cap/ascender height of the glyphs themselves, not the line box
+	var dsc := size * 0.22
+	text_log.append({"cv": cv, "r": Rect2(x, y - asc, w, asc + dsc), "s": s, "size": size,
+		"req": _req_size if _req_size > 0 else size, "limit": limit, "deco": deco, "owner": _owner})
+
+
 func _text(pos: Vector2, s: String, size: int, color := C_INK, align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0) -> void:
 	cv.draw_string(font, pos, s, align, width, size, color)
+	var w := _tw(s, size)
+	var x := pos.x
+	if width > 0.0 and align == HORIZONTAL_ALIGNMENT_CENTER:
+		x += (width - w) * 0.5
+	elif width > 0.0 and align == HORIZONTAL_ALIGNMENT_RIGHT:
+		x += width - w
+	_log_text(x, pos.y, s, size, width)
 
 
 func _text_c(r: Rect2, y: float, s: String, size: int, color := C_INK) -> void:
 	cv.draw_string(font, Vector2(r.position.x, y), s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, size, color)
+	var w := _tw(s, size)
+	_log_text(r.position.x + (r.size.x - w) * 0.5, y, s, size, r.size.x)
 
 
 func _text_r(right: float, y: float, s: String, size: int, color := C_INK) -> void:
-	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	var w := _tw(s, size)
 	cv.draw_string(font, Vector2(right - w, y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+	_log_text(right - w, y, s, size, -1.0)
+
+
+## The largest size (at most `size`) at which `s` fits in `width`.
+func _fs(s: String, size: int, width: float) -> int:
+	var f := size
+	while f > 4 and _tw(s, f) > width:
+		f -= 1
+	return f
+
+
+func _tf(pos: Vector2, s: String, size: int, width: float, color := C_INK) -> void:
+	_req_size = size
+	_text(pos, s, _fs(s, size, width), color)
+	_req_size = 0
+
+
+func _tcf(r: Rect2, y: float, s: String, size: int, width: float, color := C_INK) -> void:
+	_req_size = size
+	_text_c(r, y, s, _fs(s, size, minf(width, r.size.x)), color)
+	_req_size = 0
+
+
+func _trf(right: float, y: float, s: String, size: int, width: float, color := C_INK) -> void:
+	_req_size = size
+	_text_r(right, y, s, _fs(s, size, width), color)
+	_req_size = 0
 
 
 func _tw(s: String, size: int) -> float:
 	return font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
-
-
-func _fit(s: String, size: int, width: float) -> String:
-	if _tw(s, size) <= width:
-		return s
-	while s.length() > 1 and _tw(s + "...", size) > width:
-		s = s.substr(0, s.length() - 1)
-	return s.strip_edges() + "..."
 
 
 func _wrap(s: String, size: int, width: float) -> PackedStringArray:
@@ -955,17 +1004,23 @@ func _button(id: String, r: Rect2, label: String, style := "", layer := "chrome"
 	var rr := r.grow(-1.5) if pressed else r
 	_rr(rr, bg, 10)
 	var lines := label.split("\n")
+	if log_text:
+		button_log.append({"cv": cv, "r": r, "id": id})
+	_owner = id
 	if lines.size() == 1:
-		_text_c(rr, rr.get_center().y + size * 0.36, _fit(label, size, rr.size.x - 8), size, fg)
+		_tcf(rr, rr.get_center().y + size * 0.36, label, size, rr.size.x - 8, fg)
 	else:
-		_text_c(rr, rr.get_center().y - 2, _fit(lines[0], size - 3, rr.size.x - 8), size - 3, Color(fg, 0.85))
-		_text_c(rr, rr.get_center().y + size - 1, _fit(lines[1], size, rr.size.x - 8), size, fg)
+		_tcf(rr, rr.get_center().y - 2, lines[0], size - 3, rr.size.x - 8, Color(fg, 0.85))
+		_tcf(rr, rr.get_center().y + size - 1, lines[1], size, rr.size.x - 8, fg)
+	_owner = ""
 	_btn(id, r, layer, hold)
 
 
 # =================================================================== draw: chrome
 
 func _draw() -> void:
+	text_log.clear()
+	button_log.clear()
 	cv = self
 	buttons.clear()
 	var vs := get_viewport_rect().size
@@ -1285,10 +1340,10 @@ func _draw_build(y: float) -> float:
 	y += 44
 	# the four builds
 	for rep in Econ.REPS:
-		var rr := _row_rect(y, 84)
+		var rr := _row_rect(y, 104)
 		if _visible(rr):
 			_draw_rep_row(rr, rep, a)
-		y += 90
+		y += 110
 	# price
 	y = _draw_price(y + 4, a)
 	y = _draw_pnl(y + 4)
@@ -1300,7 +1355,7 @@ func _draw_build(y: float) -> float:
 		_star(hr.position + Vector2(24, 32), 12, C_ACCENT)
 		_text(hr.position + Vector2(44, 27), "Selling now: +%s" % _stars_label(pend), 16, C_ACCENT)
 		var after := 1.0 + (E.stars + pend) * (Econ.STAR_BASE + float(a.starpow))
-		_text(hr.position + Vector2(44, 48), _fit("Stars would multiply income by %s. Tap to sell." % Econ.fmt_mult(snappedf(after, 0.01)), 13, hr.size.x - 56), 13, C_MUTED)
+		_tf(hr.position + Vector2(44, 48), "Stars would multiply income by %s. Tap to sell." % Econ.fmt_mult(snappedf(after, 0.01)), 13, hr.size.x - 56, C_MUTED)
 		_btn("tab:legacy", hr, "content")
 		y = hr.end.y + 8
 	# strategy tip
@@ -1381,45 +1436,42 @@ func _tip() -> String:
 	return ""
 
 
+## Five lines on the left, each in its own slot (name, effect, progress bar, next bonus,
+## profit change), and the buy button on the right, so nothing can collide.
 func _draw_rep_row(r: Rect2, rep: String, a: Dictionary) -> void:
 	var stat: String = Econ.REP_STAT[rep]
 	var lim := String(info_cache.get("limit", "")) == stat
 	_rr(r, C_CARD, 12, Color(C_RED, 0.7), 2 if lim else 0)
 	var ic := Vector2(r.position.x + 26, r.position.y + 30)
 	_rep_icon(rep, ic, Color(CAT_COLOR[stat]))
-	_text(Vector2(r.position.x + 52, r.position.y + 24), Econ.REP_NAME[rep], 17)
-	var cnt := "x%d" % int(E.reps[rep])
-	_text(Vector2(r.position.x + 58 + _tw(Econ.REP_NAME[rep], 17), r.position.y + 24), cnt, 15, C_MUTED)
-	if lim:
-		_text(Vector2(r.position.x + 64 + _tw(Econ.REP_NAME[rep], 17) + _tw(cnt, 15), r.position.y + 24), "LIMIT", 11, C_RED)
-	# milestone progress
+	var br := Rect2(r.end.x - 124, r.position.y + 12, 114, r.size.y - 24)
+	var x := r.position.x + 52
+	var tw := br.position.x - 10 - x
+	var head := "%s x%d" % [Econ.REP_NAME[rep], int(E.reps[rep])]
+	_tf(Vector2(x, r.position.y + 25), head, 17, tw)
+	_tf(Vector2(x, r.position.y + 45), String(REP_BLURB[rep]) + (" · LIMIT" if lim else ""), 13, tw, C_RED if lim else C_MUTED)
 	var nm := E.next_milestone(rep)
-	var desc: String = REP_BLURB[rep]
-	_text(Vector2(r.position.x + 52, r.position.y + 44), _fit(desc, 13, r.size.x - 190), 13, C_MUTED)
 	if nm > 0:
 		var prev := 0
 		for m in Econ.MILESTONES:
 			if m < nm:
 				prev = m
 		var f := clampf(float(int(E.reps[rep]) - prev) / float(nm - prev), 0.0, 1.0)
-		var bar := Rect2(r.position.x + 52, r.position.y + 56, r.size.x - 190, 5)
+		var bar := Rect2(x, r.position.y + 55, tw, 5)
 		cv.draw_rect(bar, Color(1, 1, 1, 0.08))
 		cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), Color(CAT_COLOR[stat]))
-		_text(Vector2(r.position.x + 52, r.position.y + 76), "%d: unlocks a %s upgrade" % [nm, String(Econ.STAT_NAME[stat]).to_lower()], 12, C_DIM)
-	# buy button
+		_tf(Vector2(x, r.position.y + 75), "Bonus upgrade at %d" % nm, 12, tw, C_DIM)
 	var k := buy_count(rep)
 	var cost := E.rep_cost(rep, k)
 	var can := cost <= E.cash
 	var g := rep_gain(rep, k)
-	var br := Rect2(r.end.x - 128, r.position.y + 10, 118, r.size.y - 20)
-	var label := "+%d   %s" % [k, Econ.fmt_money(cost)]
-	_button("rep:" + rep, br, "%s\n%s" % ["Buy %d" % k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 17)
 	if g > 0.0005:
-		_text_r(br.position.x - 8, r.end.y - 10, "+" + _pct(g) + " profit", 12, C_GREEN)
+		_tf(Vector2(x, r.position.y + 94), "+" + _pct(g) + " profit", 12, tw, C_GREEN)
 	elif g < -0.0005:
-		_text_r(br.position.x - 8, r.end.y - 10, "-" + _pct(-g) + " profit", 12, C_ORANGE)
+		_tf(Vector2(x, r.position.y + 94), "-" + _pct(-g) + " profit", 12, tw, C_ORANGE)
 	else:
-		_text_r(br.position.x - 8, r.end.y - 10, "no gain now", 12, C_DIM)
+		_tf(Vector2(x, r.position.y + 94), "No gain right now", 12, tw, C_DIM)
+	_button("rep:" + rep, br, "%s\n%s" % ["Buy %d" % k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 17)
 
 
 func _rep_icon(rep: String, c: Vector2, color: Color) -> void:
@@ -1468,7 +1520,7 @@ func _draw_price(y: float, a: Dictionary) -> float:
 	_text(r.position + Vector2(14, 25), "Menu prices", 17)
 	_text(r.position + Vector2(14 + _tw("Menu prices", 17) + 8, 25), "x" + Econ.fmt_mult(snappedf(p, 0.01)), 17, C_ACCENT)
 	var sub := "Floor Manager sets the best price" if auto else "Higher prices scare guests away (max x%s)" % Econ.fmt_mult(snappedf(cap, 0.01))
-	_text(r.position + Vector2(14, 46), _fit(sub, 13, r.size.x - 150), 13, C_MUTED)
+	_tf(r.position + Vector2(14, 46), sub, 13, r.size.x - 150, C_MUTED)
 	# gauge
 	var bar := Rect2(r.position.x + 14, r.position.y + 58, r.size.x - 160, 6)
 	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
@@ -1507,14 +1559,12 @@ func _filtered() -> Array:
 func _draw_upgrades(y: float) -> float:
 	# filter chips
 	var r := _row_rect(y, 32)
-	var x := r.position.x
-	for f in UPG_FILTERS:
-		var lab: String = UPG_FILTER_LABEL[f]
-		var w := _tw(lab, 13) + 22
-		var br := Rect2(x, y, w, 32)
-		_button("filter:" + f, br, lab, "on" if upg_filter == f else "ghost", "content", false, true, 13)
-		x += w + 6
-	y += 40
+	var cw := (r.size.x - 2 * 6) / 3.0
+	for k in UPG_FILTERS.size():
+		var f: String = UPG_FILTERS[k]
+		var br := Rect2(r.position.x + (k % 3) * (cw + 6), y + (k / 3) * 38, cw, 32)
+		_button("filter:" + f, br, UPG_FILTER_LABEL[f], "on" if upg_filter == f else "ghost", "content", false, true, 13)
+	y += 2 * 38 + 4
 	var owned_run := E.owned.size()
 	var total_run := E.run_upgrade_count
 	var list := _filtered()
@@ -1528,7 +1578,7 @@ func _draw_upgrades(y: float) -> float:
 		_text_c(er, er.position.y + 36, "Nothing here yet. Keep earning!", 15, C_MUTED)
 		y += 68
 	for u in list:
-		var h := 92.0 if u.cat == "cross" else 76.0
+		var h := _upg_h(u)
 		var rr := _row_rect(y, h)
 		if _visible(rr):
 			_draw_upgrade_row(rr, u)
@@ -1540,30 +1590,58 @@ func _draw_upgrades(y: float) -> float:
 			if _visible(rr):
 				_rr(rr, Color(C_CARD, 0.5), 12)
 				cv.draw_rect(Rect2(rr.position.x, rr.position.y + 10, 4, rr.size.y - 20), Color(CAT_COLOR.get(u.cat, C_MUTED), 0.4))
-				_text(rr.position + Vector2(14, 22), _fit(String(u.name), 15, rr.size.x - 28), 15, C_DIM)
-				_text(rr.position + Vector2(14, 43), _fit("Unlocks at: " + E.req_text(u), 13, rr.size.x - 28), 13, C_DIM)
+				_tf(rr.position + Vector2(14, 22), String(u.name), 15, rr.size.x - 28, C_DIM)
+				_tf(rr.position + Vector2(14, 43), "Unlocks at: " + E.req_text(u), 13, rr.size.x - 28, C_DIM)
 			y += 62
 	return y
 
 
+## An upgrade row's lines, wrapped to the space beside the buy button. The height depends only
+## on the upgrade and the screen width, never on live numbers, so rows never resize.
+func _upg_layout(u: Dictionary, w: float) -> Dictionary:
+	var tw := w - 14.0 - 138.0
+	var name_l := _wrap(String(u.name), 16, tw)
+	var eff_l := _wrap(E.effect_text(u.eff), 13, tw)
+	var lock_l: PackedStringArray = []
+	if u.cat == "cross" and int(u.excl) >= 0:
+		lock_l = _wrap("Locks out: " + String(E.upgrades[int(u.excl)].name) + " (this run)", 12, tw)
+	var h := 24.0 + name_l.size() * 19.0 + eff_l.size() * 16.0 + 17.0 + lock_l.size() * 15.0 + 8.0
+	return {"tw": tw, "name": name_l, "eff": eff_l, "lock": lock_l, "h": maxf(h, 84.0)}
+
+
+func _upg_h(u: Dictionary) -> float:
+	return float(_upg_layout(u, content_r.size.x - 24.0).h)
+
+
 func _draw_upgrade_row(r: Rect2, u: Dictionary) -> void:
+	var L := _upg_layout(u, r.size.x)
 	var cc: Color = CAT_COLOR.get(u.cat, C_MUTED)
 	var can := E.upgrade_cost(u) <= E.cash
 	_rr(r, C_CARD, 12)
 	cv.draw_rect(Rect2(r.position.x, r.position.y + 10, 4, r.size.y - 20), cc)
-	var tw := r.size.x - 150
-	_text(r.position + Vector2(14, 16), String(CAT_LABEL.get(u.cat, u.cat)).to_upper(), 10, Color(cc, 0.85))
-	_text(r.position + Vector2(14, 36), _fit(String(u.name), 16, tw), 16)
-	_text(r.position + Vector2(14, 56), _fit(E.effect_text(u.eff), 13, tw), 13, C_MUTED)
+	var tw := float(L.tw)
+	var x := r.position.x + 14
+	var y := r.position.y + 17
+	_tf(Vector2(x, y), String(CAT_LABEL.get(u.cat, u.cat)).to_upper(), 10, tw, Color(cc, 0.85))
+	y += 20
+	for line in L.name:
+		_text(Vector2(x, y), line, 16)
+		y += 19
+	y -= 2
+	for line in L.eff:
+		_text(Vector2(x, y), line, 13, C_MUTED)
+		y += 16
 	var g := upgrade_gain(u)
 	if g > 0.0005:
-		_text(r.position + Vector2(14, 72), "+" + _pct(g) + " profit", 12, C_GREEN)
+		_tf(Vector2(x, y), "+" + _pct(g) + " profit", 12, tw, C_GREEN)
 	elif g < -0.0005:
-		_text(r.position + Vector2(14, 72), "-" + _pct(-g) + " profit now (costs more to run)", 12, C_ORANGE)
-	if u.cat == "cross" and int(u.excl) >= 0:
-		var other: Dictionary = E.upgrades[int(u.excl)]
-		_text(r.position + Vector2(14, 88 - 2), _fit("Locks out: " + String(other.name) + " (this run)", 12, tw), 12, C_ORANGE)
-	var br := Rect2(r.end.x - 124, r.position.y + 12, 114, r.size.y - 24)
+		_tf(Vector2(x, y), "-" + _pct(-g) + " profit now (costs more to run)", 12, tw, C_ORANGE)
+	y += 17
+	for line in L.lock:
+		_text(Vector2(x, y - 2), line, 12, C_ORANGE)
+		y += 15
+	var bh := minf(r.size.y - 24, 60.0)
+	var br := Rect2(r.end.x - 124, r.get_center().y - bh * 0.5, 114, bh)
 	_button("upg:%d" % int(u.id), br, Econ.fmt_money(E.upgrade_cost(u)), "buy" if can else "", "content", false, can, 16)
 
 
@@ -1586,9 +1664,11 @@ func _draw_franchise(y: float) -> float:
 	var fr := E.franchise_mult(a)
 	var head := _row_rect(y, 62)
 	_rr(head, C_CARD_HI, 12)
-	_text(head.position + Vector2(16, 26), "%d locations" % E.locations(), 18)
-	_text(head.position + Vector2(16, 48), "Royalties multiply all income (1 + total %)", 13, C_MUTED)
-	_text_r(head.end.x - 16, head.position.y + 38, "x" + Econ.fmt_num(fr), 24, C_PURPLE)
+	var frs := "x" + Econ.fmt_num(fr)
+	var frw := _tw(frs, 22)
+	_tf(head.position + Vector2(16, 26), "%d locations" % E.locations(), 18, head.size.x - 48 - frw)
+	_trf(head.end.x - 16, head.position.y + 27, frs, 22, head.size.x * 0.45, C_PURPLE)
+	_tf(head.position + Vector2(16, 48), "Royalties multiply all your income", 13, head.size.x - 32, C_MUTED)
 	y = head.end.y + 10
 	y = _section(y, "Cities", "royalty x%s" % Econ.fmt_num(E.royalty_mult(a)))
 	var shown_locked := false
@@ -1643,7 +1723,7 @@ func _draw_city_row(r: Rect2, i: int, unlocked: bool, a: Dictionary) -> void:
 	var sub := "+%s%% royalties each" % Econ.fmt_num(each * 100.0)
 	if nxt > 0:
 		sub += " · %d: bonus" % nxt
-	_text(r.position + Vector2(14, 50), _fit(sub, 13, r.size.x - 150), 13, C_MUTED)
+	_tf(r.position + Vector2(14, 50), sub, 13, r.size.x - 150, C_MUTED)
 	var cost := E.city_next_cost(i)
 	var can := cost <= E.cash
 	var co: Array = E.cities.duplicate()
@@ -1666,7 +1746,7 @@ func _draw_vent_row(r: Rect2, i: int, unlocked: bool, a: Dictionary) -> void:
 		_text(r.position + Vector2(14, 50), "Unlock: earn %s this run" % Econ.fmt_money(Econ.cp(float(E.vent_cost[i])) * 0.05), 13, C_DIM)
 		return
 	var sname: String = Econ.STAT_NAME[v.stat]
-	_text(r.position + Vector2(14, 50), _fit("%s x%s" % [sname, Econ.fmt_mult(snappedf(E.vent_effect(i, a), 0.01))], 13, r.size.x - 150), 13, C_MUTED)
+	_tf(r.position + Vector2(14, 50), "%s x%s" % [sname, Econ.fmt_mult(snappedf(E.vent_effect(i, a), 0.01))], 13, r.size.x - 150, C_MUTED)
 	var cost := E.vent_next_cost(i)
 	var can := cost <= E.cash
 	var br := Rect2(r.end.x - 124, r.position.y + 10, 114, r.size.y - 20)
@@ -1752,7 +1832,7 @@ func _draw_red_strip() -> void:
 	var pulse := 0.6 + 0.4 * sin(anim_t * 5.0)
 	_rr(r, Color("2a0b07"), 10, Color(C_RED, pulse), 2)
 	_text(r.position + Vector2(10, 19), ("IN THE RED · clock starts in " + Econ.fmt_time(E.grace)) if E.grace > 0.0 else ("IN THE RED · bankrupt in " + Econ.fmt_time(left)), 13, C_RED)
-	_text(r.position + Vector2(10, 39), _fit("%s short. Tap for options" % Econ.fmt_money(-E.cash), 14, r.size.x - 20), 14, Color("ffb0a6"))
+	_tf(r.position + Vector2(10, 39), "%s short. Tap for options" % Econ.fmt_money(-E.cash), 14, r.size.x - 20, Color("ffb0a6"))
 	_btn("red", r)
 
 
@@ -1807,7 +1887,7 @@ func _modal_event(vs: Vector2) -> void:
 	var good := bool(ev.good)
 	var col := C_GREEN if good else C_ORANGE
 	_rr(r, C_CARD_HI, 16, col, 2)
-	_text(r.position + Vector2(16, 34), _fit(String(ev.title), 20, r.size.x - 32), 20, col)
+	_tf(r.position + Vector2(16, 34), String(ev.title), 20, r.size.x - 32, col)
 	for i in lines.size():
 		_text(r.position + Vector2(16, 60 + i * 19), lines[i], 14, C_MUTED)
 	var y := r.position.y + 62 + lines.size() * 19 + 4
@@ -1827,7 +1907,7 @@ func _modal_event(vs: Vector2) -> void:
 		var bg := Color(col, 0.22) if k == 0 else Color(1, 1, 1, 0.06)
 		var a := 1.0 if armed else 0.45
 		_rr(br.grow(-1.5) if pressed else br, Color(bg, bg.a * a), 10, Color(col, 0.7 * a) if k == 0 else C_LINE, 1)
-		_text(br.position + Vector2(12, 22), _fit(String(ch.label), 16, br.size.x - 24), 16, Color(C_INK, a))
+		_tf(br.position + Vector2(12, 22), String(ch.label), 16, br.size.x - 24, Color(C_INK, a))
 		var dl: PackedStringArray = b.detail
 		for i in dl.size():
 			_text(br.position + Vector2(12, 42 + i * 17), dl[i], 13, Color(C_MUTED, a))
@@ -1846,7 +1926,7 @@ func _draw_business(y: float) -> float:
 	var ml := _wrap("Each business can sell up to %s/s, %d%% of your restaurant's best sales this run. Grow the restaurant to grow them all." % [Econ.fmt_money(Biz.market(0, E) * E.biz_ref()), int(round(Biz.market(0, E) * 100.0))], 12, content_r.size.x - 48)
 	var lr := _row_rect(y, 34 + ml.size() * 16)
 	_rr(lr, Color(C_ACCENT, 0.08), 10)
-	_text(lr.position + Vector2(12, 21), _fit("Your restaurant powers every business", 13, lr.size.x - 24), 13, C_ACCENT)
+	_tf(lr.position + Vector2(12, 21), "Your restaurant powers every business", 13, lr.size.x - 24, C_ACCENT)
 	for k in ml.size():
 		_text(lr.position + Vector2(12, 39 + k * 16), ml[k], 12, C_MUTED)
 	y = lr.end.y + 8
@@ -2017,7 +2097,7 @@ func _draw_biz_automation(y: float, i: int, s: Dictionary, col: Color) -> float:
 		var hired: bool = row[3]
 		_rr(r, C_CARD if hired else Color(C_CARD, 0.5), 12)
 		_text(r.position + Vector2(14, 23), String(row[1]), 15, C_INK if hired else C_DIM)
-		_text(r.position + Vector2(14, 43), _fit(String(row[2]) if hired else "Not hired yet: it's in the upgrades below", 12, r.size.x - 110), 12, C_MUTED if hired else C_DIM)
+		_tf(r.position + Vector2(14, 43), String(row[2]) if hired else "Not hired yet: it's in the upgrades below", 12, r.size.x - 110, C_MUTED if hired else C_DIM)
 		if hired:
 			var on := true
 			var bid := ""
@@ -2063,10 +2143,11 @@ func _draw_biz_upgrades(y: float, i: int, col: Color) -> float:
 		_text_c(er, er.position.y + 33, "No upgrades available right now", 14, C_DIM)
 		y += 62
 	for u in ups:
-		var rr := _row_rect(y, 76)
+		var uh := _upg_h(u)
+		var rr := _row_rect(y, uh)
 		if _visible(rr):
 			_draw_upgrade_row(rr, u)
-		y += 82
+		y += uh + 6
 	# what unlocks next
 	var next: Array = []
 	for u in E.upgrades:
@@ -2079,8 +2160,8 @@ func _draw_biz_upgrades(y: float, i: int, col: Color) -> float:
 		if _visible(rr):
 			_rr(rr, Color(C_CARD, 0.5), 12)
 			cv.draw_rect(Rect2(rr.position.x, rr.position.y + 10, 4, rr.size.y - 20), Color(col, 0.4))
-			_text(rr.position + Vector2(14, 22), _fit(String(u.name).split(": ")[-1] + " · " + E.effect_text(u.eff), 14, rr.size.x - 28), 14, C_DIM)
-			_text(rr.position + Vector2(14, 43), _fit("Unlocks at: " + E.req_text(u), 12, rr.size.x - 28), 12, C_DIM)
+			_tf(rr.position + Vector2(14, 22), String(u.name).split(": ")[-1] + " · " + E.effect_text(u.eff), 14, rr.size.x - 28, C_DIM)
+			_tf(rr.position + Vector2(14, 43), "Unlocks at: " + E.req_text(u), 12, rr.size.x - 28, C_DIM)
 		y += 62
 	return y
 
@@ -2100,7 +2181,7 @@ func _draw_biz_strip(i: int) -> void:
 		var cr := Rect2(r.position.x + k * (w + gap), r.position.y, w, r.size.y)
 		_rr(cr, C_CARD, 10)
 		_text(cr.position + Vector2(9, 17), String(vals[k][0]), 12, C_MUTED)
-		_text(cr.position + Vector2(9, 39), _fit(String(vals[k][1]), 16, cr.size.x - 14), 16, vals[k][2])
+		_tf(cr.position + Vector2(9, 39), String(vals[k][1]), 16, cr.size.x - 14, vals[k][2])
 
 
 func _draw_biz_scene(i: int) -> void:
@@ -2242,7 +2323,7 @@ func _scene_catering(r: Rect2, s: Dictionary, col: Color) -> void:
 				if g < int(prog * 8.0) + 2:
 					_person(Vector2(tx, ty) + Vector2(cos(a), sin(a)) * 24 + Vector2(0, 6), Color.from_hsv(fmod(g * 0.13 + q * 0.3, 1.0), 0.4, 0.9))
 			cv.draw_circle(Vector2(tx, ty), 5, col)
-			_text_c(Rect2(tx - 40, 0, 80, 0), ty + 38, _fit(String(j.name), 10, 76), 10, C_INK)
+			_tcf(Rect2(tx - 40, 0, 80, 0), ty + 38, String(j.name), 10, 76, C_INK)
 	# vans
 	for v in mini(int(s.b), 4):
 		var vx := r.position.x + fmod(v * 90.0 + anim_t * 40.0, r.size.x + 60.0) - 30.0
@@ -2320,7 +2401,7 @@ func _scene_hotel(r: Rect2, s: Dictionary, col: Color) -> void:
 		cv.draw_rect(Rect2(wx + 2, wy + 2, cw - 4, ch - 4), Color("ffd98a") if lit else Color("3a4250"))
 	cv.draw_rect(Rect2(b.get_center().x - 10, b.end.y - 16, 20, 16), Color("5b3a2a"))
 	# the season sign
-	var sign := Rect2(r.end.x - r.size.x * 0.28, r.end.y - 46, r.size.x * 0.25, 36)
+	var sign := Rect2(r.end.x - r.size.x * 0.28, r.position.y + 10, r.size.x * 0.25, 36)
 	_rr(sign, Color(0, 0, 0, 0.45), 8)
 	_text_c(sign, sign.position.y + 15, Biz.SEASONS[sea], 12, Color.WHITE)
 	_text_c(sign, sign.position.y + 30, "%d%% full" % int(round(occ * 100.0)), 11, Color("ffd98a"))
@@ -2369,10 +2450,10 @@ func _draw_bank(y: float) -> float:
 	var rate := E.interest_rate() * 60.0 * 100.0
 	if E.debt > 0.0:
 		_text_r(r.end.x - 14, r.position.y + 26, "Debt " + Econ.fmt_money(E.debt), 15, C_ORANGE)
-		_text(r.position + Vector2(14, 48), _fit("Interest %s/s (%s%%/min, rises as you max out)" % [Econ.fmt_money(E.interest_per_s()), Econ.fmt_mult(snappedf(rate, 0.01))], 12, r.size.x - 28), 12, C_MUTED)
+		_tf(r.position + Vector2(14, 48), "Interest %s/s (%s%%/min, rises as you max out)" % [Econ.fmt_money(E.interest_per_s()), Econ.fmt_mult(snappedf(rate, 0.01))], 12, r.size.x - 28, C_MUTED)
 	else:
 		_text_r(r.end.x - 14, r.position.y + 26, "No debt", 13, C_GREEN)
-		_text(r.position + Vector2(14, 48), _fit("Borrow up to %s at %s%%/min to expand faster." % [Econ.fmt_money(lim), Econ.fmt_mult(snappedf(rate, 0.01))], 12, r.size.x - 28), 12, C_MUTED)
+		_tf(r.position + Vector2(14, 48), "Borrow up to %s at %s%%/min to expand faster." % [Econ.fmt_money(lim), Econ.fmt_mult(snappedf(rate, 0.01))], 12, r.size.x - 28, C_MUTED)
 	var bar := Rect2(r.position.x + 14, r.position.y + 58, r.size.x - 28, 5)
 	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
 	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(E.debt / maxf(lim, 1e-9), 0.0, 1.0), 5)), C_ORANGE)
@@ -2387,11 +2468,11 @@ func _draw_bank(y: float) -> float:
 	# insurance: the hedge against events
 	var iy := r.position.y + 122
 	cv.draw_line(Vector2(r.position.x + 14, iy - 6), Vector2(r.end.x - 14, iy - 6), C_LINE, 1)
-	_text(Vector2(r.position.x + 14, iy + 16), "Insurance", 15)
+	_text(Vector2(r.position.x + 14, iy + 18), "Insurance", 15)
 	var prem := Econ.INSURE_RATE * maxf(0.0, float(em_cache.get("gross", 0.0)))
-	_text(Vector2(r.position.x + 14, iy + 36), _fit("Pays %d%% of every event bill. Costs %s%% of sales (%s/s)." % [int(Econ.INSURE_COVER * 100.0), Econ.fmt_mult(Econ.INSURE_RATE * 100.0), Econ.fmt_money(prem)], 12, r.size.x - 110), 12, C_MUTED)
-	_text(Vector2(r.position.x + 14, iy + 54), _fit("Worth it when you run hot or keep little cash.", 12, r.size.x - 110), 12, C_DIM)
-	_button("insure", Rect2(r.end.x - 82, iy + 6, 68, 40), "ON" if E.insured else "OFF", "buy" if E.insured else "ghost", "content", false, true, 14)
+	_tf(Vector2(r.position.x + 14, iy + 38), "Pays %d%% of every event bill" % int(Econ.INSURE_COVER * 100.0), 12, r.size.x - 110, C_MUTED)
+	_tf(Vector2(r.position.x + 14, iy + 56), "Costs %s%% of sales: %s/s" % [Econ.fmt_mult(Econ.INSURE_RATE * 100.0), Econ.fmt_money(prem)], 12, r.size.x - 28, C_MUTED)
+	_button("insure", Rect2(r.end.x - 82, iy + 2, 68, 40), "ON" if E.insured else "OFF", "buy" if E.insured else "ghost", "content", false, true, 14)
 	return r.end.y + 10
 
 
@@ -2402,7 +2483,7 @@ func _draw_biz_locked(y: float, i: int) -> float:
 	_text(r.position + Vector2(14, 26), String(d.name), 17, C_DIM)
 	_text_r(r.end.x - 14, r.position.y + 26, "LOCKED", 11, C_DIM)
 	var need := Biz.unlock_at(i)
-	_text(r.position + Vector2(14, 48), _fit("Earn %s this run to unlock" % Econ.fmt_money(need), 13, r.size.x - 28), 13, C_DIM)
+	_tf(r.position + Vector2(14, 48), "Earn %s this run to unlock" % Econ.fmt_money(need), 13, r.size.x - 28, C_DIM)
 	var bar := Rect2(r.position.x + 14, r.end.y - 18, r.size.x - 28, 5)
 	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
 	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(E.run_earned / need, 0.0, 1.0), 5)), Color(String(d.color)))
@@ -2437,13 +2518,13 @@ func _draw_biz_build(i: int, s: Dictionary, w: String, r: Rect2, col: Color) -> 
 	cv.draw_rect(Rect2(r.position.x, r.position.y + 12, 4, r.size.y - 24), col)
 	var tw := r.size.x - 146.0
 	var nm: String = d[w]
-	_text(r.position + Vector2(14, 22), _fit(nm, 16, tw - 50), 16)
-	_text(r.position + Vector2(20 + _tw(_fit(nm, 16, tw - 50), 16), 22), "x%d" % int(s[w]), 13, C_MUTED)
+	_tf(r.position + Vector2(14, 22), nm, 16, tw - 50)
+	_text(r.position + Vector2(20 + _tw(nm, _fs(nm, 16, tw - 50)), 22), "x%d" % int(s[w]), 13, C_MUTED)
 	var nm_next := E.biz_next_milestone(i, w)
 	var desc := String(d[w + "_desc"])
 	if nm_next > 0:
 		desc += " · bonus at %d" % nm_next
-	_text(r.position + Vector2(14, 42), _fit(desc, 12, tw), 12, C_MUTED)
+	_tf(r.position + Vector2(14, 42), desc, 12, tw, C_MUTED)
 	var k := biz_buy_count(i, w)
 	var cost := E.biz_cost(i, w, k)
 	var can := cost <= E.cash
@@ -2451,9 +2532,9 @@ func _draw_biz_build(i: int, s: Dictionary, w: String, r: Rect2, col: Color) -> 
 	if g > 0.0:
 		var pb := cost / g
 		var pc := C_GREEN if pb < 600.0 else (C_ACCENT if pb < 3600.0 else C_ORANGE)
-		_text(r.position + Vector2(14, 62), _fit("+%s/s · pays back in %s" % [Econ.fmt_money(g), Econ.fmt_time(pb)], 12, tw), 12, pc)
+		_tf(r.position + Vector2(14, 62), "+%s/s · pays back in %s" % [Econ.fmt_money(g), Econ.fmt_time(pb)], 12, tw, pc)
 	elif g < 0.0:
-		_text(r.position + Vector2(14, 62), _fit("-%s/s (not needed now)" % Econ.fmt_money(-g), 12, tw), 12, C_ORANGE)
+		_tf(r.position + Vector2(14, 62), "-%s/s (not needed now)" % Econ.fmt_money(-g), 12, tw, C_ORANGE)
 	_button("biz:%d:%s" % [i, w], Rect2(r.end.x - 124, r.position.y + 8, 116, r.size.y - 16), "Buy %d\n%s" % [k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 15)
 
 
@@ -2476,7 +2557,7 @@ func _draw_twist(i: int, s: Dictionary, r: Rect2) -> void:
 	match id:
 		"truck":
 			var moving := float(s.move_t) > 0.0
-			var sub := "Driving to %s... %s" % [Biz.SPOTS[int(s.spot)], Econ.fmt_time(float(s.move_t))] if moving else "Crowds change in %s" % Econ.fmt_time(float(s.spot_t))
+			var sub := "Driving to %s: %s left" % [Biz.SPOTS[int(s.spot)], Econ.fmt_time(float(s.move_t))] if moving else "Crowds change in %s" % Econ.fmt_time(float(s.spot_t))
 			if mgr:
 				sub += " · Route Planner on"
 			_text(r.position + Vector2(10, 18), sub, 12, C_MUTED)
@@ -2488,7 +2569,7 @@ func _draw_twist(i: int, s: Dictionary, r: Rect2) -> void:
 				var br := Rect2(r.position.x + 10 + k * (bw + 6), r.position.y + 26, bw, 46)
 				var c := C_GREEN if m >= 1.5 else (C_ACCENT if m >= 0.9 else C_RED)
 				_rr(br, Color(c, 0.25 if here else 0.1), 8, c if here else Color(0, 0, 0, 0), 2 if here else 0)
-				_text_c(br, br.position.y + 18, _fit(Biz.SPOTS[k], 11, bw - 4), 11, C_INK if here else C_MUTED)
+				_tcf(br, br.position.y + 18, Biz.SPOTS[k], 11, bw - 4, C_INK if here else C_MUTED)
 				_text_c(br, br.position.y + 38, "x" + Econ.fmt_mult(m), 15, c)
 				if not here:
 					_btn("spot:%d:%d" % [i, k], br, "content")
@@ -2518,7 +2599,7 @@ func _draw_twist(i: int, s: Dictionary, r: Rect2) -> void:
 					var o: Dictionary = offers[k]
 					var ok := Biz.can_accept(s, k)
 					_rr(orr, Color(1, 1, 1, 0.05), 8)
-					_text(orr.position + Vector2(8, 15), _fit(String(o.name), 13, orr.size.x - 120), 13, C_INK if ok else C_DIM)
+					_tf(orr.position + Vector2(8, 15), String(o.name), 13, orr.size.x - 120, C_INK if ok else C_DIM)
 					_text(orr.position + Vector2(8, 29), "%d crew · %s" % [int(o.crew), Econ.fmt_time(float(o.dur))], 11, C_MUTED)
 					var pay := float(o.pay) * float(E.agg().twist.catering) * Biz.mult(i, E)
 					_button("accept:%d:%d" % [i, k], Rect2(orr.end.x - 104, orr.position.y + 3, 100, 28), "Take " + Econ.fmt_money(pay), "buy" if ok else "", "content", false, ok, 12)
@@ -2635,8 +2716,8 @@ func _perk_list(y: float, cur: String) -> float:
 			var can := E.legacy_available(u) and float(u.star) <= E.wallet(cur)
 			_rr(rr, C_CARD, 12)
 			cv.draw_rect(Rect2(rr.position.x, rr.position.y + 10, 4, rr.size.y - 20), col)
-			_text(rr.position + Vector2(14, 28), _fit(String(u.name), 16, rr.size.x - 150), 16)
-			_text(rr.position + Vector2(14, 50), _fit(E.effect_text(u.eff), 13, rr.size.x - 150), 13, C_MUTED)
+			_tf(rr.position + Vector2(14, 28), String(u.name), 16, rr.size.x - 150)
+			_tf(rr.position + Vector2(14, 50), E.effect_text(u.eff), 13, rr.size.x - 150, C_MUTED)
 			var b := Rect2(rr.end.x - 124, rr.position.y + 12, 114, rr.size.y - 24)
 			var lab := _stars_label(float(u.star)) if cur == "star" else "%s grit" % Econ.fmt_num(float(u.star))
 			_button("legacy:%d" % int(u.id), b, lab, ("accent" if cur == "star" else "red") if can else "", "content", false, can, 15)
@@ -2730,8 +2811,8 @@ func _draw_backup(y: float) -> float:
 	var ok := store.last_write_ok
 	var where := "browser storage x%d + backups" % store.last_places if ok else "not saved yet"
 	_text(r.position + Vector2(14, 26), "Saved %s ago" % Econ.fmt_time(float(maxi(ago, 1))) if last_saved_unix > 0 else "Not saved yet", 16, C_GREEN if ok else C_ORANGE)
-	_text(r.position + Vector2(14, 48), _fit(where, 13, r.size.x - 120), 13, C_MUTED)
-	_text(r.position + Vector2(14, 68), _fit("Auto-saves every %ds and when you leave" % int(AUTOSAVE), 12, r.size.x - 120), 12, C_DIM)
+	_tf(r.position + Vector2(14, 48), where, 13, r.size.x - 120, C_MUTED)
+	_tf(r.position + Vector2(14, 68), "Auto-saves every %ds and when you leave" % int(AUTOSAVE), 12, r.size.x - 120, C_DIM)
 	_button("save_now", Rect2(r.end.x - 96, r.position.y + 20, 86, 44), "Save now", "", "content", false, true, 14)
 	y = r.end.y + 8
 	var tip := _wrap("Browsers can wipe site data (clearing history, low storage, or Safari after ~7 days without a visit). Keep a backup code somewhere safe, like your notes app.", 13, content_r.size.x - 40)
@@ -2753,6 +2834,7 @@ func _draw_backup(y: float) -> float:
 func _draw_overlay() -> void:
 	cv = overlay
 	var vs := get_viewport_rect().size
+	deco = true
 	for f in floaters:
 		var t: float = f.t
 		var a := clampf(1.3 - t * 1.2, 0.0, 1.0)
@@ -2760,6 +2842,7 @@ func _draw_overlay() -> void:
 		var s: String = f.text
 		_text(p - Vector2(_tw(s, 18) * 0.5, 0) + Vector2(1, 1), s, 18, Color(0, 0, 0, a * 0.6))
 		_text(p - Vector2(_tw(s, 18) * 0.5, 0), s, 18, Color(f.color, a))
+	deco = false
 	if toast_t > 0.0 and toast != "":
 		var a := clampf(toast_t / 0.3, 0.0, 1.0)
 		var tw := _tw(toast, 16) + 36
@@ -2824,7 +2907,7 @@ func _modal_concept(vs: Vector2) -> void:
 			_text(cr.position + Vector2(16, 50 + i * 17), lines[i], 13, C_MUTED if ok else C_DIM)
 		var co: Dictionary = cc.costs
 		var tags := "Food %d%% · rent x%s · wages x%s · ads x%s · max price x%s" % [int(Econ.FOOD_BASE + float(co.food)), Econ.fmt_mult(float(co.rent)), Econ.fmt_mult(float(co.wages)), Econ.fmt_mult(float(co.ads)), Econ.fmt_mult(float(cc.ceiling))]
-		_text(cr.position + Vector2(16, cr.size.y - 10), _fit(tags, 11, cr.size.x - 32), 11, C_DIM)
+		_tf(cr.position + Vector2(16, cr.size.y - 10), tags, 11, cr.size.x - 32, C_DIM)
 		if ok:
 			_btn("concept:" + c, cr, "modal")
 		y += float(card.h) + 8.0
