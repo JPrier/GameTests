@@ -121,7 +121,7 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 
 - **Big numbers.** Every amount that can grow (cash, income, prices, multipliers, stars, Grit) is stored as its base-10 logarithm (`num.gd`), so there is no maximum: past the named suffixes (K, M, B … Vg … Tg, 10^93) amounts read like `$3.98e12,345`. Saves keep the logs, and older saves stored as plain numbers convert when they load.
 - **Endless upgrade lines.** The catalogue below is only the start. When you own every tier of a line, it carries on with new, pricier tiers forever: stat tiers, ambience, build milestones (every 250 builds past 2,000), cheaper builds, serving, brand, franchise royalties, every city's milestones (every 25 locations past 50), every venture (every 100 levels past 400), concept signatures, each business's milestones and extras, the company-wide business upgrades, every Legacy perk line except Old Managers and Night Owl, and every Grit perk line. Run lines reset when you sell; perk lines don't.
-- **A slower prestige curve.** Stars grow with lifetime earnings to the power 0.13 (it was 0.2), and Grit likewise, so each sale lifts the next run less and the big numbers arrive later. Past their catalogue tiers, perk prices also grow a little faster with every tier, so stars can never snowball through perks.
+- **A slower prestige curve.** Stars grow with lifetime earnings to the power 0.13 (it was 0.2), and Grit likewise, so each sale lifts the next run less and the big numbers arrive later. In the balance bot, 10 hours of play now reaches about $1e34 a second, where the old curve passed $1e60. Past their catalogue tiers, perk prices also grow a little faster with every tier, so stars can never snowball through perks.
 
 ## Upgrades: 1,726 to start, then endless
 
@@ -176,7 +176,7 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 - `events.gd`: the events, what makes each one likely (kitchen strain, crowding, queues, debt), and how their choices resolve.
 - `main.gd`: input, layout and immediate-mode drawing. The scrolling list is a clipped child `Control`, and pop-ups draw on an overlay `Control`.
 - `tools/sim.gd`: a greedy bot that plays the economy headless and prints pacing. It isn't exported. Run it with `godot --headless --path . --script res://tools/sim.gd -- hours=8 concept=diner`. It takes options `noprestige=1`, `nobiz=1`, `events=0`, `reserve=SECONDS` (cash it keeps for emergencies), `taps=N`, `stars=LOG`, `challenge=ID` (play level I of a challenge, e.g. `challenge=margins`) and `policy=`:
-    - `greedy` (default) buys whatever pays back fastest. In normal runs it first sells after about 40–50 minutes, and each sale after that comes faster.
+    - `greedy` (default) buys whatever pays back fastest. In normal runs it first sells after about 30 minutes, and each sale after that comes faster.
     - `skilled` also keeps spare capacity, insures and holds a bigger reserve. With no stars it reaches Tight Margins level I in about 85 minutes; Health Code can still bankrupt it.
     - `random` and `cheapest` click whatever they can afford. In a challenge they go bust within an hour or two.
 - Agent hooks:
