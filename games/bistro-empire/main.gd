@@ -1366,10 +1366,10 @@ func _draw_build(y: float) -> float:
 	y += 44
 	# the four builds
 	for rep in Econ.REPS:
-		var rr := _row_rect(y, 104)
+		var rr := _row_rect(y, 122)
 		if _visible(rr):
 			_draw_rep_row(rr, rep, a)
-		y += 110
+		y += 128
 	# price
 	y = _draw_price(y + 4, a)
 	y = _draw_pnl(y + 4)
@@ -1473,6 +1473,25 @@ func _tip() -> String:
 
 ## Five lines on the left, each in its own slot (name, effect, progress bar, next bonus,
 ## profit change), and the buy button on the right, so nothing can collide.
+const STAT_UNIT := {"demand": "guests/s", "seating": "seats/s", "kitchen": "kitchen/s", "ticket": "per bill"}
+
+
+## What buying k of a build changes, stat by stat, including synergy upgrades that make one
+## build boost another stat (e.g. Reservations by Ad: every Ad Campaign adds seats).
+func rep_deltas(rep: String, k: int) -> Array:
+	var a := E.agg()
+	var out: Array = []
+	var ro := {rep: int(E.reps[rep]) + k}
+	for st in Econ.STATS:
+		var d := E.stat(st, a, ro) - E.stat(st, a)
+		if d > 0.0:
+			var txt := ("+$%s per bill" % Econ.fmt_num(d)) if st == "ticket" else "+%s %s" % [Econ.fmt_num(d), STAT_UNIT[st]]
+			out.append({"stat": st, "d": d, "text": txt, "own": st == Econ.REP_STAT[rep]})
+	return out
+
+
+## Six lines on the left, each in its own slot (name, what the buy adds, what it also adds
+## through synergies, progress bar, next bonus, profit change), and the buy button on the right.
 func _draw_rep_row(r: Rect2, rep: String, a: Dictionary) -> void:
 	var stat: String = Econ.REP_STAT[rep]
 	var lim := String(info_cache.get("limit", "")) == stat
@@ -1484,7 +1503,19 @@ func _draw_rep_row(r: Rect2, rep: String, a: Dictionary) -> void:
 	var tw := br.position.x - 10 - x
 	var head := "%s x%d" % [Econ.REP_NAME[rep], int(E.reps[rep])]
 	_tf(Vector2(x, r.position.y + 25), head, 17, tw)
-	_tf(Vector2(x, r.position.y + 45), String(REP_BLURB[rep]) + (" · LIMIT" if lim else ""), 13, tw, C_RED if lim else C_MUTED)
+	var k := buy_count(rep)
+	var own := ""
+	var also: Array = []
+	for dl in rep_deltas(rep, k):
+		if bool(dl.own):
+			own = String(dl.text)
+		else:
+			also.append(String(dl.text))
+	if own == "":
+		own = String(REP_BLURB[rep])
+	_tf(Vector2(x, r.position.y + 45), own + (" · LIMIT" if lim else ""), 13, tw, C_RED if lim else C_MUTED)
+	if not also.is_empty():
+		_tf(Vector2(x, r.position.y + 63), "Also " + ", ".join(also), 12, tw, C_BLUE)
 	var nm := E.next_milestone(rep)
 	if nm > 0:
 		var prev := 0
@@ -1492,20 +1523,19 @@ func _draw_rep_row(r: Rect2, rep: String, a: Dictionary) -> void:
 			if m < nm:
 				prev = m
 		var f := clampf(float(int(E.reps[rep]) - prev) / float(nm - prev), 0.0, 1.0)
-		var bar := Rect2(x, r.position.y + 55, tw, 5)
+		var bar := Rect2(x, r.position.y + 73, tw, 5)
 		cv.draw_rect(bar, Color(1, 1, 1, 0.08))
 		cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), Color(CAT_COLOR[stat]))
-		_tf(Vector2(x, r.position.y + 75), "Bonus upgrade at %d" % nm, 12, tw, C_DIM)
-	var k := buy_count(rep)
+		_tf(Vector2(x, r.position.y + 93), "Bonus upgrade at %d" % nm, 12, tw, C_DIM)
 	var cost := E.rep_cost(rep, k)
 	var can := cost <= E.cash
 	var g := rep_gain(rep, k)
 	if g > 0.0005:
-		_tf(Vector2(x, r.position.y + 94), "+" + _pct(g) + _gain_word(), 12, tw, C_GREEN)
+		_tf(Vector2(x, r.position.y + 112), "+" + _pct(g) + _gain_word(), 12, tw, C_GREEN)
 	elif g < -0.0005:
-		_tf(Vector2(x, r.position.y + 94), "-" + _pct(-g) + _gain_word(), 12, tw, C_ORANGE)
+		_tf(Vector2(x, r.position.y + 112), "-" + _pct(-g) + _gain_word(), 12, tw, C_ORANGE)
 	else:
-		_tf(Vector2(x, r.position.y + 94), "No gain right now", 12, tw, C_DIM)
+		_tf(Vector2(x, r.position.y + 112), "No gain right now", 12, tw, C_DIM)
 	_button("rep:" + rep, br, "%s\n%s" % ["Buy %d" % k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 17)
 
 

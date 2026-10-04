@@ -1413,6 +1413,10 @@ func _stress_state(main, big: bool) -> void:
 		e.cities[i] = 250 if big else (7 if i == 0 else 0)
 	for i in e.NV:
 		e.vents[i] = 300 if big else 0
+	if big:
+		for u in e.upgrades:
+			if String(u.key).begins_with("s_"):
+				e.owned[int(u.id)] = true   # every synergy, so build rows show their "Also" line
 	e.mark_dirty()
 	for i in Biz.N:
 		e.open_biz(i)
@@ -1547,3 +1551,26 @@ func test_text_fits_pages_412_big(): await _ui_pages(412, true)
 func test_text_fits_popups_360_early(): await _ui_popups(360, false)
 func test_text_fits_popups_360_big(): await _ui_popups(360, true)
 func test_text_fits_popups_412_big(): await _ui_popups(412, true)
+
+
+func test_build_rows_explain_synergies():
+	var main = await _fresh()
+	var e = main.E
+	e.reps.ads = 20
+	e.reps.tables = 20
+	var d0: Array = main.rep_deltas("ads", 1)
+	assert_eq(d0.size(), 1, "without synergies, ads only add guests")
+	assert_eq(String(d0[0].stat), "demand", "guests")
+	e.owned[e.by_key["s_ads_seating_0"]] = true
+	e.mark_dirty()
+	var d1: Array = main.rep_deltas("ads", 1)
+	var seats := 0.0
+	for dl in d1:
+		if String(dl.stat) == "seating":
+			seats = float(dl.d)
+	assert_gt(seats, 0.0, "with Reservations by Ad, an ad also adds seats, and the row says so")
+	var before: float = e.stat("seating", e.agg())
+	e.buy_rep("ads", 1)
+	assert_near(e.stat("seating", e.agg()) - before, seats, seats * 1e-6, "by exactly what it showed")
+	assert_true(e.effect_text(e.upgrades[e.by_key["s_ads_seating_0"]].eff).begins_with("Each Ad Campaign you own"), "the upgrade says what it does")
+	main.wipe_save()
