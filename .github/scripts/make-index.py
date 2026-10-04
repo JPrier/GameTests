@@ -2,14 +2,17 @@
 """Write the home page (index.html) for every game exported into the site dir.
 Usage: make-index.py <games_dir> <site_dir>
 
-Daily games are found automatically: any game with games/<slug>/homepage/game.json containing
-"daily": true is listed under "Today's games", with today's puzzle number. Everything else is listed
-under "More games".
+Games are grouped on the page by the folders they sit in under games/ (see gamelist.py):
+  games/Daily/bloom               -> "Daily" section
+  games/Daily/Airplanes/flightle  -> "Airplanes" group inside the "Daily" section
+  games/Incremental/bistro-empire -> "Incremental" section
+Daily comes first, Other last, the rest alphabetically; inside a section, games directly in it come
+first, then each subfolder. Every game under games/Daily/ is a daily game and shows today's puzzle
+number, so it needs "start" in its game.json.
 
 Per game (all optional except where noted):
   homepage/.gdignore          empty file, keeps Godot from importing this folder into the game
-  homepage/game.json          {"daily": true,              required to be listed as a daily game
-                               "start": "YYYY-MM-DD",      date of puzzle #1 (required when daily)
+  homepage/game.json          {"start": "YYYY-MM-DD",      date of puzzle #1 (required under Daily/)
                                "clock": "utc" | "local",   which date the game uses (default "utc")
                                "tagline": "One line.",     card text (default: config/description,
                                                            then the README's first paragraph)
@@ -28,6 +31,9 @@ import pathlib
 import re
 import shutil
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from gamelist import find_games  # noqa: E402
 
 games_dir, site = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 THUMB_EXTS = (".webp", ".png", ".jpg", ".jpeg")
@@ -61,12 +67,18 @@ def readme_blurb(folder):
     return p if len(p) <= 180 else p[:177].rsplit(" ", 1)[0] + "…"
 
 
+try:
+    found = find_games(games_dir)
+except ValueError as err:
+    for line in str(err).splitlines():
+        print(f"::error::{line}")
+    sys.exit(1)
+
 games = []
-for proj in sorted(games_dir.glob("*/project.godot")):
-    folder, slug = proj.parent, proj.parent.name
+for folder, slug, category in found:
     if not (site / slug / "index.html").exists():
         continue
-    text = proj.read_text()
+    text = (folder / "project.godot").read_text()
     m = re.search(r'config/name="([^"]+)"', text)
     title = m.group(1) if m else slug
     m = re.search(r'config/description="([^"]+)"', text)
@@ -78,7 +90,11 @@ for proj in sorted(games_dir.glob("*/project.godot")):
         except json.JSONDecodeError as e:
             errors.append(f"{meta_file}: invalid JSON ({e})")
             continue
-    daily = bool(meta.get("daily"))
+    daily = category[0].lower() == "daily"
+    if "daily" in meta and bool(meta["daily"]) != daily:
+        where = "move the game into games/Daily/" if meta["daily"] else "remove \"daily\" or move the game"
+        errors.append(f"{meta_file}: \"daily\" doesn't match the game's folder ({where})")
+        continue
     if daily and not DATE_RE.match(str(meta.get("start", ""))):
         errors.append(f"{meta_file}: daily games need \"start\": \"YYYY-MM-DD\" (date of puzzle #1)")
         continue
@@ -97,6 +113,7 @@ for proj in sorted(games_dir.glob("*/project.godot")):
 
     games.append({
         "slug": slug,
+        "category": category,
         "title": title,
         "tagline": meta.get("tagline") or (m.group(1) if m else "") or readme_blurb(folder),
         "daily": daily,
@@ -114,8 +131,16 @@ if errors:
 
 games.sort(key=lambda g: (g["order"], g["title"].lower()))
 daily = [g for g in games if g["daily"]]
-other = [g for g in games if not g["daily"]]
 e = html.escape
+
+
+def section_key(name):
+    low = name.lower()
+    return (0 if low == "daily" else 2 if low == "other" else 1, low)
+
+
+def label(name):
+    return name.replace("-", " ").replace("_", " ")
 
 
 def card(g):
@@ -135,9 +160,21 @@ def card(g):
             f'<p>{e(g["tagline"])}</p><span class="result" hidden></span></div></a>')
 
 
-daily_html = "".join(card(g) for g in daily) or '<p class="empty">No daily games yet.</p>'
-other_html = (f'<section><h2>More games</h2><div class="grid">{"".join(card(g) for g in other)}</div></section>'
-              if other else "")
+def grid(gs):
+    return f'<div class="grid">{"".join(card(g) for g in gs)}</div>'
+
+
+sections = []
+for top in sorted({g["category"][0] for g in games}, key=section_key):
+    in_top = [g for g in games if g["category"][0] == top]
+    loose = [g for g in in_top if len(g["category"]) == 1]
+    parts = [grid(loose)] if loose else []
+    for sub in sorted({g["category"][1:] for g in in_top if len(g["category"]) > 1},
+                      key=lambda c: [x.lower() for x in c]):
+        gs = [g for g in in_top if g["category"][1:] == sub]
+        parts.append(f'<div class="group"><h3 class="sub">{e(" / ".join(label(x) for x in sub))}</h3>{grid(gs)}</div>')
+    sections.append(f'<section><h2>{e(label(top))}</h2>{"".join(parts)}</section>')
+sections_html = "\n".join(sections) or '<p class="empty">No games yet.</p>'
 
 page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -167,7 +204,9 @@ section+section{{margin-top:40px}}
 .badge.done{{background:var(--ok)}}
 .body{{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px;flex:1}}
 .row{{display:flex;align-items:baseline;justify-content:space-between;gap:8px}}
-h3{{margin:0;font-size:1.15rem}}
+.card h3{{margin:0;font-size:1.15rem}}
+.grid+.group,.group+.group{{margin-top:28px}}
+.sub{{margin:0 0 10px;font-size:1rem;font-weight:600;color:var(--ink)}}
 .num{{color:var(--muted);font-size:.9rem;font-variant-numeric:tabular-nums;white-space:nowrap}}
 .card p{{margin:0;color:var(--muted);font-size:.93rem}}
 .result{{margin-top:auto;padding-top:6px;color:var(--ok);font-size:.9rem;font-weight:600}}
@@ -180,14 +219,13 @@ h3{{margin:0;font-size:1.15rem}}
   .fallback span{{font-size:1.05rem}}
   .badge{{top:6px;left:6px;padding:2px 8px;font-size:.7rem}}
   .body{{padding:12px 14px;gap:4px}}
-  h3{{font-size:1.05rem}}
+  .card h3{{font-size:1.05rem}}
   .card p{{font-size:.88rem;line-height:1.4}}
 }}
 </style></head>
 <body><main>
 <header><h1>Daily Games</h1><p class="today" id="today"></p></header>
-<section><h2>Today's games</h2><div class="grid">{daily_html}</div></section>
-{other_html}
+{sections_html}
 </main>
 <script>
 (function(){{
@@ -220,4 +258,4 @@ h3{{margin:0;font-size:1.15rem}}
 """
 (site / "index.html").write_text(page)
 (site / ".nojekyll").write_text("")
-print(f"index: {len(daily)} daily game(s), {len(other)} other")
+print(f"index: {len(games)} game(s) in {len(sections)} section(s), {len(daily)} daily")

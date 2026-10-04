@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build every Godot game under games/ into a static site in _site/.
+# Build every Godot game under games/<Category>/[<Subcategory>/]<slug>/ into a static site in _site/<slug>/.
 #   .github/scripts/build-site.sh            # validate + test + export all games
 #   SKIP_TESTS=1 .github/scripts/build-site.sh
 # Env: GODOT_BIN (default: godot on PATH), SITE_DIR (default: _site)
@@ -11,8 +11,11 @@ SITE="${SITE_DIR:-$ROOT/_site}"
 mkdir -p "$SITE"
 fail=0
 
-for proj in "$ROOT"/games/*/project.godot; do
-  dir="$(dirname "$proj")"
+# Game folders, one per line; fails on duplicate slugs or games outside a category folder.
+game_list="$(python3 "$ROOT/.github/scripts/gamelist.py" "$ROOT/games")"
+mapfile -t games <<< "$game_list"
+
+for dir in "${games[@]}"; do
   name="$(basename "$dir")"
   echo "::group::$name"
   "$GODOT" --headless --path "$dir" --import >/dev/null 2>&1 || true
