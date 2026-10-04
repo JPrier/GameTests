@@ -31,7 +31,7 @@ const PRICE_MIN := 0.25
 const MAX_MONEY := 1.0e300
 ## Every cash price is raised to this power. Larger = slower growth per order of magnitude.
 const COST_POW := 1.2
-const PRICE_K := 0.5
+const PRICE_K := 1.0
 const STAR_BASE := 0.02
 const OFFLINE_BASE := 0.25
 const OFFLINE_HOURS_BASE := 2.0
@@ -51,7 +51,7 @@ const INSURE_COVER := 0.75        # share of event bills insurance pays
 const CREDIT_SECS := 600.0        # credit limit = this many seconds of gross income
 const INTEREST_BASE := 0.005 / 60.0  # 0.5% per minute at low borrowing
 const DEADLINE_BASE := 300.0      # seconds you can stay in the red
-const GRIT_BASE := 0.01           # +1% all income per unspent Grit
+const GRIT_BASE := 0.01           # +1% all income per Grit ever earned (spending it never lowers this)
 const STAR_COEF := 25.0
 const TAP_SECS := 0.25            # every serve also pays this many seconds of restaurant income
 const VENT_GROWTH := 1.5
@@ -139,7 +139,27 @@ var effects: Array = []           # [{kind, mult, t, dur, src}] timed effects fr
 var event: Dictionary = {}        # the event card waiting for an answer
 var event_t := Events.MIN_GAP     # seconds of active play until the next event
 var peak_gross := 0.0             # best gross income per second this run
-const ECON_VERSION := 3            # 3: running costs on all capacity, risk-driven events
+const ECON_VERSION := 4            # 3: running costs, bankruptcy; 4: those only in challenges
+## Challenge runs: opt-in runs with running costs, bankruptcy and the bank. Reach the level's
+## earnings goal and sell the company to collect Grit. Going bust only ends the run.
+const CHALLENGE_LEVELS := 10
+const CHALLENGES := {
+	"margins": {"name": "Tight Margins", "mult": 1.0,
+		"blurb": "Every seat, cook, ad and plate costs money to run. Stay below $0 for 5 minutes and the run is over.", "mods": {}},
+	"health": {"name": "Health Code", "mult": 1.5,
+		"blurb": "Tight Margins, plus bad events cost twice as much and nobody sells you insurance.", "mods": {"stakes": 2.0, "no_insure": true}},
+	"shoestring": {"name": "Shoestring", "mult": 1.75,
+		"blurb": "Tight Margins with no bank at all: no loans, no insurance, and no Legacy starting cash.", "mods": {"no_bank": true, "no_startcash": true}},
+	"solo": {"name": "One Restaurant", "mult": 2.0,
+		"blurb": "Tight Margins with no side businesses and no franchises. Just you and the kitchen.", "mods": {"no_biz": true, "no_franchise": true}},
+	"recession": {"name": "Recession", "mult": 2.0,
+		"blurb": "Tight Margins, your price limit is halved and running costs are 20% higher.", "mods": {"ceiling": 0.5, "upkeep": 1.2}},
+}
+const CHALLENGE_ORDER := ["margins", "health", "shoestring", "solo", "recession"]
+var challenge := ""               # the challenge this run is (empty: a normal run)
+var challenge_level := 0          # 0-based level of the current challenge run
+var challenge_best := {}          # challenge id -> levels completed
+var last_challenge := {}          # what the last sale completed, for the UI
 var grace := 0.0                  # seconds of play with no bankruptcy clock and no events (after a rules change)
 var rules_notice := false         # tell the player the rules changed (set when an older save loads)
 var insured := false             # pays a premium on sales; insurance covers most event bills
@@ -460,7 +480,7 @@ func reset_run_state() -> void:
 	event_t = Events.MIN_GAP
 	_dirty = true
 	var a := agg()
-	cash = maxf(5.0, float(a.startcash))
+	cash = maxf(5.0, 0.0 if cmod("no_startcash") else float(a.startcash))
 	for r in REPS:
 		reps[r] = int(a.startreps)
 	_dirty = true
@@ -482,6 +502,9 @@ func new_game() -> void:
 	grit_earned = 0.0
 	bankruptcies = 0
 	last_bankrupt = {}
+	challenge = ""
+	challenge_level = 0
+	challenge_best = {}
 	reset_run_state()
 
 
@@ -546,6 +569,9 @@ func _aggregate(own: Dictionary) -> Dictionary:
 	a.tappct += float(cc.get("tappct", 0.0))
 	for f in cc.get("flags", []):
 		a.flags[f] = true
+	if challenge != "":
+		a.ceiling *= float(cmod("ceiling", 1.0))
+		a.upkeep *= float(cmod("upkeep", 1.0))
 	for id in own:
 		apply_effects(a, upgrades[id].eff)
 	for id in legacy:
@@ -642,8 +668,9 @@ func franchise_mult(a: Dictionary, city_override: Array = []) -> float:
 	return 1.0 + 0.1 * royalty_mult(a) * s
 
 
+## Every star you've ever earned counts, spent or not.
 func star_mult(a: Dictionary) -> float:
-	return 1.0 + stars * (STAR_BASE + float(a.starpow))
+	return 1.0 + stars_earned * (STAR_BASE + float(a.starpow))
 
 
 func ceiling(a: Dictionary) -> float:
@@ -718,6 +745,8 @@ func income_info(a: Dictionary, rep_override: Dictionary = {}, city_override: Ar
 	# a bigger name (stars, Grit) means busier, pricier operations too: prestige widens your
 	# margin, but only by its square root, so costs always matter
 	var unit := t * g * (1.0 + FR_COST * (fr - 1.0)) * sqrt(star_mult(a) * grit_mult(a) * float(a.mul.empire))
+	if not costs_on():
+		unit = 0.0   # normal runs have no running costs
 	var food := served * unit * food_cost_pct(a) / 100.0
 	var rent := se * unit * RENT_K * cost_mod("rent", a)
 	var wages := k * unit * WAGE_K * cost_mod("wages", a)
@@ -740,8 +769,9 @@ func food_cost_pct(a: Dictionary = {}) -> float:
 	return clampf(FOOD_BASE + float(CONCEPT[concept].costs.food) - cut + effect_add("food"), 5.0, 80.0)
 
 
+## Every Grit you've ever earned counts, spent or not.
 func grit_mult(_a: Dictionary = {}) -> float:
-	return 1.0 + grit * GRIT_BASE
+	return 1.0 + grit_earned * GRIT_BASE
 
 
 ## Money in and out per second for the whole empire (businesses use steady-state estimates).
@@ -766,7 +796,7 @@ func empire(offline := false) -> Dictionary:
 
 
 func insurance_per_s(gross: float) -> float:
-	return maxf(0.0, gross) * INSURE_RATE if insured else 0.0
+	return maxf(0.0, gross) * INSURE_RATE if insured and insurance_on() else 0.0
 
 
 ## Net money per second for the whole empire.
@@ -841,6 +871,8 @@ func city_unlocked(i: int) -> bool:
 
 
 func franchise_unlocked() -> bool:
+	if cmod("no_franchise"):
+		return false
 	return run_earned >= cp(1.0e7) or locations() > 0
 
 
@@ -1184,8 +1216,11 @@ func new_event(gross: float, rk: Dictionary = {}, only := "") -> Dictionary:
 	if rk.is_empty():
 		rk = Events.risks(self)
 	var a := agg()
-	return Events.make(rng, gross, float(a.luck), float(a.event_cost), rk, CONCEPT[concept].get("risk", {}),
-		INSURE_COVER if insured else 0.0, only)
+	var ev := Events.make(rng, gross, float(a.luck), float(a.event_cost), rk, CONCEPT[concept].get("risk", {}),
+		INSURE_COVER if insured and insurance_on() else 0.0, only, not costs_on())
+	if not ev.is_empty() and not bool(ev.good):
+		ev.cost_mult = float(ev.cost_mult) * float(cmod("stakes", 1.0))   # Health Code
+	return ev
 
 
 ## Answers the open event card. Returns a short description of what happened.
@@ -1229,6 +1264,8 @@ func interest_per_s() -> float:
 
 
 func borrow(amount: float) -> float:
+	if not bank_on():
+		return 0.0
 	amount = minf(amount, credit_available())
 	if amount <= 0.0:
 		return 0.0
@@ -1259,7 +1296,9 @@ func in_red() -> bool:
 
 
 func _tick_red(dt: float) -> void:
-	if cash >= 0.0 or grace > 0.0:
+	if not costs_on() and cash < 0.0:
+		cash = 0.0   # normal runs can't go below $0
+	if cash >= 0.0 or grace > 0.0 or not costs_on():
 		red_t = 0.0
 		return
 	red_t += dt
@@ -1275,18 +1314,78 @@ func grit_pending() -> float:
 	return grit_for(run_earned)
 
 
-## Everything resets like selling, but you get Grit instead of stars and this run's stars are lost.
+## Going bust only happens in a challenge: the run ends and you're back to a normal run.
+## Nothing else is lost; this run's earnings still count towards your next sale's stars.
 func go_bankrupt() -> float:
-	var g := grit_pending()
-	var lost := stars_pending()
-	grit += g
-	grit_earned += g
+	last_bankrupt = {"challenge": challenge, "level": challenge_level, "debt": debt, "run_earned": run_earned}
 	bankruptcies += 1
-	stars_earned = maxf(stars_earned, stars_for(life_earned))
-	last_bankrupt = {"grit": g, "lost_stars": lost, "debt": debt, "run_earned": run_earned}
+	challenge = ""
+	challenge_level = 0
 	concept_chosen = false
 	reset_run_state()
-	return g
+	return 0.0
+
+
+# ================================================================= challenges
+
+func costs_on() -> bool:
+	return challenge != ""
+
+
+func cmod(key: String, dflt = false):
+	if challenge == "":
+		return dflt
+	return (CHALLENGES[challenge].mods as Dictionary).get(key, dflt)
+
+
+func bank_on() -> bool:
+	return costs_on() and not cmod("no_bank")
+
+
+func insurance_on() -> bool:
+	return bank_on() and not cmod("no_insure")
+
+
+func challenge_next_level(id: String) -> int:
+	return int(challenge_best.get(id, 0))
+
+
+func challenge_goal(level := -1) -> float:
+	if level < 0:
+		level = challenge_level
+	return cp(1.0e8 * pow(1000.0, level))
+
+
+func challenge_done() -> bool:
+	return challenge != "" and run_earned >= challenge_goal()
+
+
+## Grit for finishing the current challenge with what you've earned this run.
+func challenge_reward(earned := -1.0) -> float:
+	if challenge == "":
+		return 0.0
+	if earned < 0.0:
+		earned = run_earned
+	return floor(maxf(1.0, grit_for(earned)) * float(CHALLENGES[challenge].mult) * (1.0 + 0.5 * challenge_level))
+
+
+## Ends the current run (nothing is lost: its earnings still count towards stars) and starts
+## the next level of a challenge. The player then picks a concept as usual.
+func start_challenge(id: String) -> bool:
+	if not CHALLENGES.has(id) or challenge_next_level(id) >= CHALLENGE_LEVELS:
+		return false
+	challenge = id
+	challenge_level = challenge_next_level(id)
+	concept_chosen = false
+	reset_run_state()
+	return true
+
+
+func abandon_challenge() -> void:
+	challenge = ""
+	challenge_level = 0
+	concept_chosen = false
+	reset_run_state()
 
 
 func refund_rate() -> float:
@@ -1349,6 +1448,8 @@ func biz_open_count() -> int:
 
 
 func biz_unlocked(i: int) -> bool:
+	if cmod("no_biz"):
+		return false
 	return biz[i].open or run_earned >= Biz.unlock_at(i)
 
 
@@ -1502,16 +1603,28 @@ func stars_pending() -> float:
 
 
 func can_prestige() -> bool:
-	return stars_pending() >= 1.0
+	return stars_pending() >= 1.0 or challenge_done()
 
 
+## Sells the company. In a challenge that has reached its goal, this also pays Grit and
+## completes the level. Selling an unfinished challenge just ends it.
 func prestige() -> float:
-	var g := stars_pending()
-	if g < 1.0:
+	if not can_prestige():
 		return 0.0
+	var g := stars_pending()
+	if challenge_done():
+		var gr := challenge_reward()
+		grit += gr
+		grit_earned += gr
+		challenge_best[challenge] = maxi(challenge_next_level(challenge), challenge_level + 1)
+		last_challenge = {"id": challenge, "level": challenge_level, "grit": gr}
+	else:
+		last_challenge = {}
 	stars += g
 	stars_earned += g
 	prestiges += 1
+	challenge = ""
+	challenge_level = 0
 	concept_chosen = false
 	reset_run_state()
 	return g
@@ -1526,7 +1639,7 @@ func to_dict() -> Dictionary:
 		"vents": vents.duplicate(), "price": price, "price_auto": price_auto, "auto_on": auto_on.duplicate(),
 		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income,
 		"biz": biz.duplicate(true), "debt": debt, "grit": grit, "grit_earned": grit_earned, "bankruptcies": bankruptcies,
-		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "insured": insured, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
+		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "insured": insured, "challenge": challenge, "challenge_level": challenge_level, "challenge_best": challenge_best.duplicate(), "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
 
 
 func _keys_of(d: Dictionary) -> Array:
@@ -1588,11 +1701,24 @@ func from_dict(d: Dictionary) -> void:
 	rest_peak = float(d.get("rest_peak", 0.0))
 	insured = bool(d.get("insured", false))
 	grace = float(d.get("grace", 0.0))
-	if int(d.get("econ", 1)) < ECON_VERSION and concept_chosen:
-		# a run that started under the old rules gets time to rebalance before anything can bite
-		grace = maxf(grace, 600.0)
+	challenge = String(d.get("challenge", ""))
+	if not CHALLENGES.has(challenge):
+		challenge = ""
+	challenge_level = int(d.get("challenge_level", 0))
+	challenge_best = (d.get("challenge_best", {}) as Dictionary).duplicate()
+	if int(d.get("econ", 1)) < ECON_VERSION:
+		# costs and bankruptcy moved into challenges: forgive any debt from the old rules
+		debt = 0.0
 		red_t = 0.0
-		rules_notice = true
+		grace = 0.0
+		insured = false
+		if concept_chosen and int(d.get("econ", 1)) >= 3:
+			rules_notice = true
+	if challenge == "":
+		debt = 0.0
+		red_t = 0.0
+		if cash < 0.0:
+			cash = 0.0
 	effects = d.get("effects", [])
 	event = d.get("event", {})
 	event_t = float(d.get("event_t", Events.MIN_GAP))

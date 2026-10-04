@@ -18,6 +18,8 @@ var reserve_s := 60.0   # careful players keep this many seconds of income in th
 var audit_every := 0.0
 var dump_at := -1.0
 var next_audit := 0.0
+var challenge_id := ""   # play this challenge (level I) instead of a normal run
+var goal_logged := false
 var policy := "greedy"   # greedy | skilled (greedy + spare capacity, insurance, bigger reserve) | random (buys any affordable thing) | cheapest (always the cheapest thing)
 
 
@@ -42,6 +44,7 @@ func _init() -> void:
 			"audit": audit_every = float(kv[1])
 			"dump": dump_at = float(kv[1])
 			"policy": policy = kv[1]
+			"challenge": challenge_id = kv[1]
 	e = load("res://econ.gd").new()
 	e.rng.seed = 12345
 	e.events_on = ev_on
@@ -50,6 +53,9 @@ func _init() -> void:
 	e.prestiges = 2
 	e.choose_concept(concept)
 	e.prestiges = 0
+	if challenge_id != "":
+		e.start_challenge(challenge_id)
+		e.choose_concept(concept)
 	if policy == "skilled":
 		reserve_s = maxf(reserve_s, 150.0)
 		e.insured = true
@@ -158,6 +164,9 @@ func _step(concept: String) -> void:
 		e.choose_concept(concept if e.concept_unlocked(concept) else "diner")
 		_autos_off()
 		return
+	if challenge_id != "" and not goal_logged and e.challenge_done():
+		goal_logged = true
+		_event("CHALLENGE GOAL reached after %s: +%s Grit" % [e.fmt_time(e.run_time), e.fmt_num(e.challenge_reward())])
 	var a: Dictionary = e.agg()
 	if policy == "random" or policy == "cheapest":
 		_sloppy()

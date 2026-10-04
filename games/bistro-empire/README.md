@@ -8,26 +8,24 @@ Mobile first: portrait layout, everything is a tap, tabs sit at the bottom withi
 
 ## How it plays
 
-Running a restaurant is a fight. The first runs are an uphill battle to stay in business, and sloppy play goes bankrupt. Every sale or bankruptcy makes the next run easier.
-
-Sales per second = guests served × bill × price × multipliers. Profit is what's left after running costs.
+A normal run can't lose money: income per second = guests served × bill × price × multipliers, with no running costs. If you want a fight, **Challenges** (below) turn on running costs, loans and the risk of going bust, and pay Grit.
 
 - **Ad Campaigns** bring guests in, **Tables** seat them, **Line Cooks** feed them, **Recipes** raise every bill.
 - You serve as many guests as the weakest of guests, seats and kitchen allows. That one is your **bottleneck**, marked **LIMIT** in red. Buying more of it moves the limit to whatever is next weakest. Buying more of the limit never brings the limit back to it.
-- **Everything costs money to run.** Every seat pays rent, every cook is paid, every ad costs money, and every plate needs food, busy or not. A lopsided restaurant bleeds money. Each Buy button shows what it does to your **profit** (green if it helps, orange if it would cost you), and the Profit & loss card on the Build tab shows where the money goes.
-- **Menu prices** (unlocked by the Price Tags upgrade, or from the start for Fine Dining) turn a queue into profit: higher prices mean fewer guests but bigger bills, up to your brand's price limit. Ads are the catch: the higher your price, the more ads it takes to fill the room. The Floor Manager prices to fill every seat; with it on, extra guests show up as a higher price, so the limit shown is seats or kitchen.
-- **A little slack is insurance.** A kitchen or dining room running flat out invites trouble (see events below). Spare capacity costs money but keeps you safe.
+- Each Buy button shows what it does to your income (green if it helps, grey if it does nothing right now). In a challenge it shows profit, and turns orange when a buy would cost more to run than it earns.
+- **Menu prices** (unlocked by the Price Tags upgrade, or from the start for Fine Dining) turn a queue into profit: higher prices mean fewer guests but bigger bills, up to your brand's price limit. In a challenge, ads are the catch: the higher your price, the more ads it takes to fill the room. The Floor Manager prices to fill every seat; with it on, extra guests show up as a higher price, so the limit shown is seats or kitchen.
+- **A little slack keeps trouble away.** A kitchen or dining room running flat out invites bad events (see below).
 - **Tap the restaurant** to serve by hand. Each serve pays a bill plus a quarter-second of income. During a slump it counts at least half your best income this run, so taps stay worth making. Serving upgrades add more seconds per tap, and the Café's serves are worth 10× plus an extra second of income.
 
 ## Strategy
 
 - **Concepts.** Each run you pick a concept, and each one plays differently:
-  - **Diner**: forgiving. Running costs 8% lower and +25% income.
-  - **Fast Food**: volume. Cheap food and rent, tiny bills, price-shy guests, and kitchens that run hot, so inspections come more often.
-  - **Fine Dining**: margins. Prices from the first second, huge bills, but pricey food, rent and chefs, and critics and reviews hit twice as hard. Unlocks after your first sale or bankruptcy.
-  - **Café**: taps are worth 10× and earn a second of income each, but margins are thin. Unlocks after two.
+  - **Diner**: balanced, +25% income.
+  - **Fast Food**: volume. Tiny bills, price-shy guests, and kitchens that run hot, so inspections come more often.
+  - **Fine Dining**: prices from the first second and huge bills, but critics and reviews hit twice as hard. Unlocks after your first sale.
+  - **Café**: taps are worth 10× and earn a second of income each. Unlocks after two.
 
-  The concept picker shows each one's food, rent, wage and ad costs and its price limit, so the best build order differs from the first minute.
+  Each concept also has its own running-cost profile, shown in the concept picker, which matters in challenges.
 
   Each concept also has 30 signature upgrades of its own.
 - **Crossroads.** 40 pairs of upgrades where buying one locks the other until you sell. Some examples:
@@ -38,22 +36,22 @@ Sales per second = guests served × bill × price × multipliers. Profit is what
   Some of them help one concept far more than another.
 - **Franchises.** 30 cities. Each location adds royalties that multiply all income, later cities pay far more per location, and every city has 8 milestone upgrades.
 - **Ventures.** At 15 locations you unlock 8 side businesses, from food trucks to a Global Spice Co. Each one boosts a single stat per level.
-- **Selling the company.** You get stars from lifetime earnings, and each star adds +2% income. Selling resets the run but keeps your stars and your **Legacy perks** (80 tiers across 9 lines), which you buy with stars. Knowing when to sell is the main long-term decision.
+- **Selling the company.** You get stars from lifetime earnings. Selling resets the run but keeps your stars and your **Legacy perks** (80 tiers across 9 lines), which you buy with stars. Every star you have ever earned adds +2% income for good, so spending stars on perks never lowers your bonus. Knowing when to sell is the main long-term decision.
 
 ## Side businesses
 
-Run them alongside the restaurant. Each one unlocks as your earnings this run grow, costs money to open, and has two builds plus its own twist. It also has its own running costs, so a badly run business can lose money.
+Run them alongside the restaurant. Each one unlocks as your earnings this run grow, costs money to open, and has two builds plus its own twist. In a challenge each business also has running costs (crew, rent, fines), so a badly run one can lose money.
 
 | Business | Twist |
 |---|---|
 | Food Truck | Choose one of 4 spots. Each spot's crowd changes every 3 minutes, and driving to a new one takes 15s. |
 | Bakery | Ovens bake and counters sell. Bread you can't sell goes stale. A morning rush every 4 minutes sells three times as fast, so it pays to keep a little stock. |
 | Catering Co. | Take contracts. Each one ties up crew for a set time and pays when it ends, and vans limit how many jobs run at once. Crew are paid whether they're busy or not. |
-| Cocktail Bar | Big margins, but a rowdiness meter fills as you serve. When it's full there's a fight: a fine and 10s closed. Bouncers keep the peace. Happy hour sells more drinks for less, and gets rowdier. |
+| Cocktail Bar | Big margins, but a rowdiness meter fills as you serve. When it's full there's a fight and 10s closed (and a fine, in a challenge). Bouncers keep the peace. Happy hour sells more drinks for less, and gets rowdier. |
 | Boutique Hotel | Set the room rate. The season changes every 4 minutes, and rent is due on every room, full or empty. |
 | Wholesale Co. | Stock piles up in warehouses; sell it when the moving market price is high. Delivery trucks cut food costs across the whole empire. |
 
-**Every business has its own page.** The Business tab lists the bank and your businesses, each with its income, how much of its market it has captured, and a badge for upgrades ready to buy. Tap one to open its page:
+**Every business has its own page.** The Business tab lists your businesses (and the bank, in a challenge), each with its income, how much of its market it has captured, and a badge for upgrades ready to buy. Tap one to open its page:
 
 - The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, costs and market share underneath. Tapping the scene sells by hand.
 - Below that are its twist controls, the market meter, its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
@@ -64,38 +62,46 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 
 - Each build adds a fixed share of that income, and its price is a number of seconds of it, rising about 5% per build. The first builds pay back in a minute or two, and each buy button shows its payback time.
 - Milestones (10, then every 25 up to 1,000) give that business ×1.5, and its upgrades are priced in seconds of income too.
-- **Market saturation.** Each business's sales level off as it fills its market, which is worth up to 20% of your restaurant's best sales this run. Company-wide upgrades and a Grit perk grow it with diminishing returns, up to 30%. Running costs keep rising, so overbuilding loses money. A well-run business adds 10–30% on top of the restaurant's profit. No business can outgrow the restaurant that feeds it, and upgrading the restaurant grows every market.
+- **Market saturation.** Each business's sales level off as it fills its market, which is worth up to 20% of your restaurant's best sales this run. Company-wide upgrades and a Grit perk grow it with diminishing returns, up to 30%. Past that point, extra builds barely add anything, and in a challenge their running costs make them a loss. A well-run business adds 10–30% on top of the restaurant. No business can outgrow the restaurant that feeds it, and upgrading the restaurant grows every market.
 - Each business has an optional manager that runs its twist, and an **Expansion Manager** (from 25 builds) that buys whichever build pays back fastest, using at most a quarter of your cash.
 
-## Money out: expenses, loans and events
+## Events
 
-- **Expenses.** Your restaurant pays for:
-  - Food for every plate served (35% of a plate's base value, adjusted by concept).
-  - Rent on every seat.
-  - Wages for every cook.
-  - Ads for every guest they bring in.
-  - Insurance, if you buy it.
+Every few minutes something happens. It opens as a pop-up you have to answer. There's no timer, and taps in its first moment are ignored, so a stray tap can't pick for you. In a normal run a bill can never take you below $0: it costs at most the cash you have.
 
-  Costs are measured against a plate's base value. Price never adds to them, so raising prices widens your margin. Franchise royalties carry half the costs. Stars and Grit widen your margin too, but only by their square root, so costs matter in every run.
-- **Bank.** In the Business tab you can borrow up to 10 minutes of income to expand faster. Interest comes out of profit every second, and the rate climbs as you max out your credit.
-- **Events are consequences.** Every few minutes something happens. It opens as a pop-up you have to answer. There's no timer, and taps in its first moment are ignored, so a stray tap can't pick for you. Bad events come from how you run things:
-  - Kitchen at full stretch (over 70% busy): inspections, freezer breakdowns, walkouts, food poisoning.
-  - Packed dining room: slip-and-fall lawsuits, the fire marshal.
-  - Turning guests away: viral bad reviews, an angry queue.
-  - Heavy borrowing: the bank wants a word.
-  - Some, like a power cut, are just bad luck.
+Bad events come from how you run things:
+- Kitchen at full stretch (over 70% busy): inspections, freezer breakdowns, walkouts, food poisoning.
+- Packed dining room: slip-and-fall lawsuits, the fire marshal.
+- Turning guests away: viral bad reviews, an angry queue.
+- Heavy borrowing (challenges only): the bank wants a word.
+- Some, like a power cut, are just bad luck.
 
-  The card says why it happened and how to avoid it, and the odds of any gamble depend on the same risk. A riskier restaurant also gets into trouble sooner. A calm, well-run restaurant gets more good news (critics, celebrities, tour buses) and passes inspections outright. Bills are measured in seconds of your profit.
-- **Hedges.** Spare capacity keeps the risk low. **Insurance** (in the Bank card) pays 75% of every event bill for 2.5% of your sales. Keeping some cash in the bank covers the rest.
-- **Bankruptcy.** If cash drops below $0, the strip under the restaurant turns red with a 5-minute countdown. It replaces the stats strip, so nothing on screen moves. Tap it for your options: take an emergency loan, sell a franchise location, sell a side business, or file. If you can't recover, the whole empire goes bankrupt:
-  - The run resets, like selling the company.
-  - You get **Grit** instead of stars, and the stars this run would have paid are lost. Even an early bust pays some Grit.
-  - Each Grit adds +1% income and buys Grit perks: 73 perks across 10 lines, including cheaper fines, a bigger credit limit, lower interest, leaner costs, a longer deadline, bigger markets and luckier events.
+The card says why it happened and how to avoid it, and the odds of any gamble depend on the same risk. A riskier restaurant also gets into trouble sooner. A calm, well-run restaurant gets more good news (critics, celebrities, tour buses) and passes inspections outright. Bills are measured in seconds of your income.
 
-  You can also file for bankruptcy yourself while you're in the red. Bankruptcies count towards unlocking concepts, the same as sales.
-- **Updating mid-run.** A run saved under the old, easier rules gets 10 minutes with no bankruptcy clock and no events to rebalance, and a one-time note explaining what changed.
+## Challenges and Grit
+
+Challenges are optional runs, started from the Legacy tab, where you can actually lose. Each has 10 levels. Reach the level's goal (earn $X in one run), then sell the company to collect Grit as well as your stars. The more you earned, the more Grit, and harder challenges and higher levels multiply it.
+
+| Challenge | Rules | Grit |
+|---|---|---|
+| Tight Margins | Running costs and the risk of going bust | ×1 |
+| Health Code | Tight Margins, bad events cost twice as much, no insurance | ×1.5 |
+| Shoestring | Tight Margins, no bank (no loans or insurance), no Legacy starting cash | ×1.75 |
+| One Restaurant | Tight Margins, no side businesses or franchises | ×2 |
+| Recession | Tight Margins, price limit halved, running costs 20% higher | ×2 |
+
+Each level's goal is 1,000× the last, and Grit grows by half per level.
+
+- **Running costs.** In a challenge the restaurant pays for food on every plate (35% of a plate's base value, adjusted by concept), rent on every seat, wages for every cook and ads for every guest they bring in, busy or not. A lopsided restaurant bleeds money, and the Profit & loss card shows where it goes. Costs are measured against a plate's base value, so raising prices widens your margin. Franchise royalties carry half the costs. Stars and Grit widen your margin too, by their square root.
+- **Bank.** Borrow up to 10 minutes of income to expand faster. Interest climbs as you max out your credit. **Insurance** pays 75% of every event bill for 2.5% of your sales.
+- **Going bust.** If cash drops below $0, the strip under the restaurant turns red with a 5-minute countdown (it replaces the stats strip, so nothing moves). Tap it for options: an emergency loan, selling a franchise location or a side business, or giving up. If time runs out, the challenge is over and you're back to a normal run. Nothing else is lost: that run's earnings still count towards your next sale's stars.
+- **Grit.** Every Grit you have ever earned adds +1% income for good, even after you spend it. Spend it on Grit perks (73 across 10 lines): bigger income, cheaper fines, a bigger credit limit, lower interest, leaner costs, a longer deadline, bigger business markets and luckier events. Most of them help in challenges.
+- **Updating.** Saves from the version where costs applied to every run load as normal runs: any debt is forgiven, and a one-time note explains what changed.
+
+## Interface
+
 - **Text always fits.** Nothing is ever cut off with "...". Text with a fixed slot shrinks a little to fit, longer text wraps, and every row reserves a line for each thing it shows, so nothing overlaps. Tests check this on every screen.
-- **Nothing jumps.** Events and the in-the-red options are pop-ups. The bank, the Profit & loss card, the "Buy all" bars, and each business page's automation and upgrade sections keep the same size whatever happens, so a button is never pushed out from under your thumb.
+- **Nothing jumps.** Events and the in-the-red options are pop-ups. The bank, the income card, the "Buy all" bars, and each business page's automation and upgrade sections keep the same size whatever happens, so a button is never pushed out from under your thumb.
 
 ## Upgrades: 1,726 in total
 
@@ -148,10 +154,10 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 - `biz.gd`: the side businesses. `step()` simulates each twist in real time; `estimate()` gives steady-state rates for display, offline time and the balance bot.
 - `events.gd`: the events, what makes each one likely (kitchen strain, crowding, queues, debt), and how their choices resolve.
 - `main.gd`: input, layout and immediate-mode drawing. The scrolling list is a clipped child `Control`, and pop-ups draw on an overlay `Control`.
-- `tools/sim.gd`: a greedy bot that plays the economy headless and prints pacing. It isn't exported. Run it with `godot --headless --path . --script res://tools/sim.gd -- hours=8 concept=diner`. It takes options `noprestige=1`, `nobiz=1`, `events=0`, `reserve=SECONDS` (cash it keeps for emergencies), `taps=N`, `stars=N` and `policy=`:
-    - `greedy` (default) buys whatever pays back fastest. It makes its first sale after about 70 minutes and occasionally goes bankrupt.
-    - `skilled` also keeps spare capacity, insures and holds a bigger reserve. It survives and sells after 80–110 minutes.
-    - `random` and `cheapest` click whatever they can afford. They go bankrupt within the first hour or two, which is the point.
+- `tools/sim.gd`: a greedy bot that plays the economy headless and prints pacing. It isn't exported. Run it with `godot --headless --path . --script res://tools/sim.gd -- hours=8 concept=diner`. It takes options `noprestige=1`, `nobiz=1`, `events=0`, `reserve=SECONDS` (cash it keeps for emergencies), `taps=N`, `stars=N`, `challenge=ID` (play level I of a challenge, e.g. `challenge=margins`) and `policy=`:
+    - `greedy` (default) buys whatever pays back fastest. In normal runs it first sells after about 40–50 minutes, and each sale after that comes faster.
+    - `skilled` also keeps spare capacity, insures and holds a bigger reserve. With no stars it reaches Tight Margins level I in about 85 minutes; Health Code can still bankrupt it.
+    - `random` and `cheapest` click whatever they can afford. In a challenge they go bust within an hour or two.
 - Agent hooks:
   - `get_agent_state()`
   - `press_button("rep:tables")` (any button id)
@@ -159,4 +165,4 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
   - `dev_skip(seconds)`
   - `dev_event("lawsuit")` (any id from `events.gd`)
 
-Tests: `gck test bistro-empire` (`tests/test_main.gd`, 76 tests). They cover text never overlapping, running off screen, spilling out of or under a button, or shrinking too small to read (13 tests walk every tab and filter top to bottom, every business page and every pop-up and event at 360px and 412px wide, early in a run and with enormous numbers), the bottleneck never flipping back to guests as you buy guests, every stat costing money to run (a lopsided restaurant loses money), events following kitchen strain, crowding, queues and debt (and the odds changing with it), insurance, businesses never outgrowing the restaurant, nothing on screen moving when an event, debt or the red banner appears, older saves getting a grace period, each business's page, business payback staying under an hour, expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.
+Tests: `gck test bistro-empire` (`tests/test_main.gd`, 82 tests). They cover normal runs never losing money (no costs, no bank, event bills capped at your cash, cash floored at $0), challenges (rules per challenge, goals, Grit on completion, levels, going bust only ending the run, saving), star and Grit bonuses counting everything ever earned, old saves having debt forgiven, text never overlapping, running off screen, spilling out of or under a button, or shrinking too small to read (16 tests walk every tab and filter top to bottom, every business page, every pop-up and event, and challenge runs, at 360px and 412px wide, early in a run and with enormous numbers), the bottleneck never flipping back to guests as you buy guests, every stat costing money to run in a challenge (a lopsided restaurant loses money), events following kitchen strain, crowding, queues and debt (and the odds changing with it), insurance, businesses never outgrowing the restaurant, nothing on screen moving when an event, debt or the red banner appears, each business's page, business payback staying under an hour, expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.

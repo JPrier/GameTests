@@ -607,11 +607,16 @@ func _do(id: String) -> void:
 		"sell_yes":
 			var g := E.prestige()
 			modal = ""
-			if g > 0.0:
+			if not E.concept_chosen:
 				for t in TABS:
 					scroll[t] = 0.0
 				tab = "build"
-				open_modal("concept", {"stars": g})
+				biz_page = -1
+				var d := {"stars": g}
+				if not E.last_challenge.is_empty():
+					d["grit"] = float(E.last_challenge.grit)
+					d["done"] = E.last_challenge.duplicate()
+				open_modal("concept", d)
 				save_game()
 		"concept":
 			if E.choose_concept(parts[1]):
@@ -744,7 +749,25 @@ func _do(id: String) -> void:
 			E.go_bankrupt()
 		"after_bankrupt":
 			modal = ""
-			open_modal("concept", {"grit": float(modal_data.get("grit", 0.0))})
+			open_modal("concept", {"bust": true})
+		"challenge": open_modal("challenge", {"id": parts[1]})
+		"challenge_yes":
+			if E.start_challenge(String(modal_data.get("id", ""))):
+				for t in TABS:
+					scroll[t] = 0.0
+				tab = "build"
+				biz_page = -1
+				open_modal("concept", {"challenge": true})
+				save_game()
+		"abandon": open_modal("abandon")
+		"abandon_yes":
+			E.abandon_challenge()
+			for t in TABS:
+				scroll[t] = 0.0
+			tab = "build"
+			biz_page = -1
+			open_modal("concept")
+			save_game()
 		"noop": pass
 
 
@@ -1004,9 +1027,9 @@ func _button(id: String, r: Rect2, label: String, style := "", layer := "chrome"
 	var rr := r.grow(-1.5) if pressed else r
 	_rr(rr, bg, 10)
 	var lines := label.split("\n")
+	_owner = "%s#%d" % [id, button_log.size()]
 	if log_text:
-		button_log.append({"cv": cv, "r": r, "id": id})
-	_owner = id
+		button_log.append({"cv": cv, "r": r, "id": id, "key": _owner})
 	if lines.size() == 1:
 		_tcf(rr, rr.get_center().y + size * 0.36, label, size, rr.size.x - 8, fg)
 	else:
@@ -1043,7 +1066,10 @@ func _draw_header() -> void:
 	var r := header_r
 	var cc: Dictionary = Econ.CONCEPT[E.concept]
 	var ccol := Color(String(cc.color))
-	_text(Vector2(r.position.x, r.position.y + 14), ("BISTRO EMPIRE  ·  " + String(cc.name).to_upper()) if E.concept_chosen else "BISTRO EMPIRE", 12, ccol)
+	var head := ("BISTRO EMPIRE  ·  " + String(cc.name).to_upper()) if E.concept_chosen else "BISTRO EMPIRE"
+	if E.challenge != "":
+		head = "%s %s  ·  %s" % [String(Econ.CHALLENGES[E.challenge].name).to_upper(), Econ.roman(E.challenge_level + 1), String(cc.name).to_upper()]
+	_tf(Vector2(r.position.x, r.position.y + 14), head, 12, r.size.x - 110, C_GRIT if E.challenge != "" else ccol)
 	var cash_s := Econ.fmt_money(E.cash) if E.cash >= 0.0 else "-" + Econ.fmt_money(-E.cash)
 	var red := E.in_red()
 	_text(Vector2(r.position.x, r.position.y + 46), cash_s, 32, C_RED if red else C_INK)
@@ -1354,7 +1380,7 @@ func _draw_build(y: float) -> float:
 		_rr(hr, Color(C_ACCENT, 0.12), 12, C_ACCENT, 1)
 		_star(hr.position + Vector2(24, 32), 12, C_ACCENT)
 		_text(hr.position + Vector2(44, 27), "Selling now: +%s" % _stars_label(pend), 16, C_ACCENT)
-		var after := 1.0 + (E.stars + pend) * (Econ.STAR_BASE + float(a.starpow))
+		var after := 1.0 + (E.stars_earned + pend) * (Econ.STAR_BASE + float(a.starpow))
 		_tf(hr.position + Vector2(44, 48), "Stars would multiply income by %s. Tap to sell." % Econ.fmt_mult(snappedf(after, 0.01)), 13, hr.size.x - 56, C_MUTED)
 		_btn("tab:legacy", hr, "content")
 		y = hr.end.y + 8
@@ -1384,8 +1410,12 @@ func _draw_pnl(y: float) -> float:
 	if em.is_empty():
 		return y
 	var inf := info_cache
-	# always the same rows, so the card never changes height
-	var rows: Array = [
+	# always the same rows within a run, so the card never changes height
+	var rows: Array
+	if not E.costs_on():
+		rows = [["Restaurant sales", float(em.rest_rev), C_INK], ["Side businesses", float(em.biz_rev), C_INK]]
+	else:
+		rows = [
 		["Restaurant sales", float(em.rest_rev), C_INK],
 		["Food (%d%% of each plate)" % int(round(E.food_cost_pct())), -float(em.food), C_MUTED],
 		["Rent (every seat, %d%% empty)" % int(round(100.0 * (1.0 - float(inf.get("fstrain", 0.0))))), -float(inf.get("rent", 0.0)), C_MUTED],
@@ -1394,15 +1424,16 @@ func _draw_pnl(y: float) -> float:
 		["Insurance", -float(em.get("insurance", 0.0)), C_MUTED],
 		["Side businesses (net)", float(em.biz_rev) - float(em.biz_cost), C_INK],
 		["Loan interest", -float(em.interest), C_ORANGE],
-	]
+		]
 	var h := 44 + rows.size() * 22 + 30
 	var r := _row_rect(y, h)
 	if not _visible(r):
 		return r.end.y + 8
 	_rr(r, C_CARD, 12)
-	_text(r.position + Vector2(14, 26), "Profit & loss", 17)
-	var pct := 100.0 * float(em.costs) / maxf(float(em.gross), 1e-300)
-	_text_r(r.end.x - 14, r.position.y + 26, "costs %d%% of sales" % int(round(pct)), 12, C_DIM)
+	_text(r.position + Vector2(14, 26), "Profit & loss" if E.costs_on() else "Income", 17)
+	if E.costs_on():
+		var pct := 100.0 * float(em.costs) / maxf(float(em.gross), 1e-300)
+		_text_r(r.end.x - 14, r.position.y + 26, "costs %d%% of sales" % int(round(pct)), 12, C_DIM)
 	var yy := r.position.y + 50
 	for row in rows:
 		var v := float(row[1])
@@ -1410,17 +1441,21 @@ func _draw_pnl(y: float) -> float:
 		_text_r(r.end.x - 14, yy, (("" if v >= 0.0 else "-") + Econ.fmt_money(absf(v)) + "/s") if absf(v) > 0.0 else "-", 13, (row[2] if v >= 0.0 else Color("e99a8f")) if absf(v) > 0.0 else C_DIM)
 		yy += 22
 	cv.draw_line(Vector2(r.position.x + 14, yy - 12), Vector2(r.end.x - 14, yy - 12), C_LINE, 1)
-	_text(Vector2(r.position.x + 14, yy + 8), "Profit", 15, C_INK)
+	_text(Vector2(r.position.x + 14, yy + 8), "Profit" if E.costs_on() else "Total", 15, C_INK)
 	var net := float(em.net)
 	_text_r(r.end.x - 14, yy + 8, ("+" if net >= 0.0 else "-") + Econ.fmt_money(absf(net)) + "/s", 15, C_GREEN if net >= 0.0 else C_RED)
 	return r.end.y + 8
+
+
+func _gain_word() -> String:
+	return " profit" if E.costs_on() else " income"
 
 
 func _tip() -> String:
 	var inf := info_cache
 	if inf.is_empty():
 		return ""
-	if inc_cache < 0.0:
+	if inc_cache < 0.0 and E.costs_on():
 		return "You're losing money. Check Profit & loss: unused seats, idle cooks and ads for guests you can't serve all cost money every second."
 	if float(inf.kstrain) > 0.92:
 		return "Tip: Your kitchen is flat out (%d%%). Overworked kitchens fail inspections and make people sick. A few spare cooks are insurance." % int(round(float(inf.kstrain) * 100.0))
@@ -1428,11 +1463,11 @@ func _tip() -> String:
 		return "Tip: You're turning away %d%% of guests. They complain online. Add seats and cooks, or raise prices." % int(round(float(inf.queue) * 100.0))
 	match String(inf.limit):
 		"demand":
-			return "Tip: Guests are the limit. Ads bring more people in, but every ad costs money each second."
+			return "Tip: Guests are the limit. Ad Campaigns bring more people in." + (" Every ad costs money each second." if E.costs_on() else "")
 		"seating":
 			return "Tip: Seats are the limit. Tables add capacity; keep cooks a little ahead so the kitchen isn't flat out."
 		"kitchen":
-			return "Tip: The kitchen is the limit. Hire Line Cooks; empty seats still pay rent."
+			return "Tip: The kitchen is the limit. Hire Line Cooks." + (" Empty seats still pay rent." if E.costs_on() else "")
 	return ""
 
 
@@ -1466,9 +1501,9 @@ func _draw_rep_row(r: Rect2, rep: String, a: Dictionary) -> void:
 	var can := cost <= E.cash
 	var g := rep_gain(rep, k)
 	if g > 0.0005:
-		_tf(Vector2(x, r.position.y + 94), "+" + _pct(g) + " profit", 12, tw, C_GREEN)
+		_tf(Vector2(x, r.position.y + 94), "+" + _pct(g) + _gain_word(), 12, tw, C_GREEN)
 	elif g < -0.0005:
-		_tf(Vector2(x, r.position.y + 94), "-" + _pct(-g) + " profit", 12, tw, C_ORANGE)
+		_tf(Vector2(x, r.position.y + 94), "-" + _pct(-g) + _gain_word(), 12, tw, C_ORANGE)
 	else:
 		_tf(Vector2(x, r.position.y + 94), "No gain right now", 12, tw, C_DIM)
 	_button("rep:" + rep, br, "%s\n%s" % ["Buy %d" % k, Econ.fmt_money(cost)], "buy" if can else "", "content", true, can, 17)
@@ -1633,9 +1668,9 @@ func _draw_upgrade_row(r: Rect2, u: Dictionary) -> void:
 		y += 16
 	var g := upgrade_gain(u)
 	if g > 0.0005:
-		_tf(Vector2(x, y), "+" + _pct(g) + " profit", 12, tw, C_GREEN)
+		_tf(Vector2(x, y), "+" + _pct(g) + _gain_word(), 12, tw, C_GREEN)
 	elif g < -0.0005:
-		_tf(Vector2(x, y), "-" + _pct(-g) + " profit now (costs more to run)", 12, tw, C_ORANGE)
+		_tf(Vector2(x, y), "-" + _pct(-g) + _gain_word() + " now" + (" (costs more to run)" if E.costs_on() else ""), 12, tw, C_ORANGE)
 	y += 17
 	for line in L.lock:
 		_text(Vector2(x, y - 2), line, 12, C_ORANGE)
@@ -1764,10 +1799,10 @@ func _draw_alerts(y: float) -> float:
 func _modal_rules(vs: Vector2) -> void:
 	var w := minf(vs.x - 24, 480)
 	var pts := [
-		"Every seat, cook and ad now costs money every second, busy or not. A lopsided restaurant loses money, so keep guests, seats and kitchen in step. Each Buy button shows what it does to profit.",
-		"Events come from how you run things: a kitchen at full stretch gets inspected, a packed room gets lawsuits, a long queue gets bad reviews. The card tells you why. Spare capacity and Insurance (Business tab, Bank) are your hedges.",
-		"Losing is real now. Fall below $0 and you have 5 minutes to recover before the empire goes bankrupt (you keep Grit).",
-		"You have %s to rebalance before the bankruptcy clock or any events can start." % Econ.fmt_time(E.grace),
+		"Running costs are gone. Normal runs can't lose money and can't go bankrupt, and any debt you had is forgiven.",
+		"Events are still there, but a bill can never take you below $0.",
+		"Every star and every Grit you have ever earned now counts towards your income bonus, even after you spend them on perks.",
+		"Grit now comes from Challenges (Legacy tab): optional runs with running costs, loans and the risk of going bust. Reach the goal and sell to collect Grit.",
 	]
 	var blocks: Array = []
 	var h := 110.0
@@ -1777,8 +1812,8 @@ func _modal_rules(vs: Vector2) -> void:
 		h += l.size() * 17.0 + 12.0
 	var r := _modal_card(vs, h + 60)
 	_rr(r, C_BG, 16, C_ACCENT, 2)
-	_text_c(r, r.position.y + 38, "The rules got tougher", 21, C_ACCENT)
-	_text_c(r, r.position.y + 62, "Running a restaurant is a real fight now", 13, C_MUTED)
+	_text_c(r, r.position.y + 38, "What's changed", 21, C_ACCENT)
+	_text_c(r, r.position.y + 62, "Losing is now something you opt into", 13, C_MUTED)
 	var y := r.position.y + 92
 	for l in blocks:
 		cv.draw_circle(Vector2(r.position.x + 24, y - 4), 3, C_ACCENT)
@@ -1802,15 +1837,15 @@ func _modal_red(vs: Vector2) -> void:
 	var bi := _biggest_biz()
 	if bi >= 0:
 		opts.append(["sell_biz:%d" % bi, "Sell %s\n+%s" % [Biz.DEFS[bi].name, Econ.fmt_money(Biz.invested(bi, E.biz[bi], E) * E.refund_rate())], ""])
-	opts.append(["file", "File for bankruptcy\n+%s grit" % Econ.fmt_num(E.grit_pending()), "red"])
+	opts.append(["file", "Give up\nthe challenge", "red"])
 	var w := minf(vs.x - 24, 480)
-	var lines := _wrap("You're %s short and losing %s/s. Get back above $0 before the deadline or the whole empire goes under. Selling things or cutting what you don't use (check Profit & loss on the Build tab) also helps." % [Econ.fmt_money(need), Econ.fmt_money(maxf(0.0, -inc_cache))] if inc_cache < 0.0 else "You're %s short. Get back above $0 before the deadline or the whole empire goes under." % Econ.fmt_money(need), 13, w - 40)
+	var lines := _wrap("You're %s short and losing %s/s. Get back above $0 before the deadline or the challenge is over. Selling things or cutting what you don't use (check Profit & loss on the Build tab) also helps." % [Econ.fmt_money(need), Econ.fmt_money(maxf(0.0, -inc_cache))] if inc_cache < 0.0 else "You're %s short. Get back above $0 before the deadline or the challenge is over." % Econ.fmt_money(need), 13, w - 40)
 	var rows := int(ceil(opts.size() / 2.0))
 	var r := _modal_card(vs, 104 + lines.size() * 18 + rows * 58 + 64)
 	var pulse := 0.6 + 0.4 * sin(anim_t * 5.0)
 	_rr(r, Color("2a0b07"), 16, Color(C_RED, pulse), 2)
 	_text(r.position + Vector2(18, 34), "IN THE RED", 20, C_RED)
-	_text_r(r.end.x - 18, r.position.y + 34, "Bankrupt in " + Econ.fmt_time(left), 16, C_RED)
+	_text_r(r.end.x - 18, r.position.y + 34, "Over in " + Econ.fmt_time(left), 16, C_RED)
 	var bar := Rect2(r.position.x + 18, r.position.y + 48, r.size.x - 36, 5)
 	cv.draw_rect(bar, Color(1, 1, 1, 0.08))
 	cv.draw_rect(Rect2(bar.position, Vector2(bar.size.x * left / maxf(E.deadline(), 1.0), 5)), C_RED)
@@ -1831,7 +1866,7 @@ func _draw_red_strip() -> void:
 	var left := maxf(0.0, E.deadline() - E.red_t)
 	var pulse := 0.6 + 0.4 * sin(anim_t * 5.0)
 	_rr(r, Color("2a0b07"), 10, Color(C_RED, pulse), 2)
-	_text(r.position + Vector2(10, 19), ("IN THE RED · clock starts in " + Econ.fmt_time(E.grace)) if E.grace > 0.0 else ("IN THE RED · bankrupt in " + Econ.fmt_time(left)), 13, C_RED)
+	_text(r.position + Vector2(10, 19), ("IN THE RED · clock starts in " + Econ.fmt_time(E.grace)) if E.grace > 0.0 else ("IN THE RED · challenge over in " + Econ.fmt_time(left)), 13, C_RED)
 	_tf(r.position + Vector2(10, 39), "%s short. Tap for options" % Econ.fmt_money(-E.cash), 14, r.size.x - 20, Color("ffb0a6"))
 	_btn("red", r)
 
@@ -1921,7 +1956,8 @@ func _draw_business(y: float) -> float:
 	if _on_biz_page():
 		return _draw_biz_page(y, biz_page)
 	biz_page = -1
-	y = _draw_bank(y)
+	if E.bank_on():
+		y = _draw_bank(y)
 	y = _section(y, "Your businesses", "%d / %d open" % [E.biz_open_count(), Biz.N])
 	var ml := _wrap("Each business can sell up to %s/s, %d%% of your restaurant's best sales this run. Grow the restaurant to grow them all." % [Econ.fmt_money(Biz.market(0, E) * E.biz_ref()), int(round(Biz.market(0, E) * 100.0))], 12, content_r.size.x - 48)
 	var lr := _row_rect(y, 34 + ml.size() * 16)
@@ -2465,6 +2501,9 @@ func _draw_bank(y: float) -> float:
 	_button("borrow:1.0", Rect2(x + (w + 6), by, w, 36), "Max", "", "content", false, avail > 1.0, 13)
 	_button("repay:0.5", Rect2(x + 2 * (w + 6), by, w, 36), "Repay half", "", "content", false, E.debt > 0.0 and E.cash > 0.0, 12)
 	_button("repay:1.0", Rect2(x + 3 * (w + 6), by, w, 36), "Repay all", "buy" if E.debt > 0.0 and E.cash >= E.debt else "", "content", false, E.debt > 0.0 and E.cash > 0.0, 12)
+	if not E.insurance_on():
+		_tf(Vector2(r.position.x + 14, r.position.y + 140), "No insurance is sold in this challenge.", 12, r.size.x - 28, C_DIM)
+		return r.end.y + 10
 	# insurance: the hedge against events
 	var iy := r.position.y + 122
 	cv.draw_line(Vector2(r.position.x + 14, iy - 6), Vector2(r.end.x - 14, iy - 6), C_LINE, 1)
@@ -2653,17 +2692,21 @@ func _draw_twist(i: int, s: Dictionary, r: Rect2) -> void:
 
 func _draw_legacy(y: float) -> float:
 	var a := E.agg()
-	var r := _row_rect(y, 196)
+	if E.challenge != "":
+		y = _draw_challenge_now(y)
+	var lines := _wrap("Sell the company to an investor for stars. You restart from a single diner, keeping your stars, Grit and perks. Every star you ever earn adds +%s%% income for good, even after you spend it." % Econ.fmt_mult(snappedf((Econ.STAR_BASE + float(a.starpow)) * 100.0, 0.01)), 13, content_r.size.x - 56)
+	var r := _row_rect(y, 140 + lines.size() * 18)
 	_rr(r, C_CARD_HI, 14)
 	_star(r.position + Vector2(34, 38), 20, C_ACCENT)
-	_text(r.position + Vector2(64, 34), _stars_label(E.stars), 22, C_ACCENT)
-	_text(r.position + Vector2(64, 54), "Income x%s from stars" % Econ.fmt_num(E.star_mult(a)), 14, C_MUTED)
+	_tf(r.position + Vector2(64, 34), "%s to spend" % _stars_label(E.stars), 22, r.size.x - 80, C_ACCENT)
+	_tf(r.position + Vector2(64, 54), "Income x%s from %s earned" % [Econ.fmt_num(E.star_mult(a)), _stars_label(E.stars_earned)], 14, r.size.x - 80, C_MUTED)
 	var pend := E.stars_pending()
-	var lines := _wrap("Sell the company to an investor for stars. You restart from a single diner, keeping your stars, Grit and perks. Each star adds +%s%% income." % Econ.fmt_mult(snappedf((Econ.STAR_BASE + float(a.starpow)) * 100.0, 0.01)), 13, r.size.x - 32)
 	for i in lines.size():
 		_text(r.position + Vector2(16, 82 + i * 18), lines[i], 13, C_MUTED)
 	var br := Rect2(r.position.x + 16, r.end.y - 62, r.size.x - 32, 48)
-	if pend >= 1.0:
+	if E.challenge_done():
+		_button("sell", br, "Complete: +%s Grit, +%s" % [Econ.fmt_num(E.challenge_reward()), _stars_label(pend)], "red", "content", false, true, 16)
+	elif pend >= 1.0:
 		_button("sell", br, "Sell company: +" + _stars_label(pend), "accent", "content", false, true, 17)
 	else:
 		var next := 1.0 + E.stars_earned
@@ -2671,18 +2714,77 @@ func _draw_legacy(y: float) -> float:
 		_button("noop", br, "Earn %s in total for the next star" % Econ.fmt_money(need), "", "content", false, false, 14)
 	y = r.end.y + 12
 	y = _perk_list(y, "star")
-	# ---- grit
-	var gr := _row_rect(y + 6, 150)
+	# ---- grit and challenges
+	var gl := _wrap("Grit comes from Challenges: optional runs with running costs and the risk of going bust. Reach a challenge's goal and sell the company to collect Grit. Every Grit you ever earn adds +1% income for good, and buys perks that help in challenges.", 13, content_r.size.x - 56)
+	var gr := _row_rect(y + 6, 74 + gl.size() * 18)
 	_rr(gr, Color("2a1710"), 14, Color(C_GRIT, 0.5), 1)
 	_grit_icon(gr.position + Vector2(34, 38), C_GRIT)
-	_text(gr.position + Vector2(64, 34), "%s Grit" % Econ.fmt_num(E.grit), 22, C_GRIT)
-	_text(gr.position + Vector2(64, 54), "Income x%s from Grit" % Econ.fmt_mult(snappedf(E.grit_mult(), 0.01)), 14, C_MUTED)
-	var gl := _wrap("Going bankrupt hurts, but you learn. Each bankruptcy pays Grit based on how much this run earned (now: %s). Grit adds +1%% income each and buys perks that make risk safer." % Econ.fmt_num(E.grit_pending()), 13, gr.size.x - 32)
+	_tf(gr.position + Vector2(64, 34), "%s Grit to spend" % Econ.fmt_num(E.grit), 22, gr.size.x - 80, C_GRIT)
+	_tf(gr.position + Vector2(64, 54), "Income x%s from %s earned" % [Econ.fmt_mult(snappedf(E.grit_mult(), 0.01)), Econ.fmt_num(E.grit_earned)], 14, gr.size.x - 80, C_MUTED)
 	for i in gl.size():
 		_text(gr.position + Vector2(16, 82 + i * 18), gl[i], 13, C_MUTED)
 	y = gr.end.y + 12
-	y = _perk_list(y, "grit")
+	y = _section(y, "Challenges", "%d / %d levels done" % [_challenge_levels_done(), Econ.CHALLENGES.size() * Econ.CHALLENGE_LEVELS])
+	for id in Econ.CHALLENGE_ORDER:
+		y = _draw_challenge_row(y, id)
+	y = _perk_list(y + 4, "grit")
 	return y
+
+
+func _challenge_levels_done() -> int:
+	var n := 0
+	for id in E.challenge_best:
+		n += int(E.challenge_best[id])
+	return n
+
+
+func _draw_challenge_row(y: float, id: String) -> float:
+	var c: Dictionary = Econ.CHALLENGES[id]
+	var lvl := E.challenge_next_level(id)
+	var maxed := lvl >= Econ.CHALLENGE_LEVELS
+	var bl := _wrap(String(c.blurb), 13, content_r.size.x - 52)
+	var r := _row_rect(y, 108 + bl.size() * 17)
+	if not _visible(r):
+		return r.end.y + 8
+	_rr(r, C_CARD, 12)
+	cv.draw_rect(Rect2(r.position.x, r.position.y + 10, 4, r.size.y - 20), C_GRIT)
+	var tag := "All %d levels done" % Econ.CHALLENGE_LEVELS if maxed else "Level %d of %d" % [lvl + 1, Econ.CHALLENGE_LEVELS]
+	var tagw := _tw(tag, 12) + 4
+	_tf(r.position + Vector2(14, 26), String(c.name), 17, r.size.x - 40 - tagw, C_GRIT)
+	_text_r(r.end.x - 14, r.position.y + 26, tag, 12, C_DIM)
+	for i in bl.size():
+		_text(r.position + Vector2(14, 48 + i * 17), bl[i], 13, C_MUTED)
+	var yy := r.position.y + 48 + bl.size() * 17
+	if not maxed:
+		_tf(Vector2(r.position.x + 14, yy + 2), "Goal: earn %s in one run · Grit x%s" % [Econ.fmt_money(E.challenge_goal(lvl)), Econ.fmt_mult(float(c.mult) * (1.0 + 0.5 * lvl))], 12, r.size.x - 28, C_INK)
+	var br := Rect2(r.position.x + 14, r.end.y - 50, r.size.x - 28, 40)
+	if maxed:
+		_button("noop", br, "Mastered", "", "content", false, false, 14)
+	elif E.challenge != "":
+		_button("noop", br, "Finish or leave your current challenge first", "", "content", false, false, 13)
+	else:
+		_button("challenge:" + id, br, "Start level %d" % (lvl + 1), "red", "content", false, true, 15)
+	return r.end.y + 8
+
+
+## The challenge you're in: progress to the goal, the reward, and a way out.
+func _draw_challenge_now(y: float) -> float:
+	var c: Dictionary = Econ.CHALLENGES[E.challenge]
+	var r := _row_rect(y, 160)
+	_rr(r, Color("2a1710"), 14, C_GRIT, 2)
+	_tf(r.position + Vector2(16, 28), "%s %s" % [c.name, Econ.roman(E.challenge_level + 1)], 19, r.size.x - 32, C_GRIT)
+	var goal := E.challenge_goal()
+	var f := clampf(E.run_earned / maxf(goal, 1.0), 0.0, 1.0)
+	_tf(r.position + Vector2(16, 52), "Earned %s of %s this run" % [Econ.fmt_money(E.run_earned), Econ.fmt_money(goal)], 13, r.size.x - 32, C_MUTED)
+	var bar := Rect2(r.position.x + 16, r.position.y + 62, r.size.x - 32, 8)
+	_rr(bar, Color(1, 1, 1, 0.08), 4)
+	_rr(Rect2(bar.position, Vector2(maxf(8.0, bar.size.x * f), 8)), C_GRIT, 4)
+	var msg := "Goal reached! Complete for %s Grit" % Econ.fmt_num(E.challenge_reward()) if E.challenge_done() else "Reach the goal, then sell to collect Grit"
+	_tf(r.position + Vector2(16, 92), msg, 13, r.size.x - 32, C_GREEN if E.challenge_done() else C_MUTED)
+	var bw := (r.size.x - 32 - 8) * 0.5
+	_button("abandon", Rect2(r.position.x + 16, r.end.y - 52, bw, 40), "Leave challenge", "ghost", "content", false, true, 14)
+	_button("sell" if E.challenge_done() else "noop", Rect2(r.position.x + 24 + bw, r.end.y - 52, bw, 40), "Complete" if E.challenge_done() else "Goal not reached", "red" if E.challenge_done() else "", "content", false, E.challenge_done(), 14)
+	return r.end.y + 12
 
 
 func _grit_icon(c: Vector2, col_: Color) -> void:
@@ -2862,6 +2964,8 @@ func _draw_overlay() -> void:
 		"bankrupt": _modal_bankrupt(vs)
 		"file": _modal_file(vs)
 		"sell_biz": _modal_sell_biz(vs)
+		"challenge": _modal_challenge(vs)
+		"abandon": _modal_abandon(vs)
 		"event": _modal_event(vs)
 		"rules": _modal_rules(vs)
 		"red": _modal_red(vs)
@@ -2887,9 +2991,25 @@ func _modal_concept(vs: Vector2) -> void:
 	_rr(r, C_BG, 16, C_LINE, 1)
 	var g := float(modal_data.get("stars", 0.0))
 	var gg := float(modal_data.get("grit", 0.0))
-	var title := "Sold! +" + _stars_label(g) if g > 0.0 else ("Back on your feet" if modal_data.has("grit") else "Open your first restaurant")
-	_text_c(r, r.position.y + 36, title, 22, C_ACCENT if g > 0.0 else (C_GRIT if gg > 0.0 else C_INK))
-	_text_c(r, r.position.y + 62, "Choose a concept for this run", 14, C_MUTED)
+	var title := "Open your first restaurant"
+	var sub := "Choose a concept for this run"
+	var tcol := C_INK
+	if modal_data.has("done"):
+		var dn: Dictionary = modal_data.done
+		title = "Challenge complete! +%s Grit" % Econ.fmt_num(gg)
+		sub = "%s %s done. Choose a concept" % [Econ.CHALLENGES[String(dn.id)].name, Econ.roman(int(dn.level) + 1)]
+		tcol = C_GRIT
+	elif g > 0.0:
+		title = "Sold! +" + _stars_label(g)
+		tcol = C_ACCENT
+	elif E.challenge != "":
+		title = "%s %s" % [Econ.CHALLENGES[E.challenge].name, Econ.roman(E.challenge_level + 1)]
+		sub = "Choose a concept for this challenge"
+		tcol = C_GRIT
+	elif modal_data.has("bust"):
+		title = "Back to a normal run"
+	_tcf(r, r.position.y + 36, title, 22, r.size.x - 32, tcol)
+	_tcf(r, r.position.y + 62, sub, 14, r.size.x - 32, C_MUTED)
 	var y := r.position.y + 80
 	for card in cards:
 		var c: String = card.c
@@ -2901,7 +3021,7 @@ func _modal_concept(vs: Vector2) -> void:
 		_text(cr.position + Vector2(16, 28), String(cc.name), 19, col_c if ok else C_DIM)
 		if not ok:
 			var need := int(cc.unlock)
-			_text_r(cr.end.x - 14, cr.position.y + 28, "Sell or go bust %d time%s to unlock" % [need, "" if need == 1 else "s"], 12, C_DIM)
+			_trf(cr.end.x - 14, cr.position.y + 28, "Sell %d time%s to unlock" % [need, "" if need == 1 else "s"], 12, cr.size.x * 0.55, C_DIM)
 		var lines: PackedStringArray = card.lines
 		for i in lines.size():
 			_text(cr.position + Vector2(16, 50 + i * 17), lines[i], 13, C_MUTED if ok else C_DIM)
@@ -2914,14 +3034,20 @@ func _modal_concept(vs: Vector2) -> void:
 
 
 func _modal_sell(vs: Vector2) -> void:
-	var r := _modal_card(vs, 300)
-	_rr(r, C_BG, 16, C_LINE, 1)
+	var w := minf(vs.x - 24, 480)
 	var g := E.stars_pending()
+	var after := 1.0 + (E.stars_earned + g) * (Econ.STAR_BASE + float(E.agg().starpow))
+	var t := "Your restaurant, builds, upgrades, franchises and ventures reset. You keep stars, Grit and perks. Star bonus becomes x%s." % Econ.fmt_num(after)
+	if E.challenge_done():
+		t = "Challenge complete: +%s Grit. " % Econ.fmt_num(E.challenge_reward()) + t
+	elif E.challenge != "":
+		t = "The challenge isn't finished, so selling now ends it with no Grit. " + t
+	var lines := _wrap(t, 14, w - 40)
+	var r := _modal_card(vs, 156 + lines.size() * 19 + 84)
+	_rr(r, C_BG, 16, C_LINE, 1)
 	_star(Vector2(r.get_center().x, r.position.y + 44), 22, C_ACCENT)
 	_text_c(r, r.position.y + 96, "Sell the company?", 22)
 	_text_c(r, r.position.y + 126, "+" + _stars_label(g), 20, C_ACCENT)
-	var after := 1.0 + (E.stars + g) * (Econ.STAR_BASE + float(E.agg().starpow))
-	var lines := _wrap("Your restaurant, builds, upgrades, franchises and ventures reset. You keep stars and Legacy perks. Star bonus becomes x%s." % Econ.fmt_num(after), 14, r.size.x - 40)
 	for i in lines.size():
 		_text_c(r, r.position.y + 156 + i * 19, lines[i], 14, C_MUTED)
 	var bw := (r.size.x - 44) * 0.5
@@ -2974,32 +3100,68 @@ func _modal_import(vs: Vector2) -> void:
 
 
 func _modal_bankrupt(vs: Vector2) -> void:
-	var r := _modal_card(vs, 330)
+	var w := minf(vs.x - 24, 480)
+	var cid := String(modal_data.get("challenge", ""))
+	var nm := "%s %s" % [Econ.CHALLENGES[cid].name, Econ.roman(int(modal_data.get("level", 0)) + 1)] if Econ.CHALLENGES.has(cid) else "The challenge"
+	var lines := _wrap("%s is over: you ran out of money. Nothing else is lost. This run's earnings still count towards your next sale's stars, and you can try the challenge again from the Legacy tab." % nm, 14, w - 40)
+	var r := _modal_card(vs, 150 + lines.size() * 19 + 70)
 	_rr(r, Color("1c0906"), 16, C_RED, 2)
-	_text_c(r, r.position.y + 46, "BANKRUPT", 30, C_RED)
-	_text_c(r, r.position.y + 76, "The bank took everything.", 15, C_MUTED)
-	_grit_icon(Vector2(r.get_center().x, r.position.y + 118), C_GRIT)
-	_text_c(r, r.position.y + 166, "+%s Grit" % Econ.fmt_num(float(modal_data.get("grit", 0.0))), 24, C_GRIT)
-	var lost := float(modal_data.get("lost_stars", 0.0))
-	var t := "Grit gives +1% income each and buys perks in the Legacy tab."
-	if lost >= 1.0:
-		t = "You lost the %s this run would have paid. " % _stars_label(lost) + t
-	var lines := _wrap(t, 13, r.size.x - 40)
+	_text_c(r, r.position.y + 46, "CHALLENGE FAILED", 26, C_RED)
+	_grit_icon(Vector2(r.get_center().x, r.position.y + 96), C_GRIT)
 	for i in lines.size():
-		_text_c(r, r.position.y + 196 + i * 18, lines[i], 13, C_MUTED)
-	_button("after_bankrupt", Rect2(r.position.x + 16, r.end.y - 64, r.size.x - 32, 48), "Start over", "red", "modal", false, true, 17)
+		_text_c(r, r.position.y + 146 + i * 19, lines[i], 14, C_MUTED)
+	_button("after_bankrupt", Rect2(r.position.x + 16, r.end.y - 64, r.size.x - 32, 48), "Back to a normal run", "red", "modal", false, true, 17)
 
 
 func _modal_file(vs: Vector2) -> void:
-	var r := _modal_card(vs, 280)
+	var w := minf(vs.x - 24, 480)
+	var lines := _wrap("The challenge ends now with no Grit. Nothing else is lost: this run's earnings still count towards your next sale's stars.", 14, w - 40)
+	var r := _modal_card(vs, 70 + lines.size() * 19 + 90)
 	_rr(r, C_BG, 16, C_RED, 1)
-	_text_c(r, r.position.y + 42, "File for bankruptcy?", 22, C_RED)
-	var lines := _wrap("Everything resets like selling the company, but you get %s Grit instead of stars, and this run's stars (%s) are lost. Debt is wiped." % [Econ.fmt_num(E.grit_pending()), Econ.fmt_num(E.stars_pending())], 14, r.size.x - 40)
+	_text_c(r, r.position.y + 42, "Give up the challenge?", 22, C_RED)
 	for i in lines.size():
 		_text_c(r, r.position.y + 78 + i * 19, lines[i], 14, C_MUTED)
 	var bw := (r.size.x - 44) * 0.5
 	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Keep fighting", "", "modal", false, true, 15)
-	_button("file_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "File", "red", "modal", false, true, 16)
+	_button("file_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Give up", "red", "modal", false, true, 16)
+
+
+func _modal_challenge(vs: Vector2) -> void:
+	var id := String(modal_data.get("id", ""))
+	if not Econ.CHALLENGES.has(id):
+		modal = ""
+		return
+	var c: Dictionary = Econ.CHALLENGES[id]
+	var lvl := E.challenge_next_level(id)
+	var w := minf(vs.x - 24, 480)
+	var t := "%s Goal: earn %s in one run, then sell the company to collect Grit (about %s at the goal, more if you keep going). Starting ends your current run; nothing is lost, its earnings still count towards stars." % [String(c.blurb), Econ.fmt_money(E.challenge_goal(lvl)), Econ.fmt_num(_reward_at(id, lvl, E.challenge_goal(lvl)))]
+	var lines := _wrap(t, 14, w - 40)
+	var r := _modal_card(vs, 80 + lines.size() * 19 + 90)
+	_rr(r, C_BG, 16, C_GRIT, 2)
+	_tcf(r, r.position.y + 42, "Start %s %s?" % [c.name, Econ.roman(lvl + 1)], 22, r.size.x - 32, C_GRIT)
+	for i in lines.size():
+		_text_c(r, r.position.y + 78 + i * 19, lines[i], 14, C_MUTED)
+	var bw := (r.size.x - 44) * 0.5
+	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Not now", "", "modal", false, true, 15)
+	_button("challenge_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Start", "red", "modal", false, true, 17)
+
+
+func _modal_abandon(vs: Vector2) -> void:
+	var w := minf(vs.x - 24, 480)
+	var lines := _wrap("Your run ends now with no Grit and you go back to a normal run. Nothing else is lost: this run's earnings still count towards your next sale's stars.", 14, w - 40)
+	var r := _modal_card(vs, 70 + lines.size() * 19 + 90)
+	_rr(r, C_BG, 16, C_LINE, 1)
+	_text_c(r, r.position.y + 42, "Leave the challenge?", 22)
+	for i in lines.size():
+		_text_c(r, r.position.y + 78 + i * 19, lines[i], 14, C_MUTED)
+	var bw := (r.size.x - 44) * 0.5
+	_button("close", Rect2(r.position.x + 16, r.end.y - 64, bw, 48), "Stay", "", "modal", false, true, 15)
+	_button("abandon_yes", Rect2(r.position.x + 28 + bw, r.end.y - 64, bw, 48), "Leave", "red", "modal", false, true, 16)
+
+
+## Grit a challenge level pays for a given run's earnings.
+func _reward_at(id: String, lvl: int, earned: float) -> float:
+	return floor(maxf(1.0, Econ.grit_for(earned)) * float(Econ.CHALLENGES[id].mult) * (1.0 + 0.5 * lvl))
 
 
 func _modal_sell_biz(vs: Vector2) -> void:

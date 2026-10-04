@@ -11,7 +11,7 @@ Small Godot games that run in the browser (desktop and mobile).
 | Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/earthquake-test`](games/earthquake-test) |
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/daily-bridge`](games/daily-bridge) |
 | Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/ticker-time`](games/ticker-time) |
-| Bistro Empire: an incremental restaurant tycoon where bad management goes bankrupt: 1,726 upgrades, franchises, side businesses and prestige | [`games/bistro-empire`](games/bistro-empire) |
+| Bistro Empire: an incremental restaurant tycoon with 1,726 upgrades, franchises, side businesses, prestige and opt-in challenges | [`games/bistro-empire`](games/bistro-empire) |
 | X-Ray Shift: a daily airport x-ray game, flag the bags with contraband and find the illegal items | [`games/xray-shift`](games/xray-shift) |
 | Flightle: name both airports of a real flight path; every miss reveals a clue | [`games/flightle`](games/flightle) |
 

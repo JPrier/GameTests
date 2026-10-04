@@ -263,7 +263,8 @@ static func saturation(i: int, s: Dictionary, e) -> float:
 static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
 	var r := _raw(i, s, e, offline)
 	var f: float = 1.0 / (1.0 + float(r.rev) / e.biz_ref() / market(i, e))
-	return {"rev": float(r.rev) * f, "cost": float(r.fixed) + float(r.var) * f, "sat": 1.0 - f}
+	var cf := 1.0 if e.costs_on() else 0.0   # businesses only have running costs in challenges
+	return {"rev": float(r.rev) * f, "cost": (float(r.fixed) + float(r.var) * f) * cf, "sat": 1.0 - f}
 
 
 static func _raw(i: int, s: Dictionary, e, offline: bool) -> Dictionary:
@@ -393,7 +394,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 					s.incidents = int(s.incidents) + 1
 					var fine := int(s.a) * float(m.vol) * per * 30.0 * float(a.event_cost)
 					cost += fine
-					e.notify("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine * f))
+					e.notify(("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine * f)) if e.costs_on() else "Bar fight! Closed for 10s")
 		"hotel":
 			var before := season(s)
 			s.season_t = fmod(float(s.season_t) + dt, SEASON_LEN * SEASONS.size())
@@ -411,7 +412,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 			s.stock = minf(float(s.stock) + int(s.a) * dt, wholesale_cap(s))
 			if mgr and bool(s.auto_sell) and (float(s.mprice) >= 1.4 or float(s.stock) >= wholesale_cap(s) * 0.98):
 				rev += sell_stock(i, s, e) / f   # sell_stock is already saturated
-	return {"rev": rev * f, "cost": fixed + cost * f}
+	return {"rev": rev * f, "cost": (fixed + cost * f) * (1.0 if e.costs_on() else 0.0)}
 
 
 # ------------------------------------------------------------------ twist actions

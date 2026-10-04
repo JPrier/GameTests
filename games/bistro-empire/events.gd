@@ -142,7 +142,7 @@ static func next_gap(rng: RandomNumberGenerator, rk: Dictionary) -> float:
 ## Bad events are drawn towards whatever you're running too hot; a calm, well-run restaurant
 ## mostly gets good news. `cmods` is the concept's risk table, `cover` the insured share of bills.
 static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: float, rk: Dictionary,
-		cmods: Dictionary = {}, cover := 0.0, only := "") -> Dictionary:
+		cmods: Dictionary = {}, cover := 0.0, only := "", soft := false) -> Dictionary:
 	var rr: Dictionary = rk.r
 	var worst := 0.0
 	for k in rr:
@@ -160,6 +160,8 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 		elif bool(ev.good) != want_good:
 			continue
 		var w := 1.0
+		if String(ev.get("risk", "")) == "debt" and float((rk.raw as Dictionary).get("debt", 0.0)) <= 0.0 and only == "":
+			continue   # no loans, no nervous banker
 		if not bool(ev.good):
 			var key := String(ev.get("risk", "none"))
 			w = 0.5 if key == "none" else 0.1 + 3.0 * float(rr.get(key, 0.0)) * float(cmods.get(key, 1.0))
@@ -185,6 +187,7 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 	ev["r"] = r
 	ev["cost_mult"] = cost_mult * stakes
 	ev["cover"] = cover
+	ev["soft"] = soft   # normal runs: a bill never takes you below $0
 	ev["t"] = TIMEOUT
 	ev["level"] = lvl
 	if RISK_TEXT.has(key) and not bool(ev.good):
@@ -202,7 +205,9 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 
 static func op_amount(ev: Dictionary, op: Array, cash: float) -> float:
 	match String(op[0]):
-		"pay": return float(op[1]) * float(ev.r) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
+		"pay":
+			var amt := float(op[1]) * float(ev.r) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
+			return minf(amt, maxf(cash, 0.0)) if bool(ev.get("soft", false)) else amt
 		"gain": return float(op[1]) * float(ev.r)
 		"cash_frac": return maxf(0.0, cash) * float(op[1]) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
 	return 0.0

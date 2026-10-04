@@ -10,6 +10,14 @@ func _econ(concept := "diner") -> Econ:
 	return e
 
 
+## An econ in a Tight Margins challenge run: running costs, the bank and going bust apply.
+func _econ_ch(concept := "diner", id := "margins") -> Econ:
+	var e := _econ(concept)
+	e.challenge = id
+	e.mark_dirty()
+	return e
+
+
 func _fresh() -> Node:
 	var main = await load_scene("res://main.tscn")
 	main.wipe_save()
@@ -99,7 +107,7 @@ func test_max_affordable_is_exact():
 
 
 func test_bottleneck_caps_service():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 200
 	var inf := e.income_info(e.agg())
 	assert_true(float(inf.served) <= float(inf.cap) + 1e-9, "never serve more than capacity")
@@ -554,7 +562,7 @@ func test_real_player_save_still_loads():
 
 
 func test_costs_reward_balance():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 30
 	e.reps.tables = 30
 	e.reps.cooks = 30
@@ -574,7 +582,7 @@ func test_costs_reward_balance():
 
 
 func test_loans():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 40
 	e.reps.tables = 40
 	e.reps.cooks = 40
@@ -644,31 +652,126 @@ func test_effects_change_income_and_expire():
 
 
 func test_bankruptcy():
-	var e := _econ()
+	var e := _econ_ch()
+	e.challenge_level = 2
 	e.run_earned = Econ.cp(1e9)
 	e.life_earned = Econ.cp(1e13)
 	e.reps.ads = 50
 	e.debt = 1e6
 	var pend_stars := e.stars_pending()
 	assert_gt(pend_stars, 0.0, "stars were on the table")
-	var g := e.grit_pending()
-	assert_gt(g, 0.0, "grit pending")
+	var g0 := e.grit
 	e.cash = -1e12
 	for k in int(e.deadline()) + 2:
 		e.tick(1.0)
-	assert_eq(e.bankruptcies, 1, "went bankrupt after the deadline")
-	assert_eq(e.grit, g, "paid grit")
-	assert_eq(e.stars_pending(), 0.0, "this run's stars are forfeited")
+	assert_eq(e.bankruptcies, 1, "went bust after the deadline")
+	assert_eq(e.challenge, "", "the challenge is over")
+	assert_eq(e.grit, g0, "no Grit for going bust")
+	assert_eq(e.stars_pending(), pend_stars, "nothing else is lost: the stars still wait for a sale")
 	assert_eq(e.debt, 0.0, "debt wiped")
 	assert_eq(int(e.reps.ads), 0, "run reset")
 	assert_false(e.concept_chosen, "pick a new concept")
-	assert_false(e.last_bankrupt.is_empty(), "UI is told")
-	assert_gt(e.grit_mult(), 1.0, "grit boosts income")
-	assert_true(e.concept_unlocked("fine"), "a bankruptcy also counts towards unlocking concepts")
+	assert_eq(int(e.challenge_best.get("margins", 0)), 0, "the level isn't completed")
+	assert_eq(String(e.last_bankrupt.challenge), "margins", "UI is told which challenge")
+	assert_true(e.concept_unlocked("fine"), "a bust also counts towards unlocking concepts")
+
+
+func test_normal_runs_cannot_lose():
+	var e := _econ()
+	e.reps.ads = 2000
+	e.reps.tables = 10
+	e.reps.cooks = 10
+	var inf := e.income_info(e.agg())
+	assert_eq(float(inf.upkeep) + float(inf.food), 0.0, "no running costs at all")
+	assert_eq(float(inf.net), float(inf.total), "income is all profit")
+	assert_eq(e.borrow(1e9), 0.0, "no bank")
+	e.cash = 50.0
+	e.run_time = 1000.0
+	e.run_earned = 1e12
+	var ev := e.new_event(1.0e9, {}, "lawsuit")
+	assert_true(bool(ev.soft), "events are soft")
+	assert_eq(Events.upfront(ev, ev.choices[0], e.cash), 50.0, "a bill never asks for more than you have")
+	e.event = ev
+	e.answer_event(0)
+	assert_true(e.cash >= 0.0, "and can't take you below $0")
+	e.cash = -10.0
+	for k in 400:
+		e.tick(1.0)
+	assert_eq(e.bankruptcies, 0, "no bankruptcy outside challenges")
+	assert_true(e.cash >= 0.0, "cash is floored at $0")
+	# businesses cost nothing either
+	e.run_earned = 1e30
+	e.cash = 1e40
+	e.open_biz(0)
+	e.buy_biz(0, "a", 50)
+	assert_eq(float(Biz.estimate(0, e.biz[0], e).cost), 0.0, "businesses have no running costs")
+
+
+func test_challenges_pay_grit():
+	var e := _econ()
+	e.reps.ads = 40
+	e.reps.tables = 40
+	e.reps.cooks = 40
+	e.run_earned = 5e9
+	assert_true(e.start_challenge("health"), "start")
+	assert_eq(e.challenge, "health", "in the challenge")
+	assert_eq(e.challenge_level, 0, "level I")
+	assert_eq(int(e.reps.ads), 0, "starting one begins a fresh run")
+	assert_true(e.costs_on(), "costs are on")
+	assert_false(e.insurance_on(), "Health Code sells no insurance")
+	assert_true(e.bank_on(), "but the bank lends")
+	assert_false(e.can_prestige() and e.challenge_done(), "goal not reached yet")
+	e.choose_concept("diner")
+	e.run_earned = e.challenge_goal() * 2.0
+	assert_true(e.challenge_done(), "goal reached")
+	var reward := e.challenge_reward()
+	assert_gt(reward, 0.0, "pays Grit")
+	var g0 := e.grit_earned
+	e.prestige()
+	assert_eq(e.grit_earned, g0 + reward, "Grit collected on sale")
+	assert_eq(e.challenge, "", "back to normal")
+	assert_eq(e.challenge_next_level("health"), 1, "next time it's level II")
+	assert_gt(e.challenge_goal(1), e.challenge_goal(0), "and harder")
+	# shoestring: no bank, no starting cash
+	for t in 6:
+		e.legacy[e.by_key["l_startcash_%d" % t]] = true
+	e.mark_dirty()
+	e.start_challenge("shoestring")
+	assert_false(e.bank_on(), "no loans in Shoestring")
+	assert_true(e.cash <= 5.0, "no Legacy starting cash")
+	e.abandon_challenge()
+	assert_eq(e.challenge, "", "leaving ends it")
+	assert_gt(e.cash, 5.0, "normal runs get the starting cash back")
+	# one restaurant: no businesses or franchises
+	e.start_challenge("solo")
+	e.run_earned = 1e40
+	assert_false(e.biz_unlocked(0), "no businesses")
+	assert_false(e.franchise_unlocked(), "no franchises")
+	# saved and loaded
+	var f := Econ.new()
+	f.from_dict(e.to_dict())
+	assert_eq(f.challenge, "solo", "challenge saved")
+	assert_eq(int(f.challenge_best.get("health", 0)), 1, "progress saved")
+
+
+func test_bonuses_count_everything_ever_earned():
+	var e := _econ()
+	e.stars = 100.0
+	e.stars_earned = 100.0
+	e.grit = 50.0
+	e.grit_earned = 50.0
+	var sm := e.star_mult(e.agg())
+	var gm := e.grit_mult()
+	e.stars = 0.0
+	e.grit = 0.0
+	assert_eq(e.star_mult(e.agg()), sm, "spending stars doesn't lower the bonus")
+	assert_eq(e.grit_mult(), gm, "spending Grit doesn't lower the bonus")
+	assert_near(sm, 1.0 + 100.0 * Econ.STAR_BASE, 1e-9, "every star counts")
+	assert_near(gm, 1.0 + 50.0 * Econ.GRIT_BASE, 1e-9, "every Grit counts")
 
 
 func test_recovering_from_the_red():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 40
 	e.reps.tables = 40
 	e.reps.cooks = 40
@@ -851,6 +954,8 @@ func test_selling_off_to_survive():
 
 func test_business_tab_ui():
 	var main = await _fresh()
+	main.E.challenge = "margins"
+	main.E.mark_dirty()
 	main.E.run_earned = Biz.unlock_at(2)
 	main.E.cash = 1e30
 	main._refresh_cache(true)
@@ -879,6 +984,8 @@ func test_business_tab_ui():
 
 func test_event_card_and_bankruptcy_ui():
 	var main = await _fresh()
+	main.E.challenge = "margins"
+	main.E.mark_dirty()
 	main.E.reps.ads = 30
 	main.E.reps.tables = 30
 	main.E.reps.cooks = 30
@@ -904,10 +1011,10 @@ func test_event_card_and_bankruptcy_ui():
 	assert_eq(main.modal, "file", "asks first")
 	main.press_button("file_yes")
 	await wait_frames(2)
-	assert_eq(main.modal, "bankrupt", "bankruptcy screen")
+	assert_eq(main.modal, "bankrupt", "challenge failed screen")
 	main.press_button("after_bankrupt")
 	assert_eq(main.modal, "concept", "then pick a concept")
-	assert_gt(main.E.grit, 0.0, "got grit")
+	assert_eq(main.E.challenge, "", "back to a normal run")
 	main.wipe_save()
 
 
@@ -1061,7 +1168,7 @@ func test_limit_never_flips_back_to_guests():
 
 
 func test_every_stat_costs_money_to_run():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 40
 	e.reps.tables = 40
 	e.reps.cooks = 40
@@ -1119,7 +1226,7 @@ func test_events_follow_how_you_run_it():
 
 
 func test_insurance_hedges_events():
-	var e := _econ()
+	var e := _econ_ch()
 	e.reps.ads = 40
 	e.reps.tables = 40
 	e.reps.cooks = 40
@@ -1193,26 +1300,21 @@ func test_nothing_jumps_when_trouble_starts():
 	main.wipe_save()
 
 
-func test_older_saves_get_time_to_adapt():
+func test_saves_from_the_cost_rules_are_forgiven():
 	var e := _econ()
-	e.reps.ads = 300   # a demand-heavy restaurant from the old rules
-	e.reps.tables = 10
-	e.reps.cooks = 10
+	e.reps.ads = 300
+	e.debt = 1e9
+	e.cash = -5e8
+	e.red_t = 200.0
 	var d := e.to_dict()
-	d.erase("econ")
-	d.erase("grace")
+	d["econ"] = 3
+	d.erase("challenge")
 	var f := Econ.new()
 	f.from_dict(d)
-	assert_true(f.rules_notice, "the player is told the rules changed")
-	assert_gt(f.grace, 0.0, "and gets a grace period")
-	f.cash = -1e6
-	f.run_time = 1000.0
-	f.run_earned = 1e12
-	f.event_t = 0.0
-	for k in 300:
-		f.tick(1.0)
-	assert_eq(f.bankruptcies, 0, "no bankruptcy during the grace period")
-	assert_true(f.event.is_empty(), "and no events")
+	assert_true(f.rules_notice, "the player is told what changed")
+	assert_eq(f.debt, 0.0, "debt forgiven")
+	assert_true(f.cash >= 0.0, "no longer in the red")
+	assert_eq(f.challenge, "", "a normal run")
 	var g := Econ.new()
 	g.from_dict(f.to_dict())
 	assert_false(g.rules_notice, "only once")
@@ -1255,7 +1357,7 @@ func _check_text(main, where: String) -> void:
 			var br: Rect2 = b.r
 			if b.cv == main.content and not br.intersects(main.content_r):
 				continue
-			if String(t.owner) == String(b.id):
+			if String(t.owner) == String(b.key):
 				if not br.encloses(tr):
 					_ui_problems.append("%s: label \"%s\" spills out of its button" % [where, t.s])
 			elif tr.intersects(br):
@@ -1403,6 +1505,35 @@ func _ui_popups(width: int, big: bool) -> void:
 	_ui_end(main, "popups_%d_%s" % [width, big])
 
 
+func _ui_challenge(width: int, big: bool) -> void:
+	var main = await _ui_begin(width, big)
+	var tag := "%dpx %s challenge" % [width, "big" if big else "early"]
+	main.E.challenge_best = {"margins": 3, "health": 10}
+	main.E.challenge = "recession"
+	main.E.challenge_level = 9
+	main.E.insured = true
+	main.E.mark_dirty()
+	main._refresh_cache(true)
+	for t in ["build", "business", "legacy"]:
+		await _walk_tab(main, t, tag + " " + t)
+	main.E.run_earned = main.E.challenge_goal() * 3.0
+	await _walk_tab(main, "legacy", tag + " legacy done")
+	for m in ["sell", "abandon", "file"]:
+		await _modal_check(main, m, {}, tag)
+	await _modal_check(main, "challenge", {"id": "shoestring"}, tag)
+	await _modal_check(main, "bankrupt", {"challenge": "recession", "level": 9}, tag)
+	await _modal_check(main, "concept", {"stars": 12345.0, "grit": 987654.0, "done": {"id": "recession", "level": 9, "grit": 987654.0}}, tag)
+	main.E.borrow(main.E.credit_available())
+	main.E.cash = -1.0e6 - absf(main.E.cash)
+	await wait_frames(2)
+	_check_text(main, tag + " in the red")
+	await _modal_check(main, "red", {}, tag)
+	_ui_end(main, "challenge_%d_%s" % [width, big])
+
+
+func test_text_fits_challenge_360_early(): await _ui_challenge(360, false)
+func test_text_fits_challenge_360_big(): await _ui_challenge(360, true)
+func test_text_fits_challenge_412_big(): await _ui_challenge(412, true)
 func test_text_fits_tabs_360_early(): await _ui_tabs(360, false)
 func test_text_fits_tabs_360_big(): await _ui_tabs(360, true)
 func test_text_fits_tabs_412_early(): await _ui_tabs(412, false)
