@@ -26,34 +26,34 @@ extends RefCounted
 ## In challenge runs every business has running costs per build (fuel, wages, rent) and some
 ## have per-sale costs, so a badly run business can lose money; normal runs have none.
 
-const UNIT_K := 4.0e-6            # one A build earns this share of the unlock earnings per second, before upgrades
+const UNIT_K := 5.0e-6            # one A build earns this share of the unlock earnings per second, before upgrades
 const UNIT_SECS := 20.0           # the first A build costs this many seconds of its own earnings
 const OPEN_K := 0.05              # opening costs this share of the unlock earnings
-const MILESTONE_X := 2.0          # each milestone multiplies the business's income
+const MILESTONE_X := 1.5          # each milestone multiplies the business's income
 
 const DEFS := [
 	{"id": "truck", "name": "Food Truck", "unlock": 3.0e5, "a": "Truck", "as": "Trucks", "b": "Menu Item", "bs": "Menu Items",
-		"b_cost": 10.0, "ga": 1.1, "gb": 1.1, "color": "ff8a3d",
+		"b_cost": 10.0, "ga": 1.15, "gb": 1.1, "color": "ff8a3d",
 		"blurb": "Park where the crowds are. Each spot's crowd changes every few minutes; moving takes 15s.",
 		"a_desc": "+1 truck selling food", "b_desc": "+5% on every sale"},
 	{"id": "bakery", "name": "Bakery", "unlock": 3.0e7, "a": "Oven", "as": "Ovens", "b": "Counter", "bs": "Counters",
-		"b_cost": 2.0, "ga": 1.1, "gb": 1.06, "color": "e0c27a",
+		"b_cost": 2.0, "ga": 1.15, "gb": 1.06, "color": "e0c27a",
 		"blurb": "Ovens bake, counters sell. Unsold bread goes stale; a morning rush every 4 minutes sells triple.",
 		"a_desc": "+1 loaf/s baked", "b_desc": "+1.5 loaves/s sold"},
 	{"id": "catering", "name": "Catering Co.", "unlock": 3.0e9, "a": "Crew", "as": "Crew", "b": "Van", "bs": "Vans",
-		"b_cost": 25.0, "ga": 1.1, "gb": 1.3, "color": "6cc56b",
+		"b_cost": 25.0, "ga": 1.15, "gb": 1.3, "color": "6cc56b",
 		"blurb": "Take contracts: weddings, galas, festivals. Crew is busy until the job ends, then it pays.",
 		"a_desc": "+1 crew member", "b_desc": "+1 job at a time"},
 	{"id": "bar", "name": "Cocktail Bar", "unlock": 3.0e11, "a": "Bartender", "as": "Bartenders", "b": "Bouncer", "bs": "Bouncers",
-		"b_cost": 3.0, "ga": 1.1, "gb": 1.07, "color": "b58cff",
+		"b_cost": 3.0, "ga": 1.15, "gb": 1.07, "color": "b58cff",
 		"blurb": "Fat margins, rowdy crowds. When the rowdy meter fills there's an incident and a fine.",
 		"a_desc": "+1 drink/s", "b_desc": "Keeps the peace"},
 	{"id": "hotel", "name": "Boutique Hotel", "unlock": 3.0e13, "a": "Room", "as": "Rooms", "b": "Concierge", "bs": "Concierges",
-		"b_cost": 2.5, "ga": 1.1, "gb": 1.07, "color": "5aa9e6",
+		"b_cost": 2.5, "ga": 1.15, "gb": 1.07, "color": "5aa9e6",
 		"blurb": "Set your room rate each season. Rent is due on every room, full or empty.",
 		"a_desc": "+1 room (+rent)", "b_desc": "+more guests want to stay"},
 	{"id": "wholesale", "name": "Wholesale Co.", "unlock": 3.0e15, "a": "Warehouse", "as": "Warehouses", "b": "Delivery Truck", "bs": "Delivery Trucks",
-		"b_cost": 5.0, "ga": 1.1, "gb": 1.12, "color": "6ad1c0",
+		"b_cost": 5.0, "ga": 1.15, "gb": 1.12, "color": "6ad1c0",
 		"blurb": "Stock piles up; sell it when the market price is high. Trucks cut food costs across your empire.",
 		"a_desc": "+1 crate/s", "b_desc": "-food costs everywhere"},
 ]
