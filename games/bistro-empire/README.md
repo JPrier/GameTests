@@ -15,7 +15,7 @@ Income per second = guests served × bill × price × multipliers.
 - **Ad Campaigns** bring guests in, **Tables** seat them, **Line Cooks** feed them, **Recipes** raise every bill.
 - You can only serve as many guests as the weaker of seats and kitchen allow, and only as many as want to come. Whichever is smallest is your **bottleneck**, marked **LIMIT** in red. Money spent elsewhere is mostly wasted until it moves.
 - **Menu prices** (unlocked by the Price Tags upgrade) trade guests for profit: higher prices shrink the queue but raise every bill, up to your brand's price limit. The best price is roughly where guests just match capacity. The Floor Manager can set it for you.
-- **Tap the restaurant** to serve by hand. Worth a lot early, and a whole strategy for the Café.
+- **Tap the restaurant** to serve by hand. Each serve pays a bill plus a quarter-second of income. During a slump it counts at least half your best income this run, so taps stay worth making. Serving upgrades add more seconds per tap, and the Café's serves are worth 10× plus an extra second of income.
 
 ## Strategy
 
@@ -49,7 +49,19 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 | Boutique Hotel | Set the room rate. The season changes every 4 minutes, and rent is due on every room, full or empty. |
 | Wholesale Co. | Stock piles up in warehouses; sell it when the moving market price is high. Delivery trucks cut food costs across the whole empire. |
 
-Each build costs only about 5% more than the last. Every milestone (10, then every 25 up to 1,000) doubles that business's income. So the next build keeps paying back in minutes up to about 100 builds, and the curve only steepens to hours past 200. Each buy button shows its payback time. Every business card has a "Buy all" bar for that business's ready upgrades, so you don't have to dig through the Upgrades tab. Each business also has an optional manager upgrade that runs its twist for you. Franchising also boosts every business a little through brand fame.
+**Every business has its own page.** The Business tab lists the bank and your businesses, each with its income, how much of its market it has captured, and a badge for upgrades ready to buy. Tap one to open its page:
+
+- The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, costs and market share underneath. Tapping the scene sells by hand.
+- Below that are its twist controls, the market meter, its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
+- Business upgrades live only on their business's page. The Upgrades tab keeps the restaurant's and the company-wide ones.
+- Tap Back, the Business tab again, or Escape to return to the list.
+
+**How businesses scale.** Everything about a business is measured against your restaurant's best income this run (ignoring events), so a truck matters as much at $1B/s as at $1K/s:
+
+- Each build adds a fixed share of that income, and its price is a number of seconds of it, rising about 5% per build. The first builds pay back in a minute or two, and each buy button shows its payback time.
+- Milestones (10, then every 25 up to 1,000) give that business ×1.5, and its upgrades are priced in seconds of income too.
+- **Market saturation.** Each business's sales level off as it fills its market, which is worth up to half your restaurant's income (company-wide upgrades and a Grit perk grow it). Running costs keep rising, so overbuilding loses money. A well-run business adds a solid share on top of the restaurant without ever replacing it.
+- Each business has an optional manager that runs its twist, and an **Expansion Manager** (from 25 builds) that buys whichever build pays back fastest, using at most a quarter of your cash.
 
 ## Money out: expenses, loans and events
 

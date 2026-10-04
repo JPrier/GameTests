@@ -15,6 +15,9 @@ var events: Array = []
 var start_stars := 0.0
 var real_agg := {}
 var reserve_s := 60.0   # careful players keep this many seconds of income in the bank
+var audit_every := 0.0
+var dump_at := -1.0
+var next_audit := 0.0
 
 
 func _init() -> void:
@@ -35,6 +38,8 @@ func _init() -> void:
 			"events": ev_on = kv[1] != "0"
 			"stars": start_stars = float(kv[1])
 			"reserve": reserve_s = float(kv[1])
+			"audit": audit_every = float(kv[1])
+			"dump": dump_at = float(kv[1])
 	e = load("res://econ.gd").new()
 	e.rng.seed = 12345
 	e.events_on = ev_on
@@ -55,6 +60,12 @@ func _init() -> void:
 			printerr("wall limit")
 			break
 		_step(concept)
+		if dump_at > 0.0 and e.play_time >= dump_at:
+			_dump()
+			dump_at = -1.0
+		if audit_every > 0.0 and e.play_time >= next_audit:
+			_audit()
+			next_audit += audit_every
 		if e.play_time >= next_log:
 			_log()
 			next_log += log_every
@@ -169,7 +180,7 @@ func _step(concept: String) -> void:
 		n += 1
 		if n > 80:
 			break
-		var c: float = u.cost
+		var c: float = e.upgrade_cost(u)
 		var g := _inc(e.copy_with(a, u.eff)) - cur
 		if g <= absf(cur) * 1e-6:
 			if c <= e.cash * 0.2 or c <= absf(cur) * 30.0:
@@ -210,13 +221,13 @@ func _step(concept: String) -> void:
 			var s: Dictionary = e.biz[i]
 			if not s.open:
 				if e.biz_unlocked(i):
-					var c := Biz.open_cost(i)
+					# value opening by what the first 10 builds would make
 					var s2 := s.duplicate(true)
 					s2.open = true
-					s2.a = 1
+					s2.a = 50
+					s2.b = 15 if Biz.DEFS[i].id != "catering" else 2
+					var c := Biz.open_cost(i, e) + Biz.cost_of(i, "a", 1, 49, e) + Biz.cost_of(i, "b", 1, int(s2.b) - 1, e)
 					var g := _inc(a, {}, [], {i: s2}) - cur
-					# opening pays off slowly at first; value the growth to come
-					g = maxf(g, absf(cur) * 0.05)
 					var sc := _score(c, g, cur)
 					if sc < best_score:
 						best_score = sc
@@ -317,3 +328,60 @@ func _spend_stars() -> void:
 			if buy:
 				e.buy_legacy(u.id)
 				changed = true
+
+
+## Payback (cost / net gain) of everything you could buy right now.
+func _pb(c: float, g: float) -> String:
+	if g <= 0.0:
+		return "never"
+	return e.fmt_time(c / g)
+
+
+func _dump() -> void:
+	var a: Dictionary = e.agg()
+	var names := []
+	for id in e.legacy:
+		names.append(e.upgrades[id].name)
+	print("DUMP t=%s stars=%s grit=%s star_mult=%s grit_mult=%s mul=%s fr=%s cash=%s debt=%s legacy=%s" % [e.play_time, e.stars, e.grit, e.star_mult(a), e.grit_mult(), a.mul, e.franchise_mult(a), e.cash, e.debt, names])
+	print("INFO ", e.income_info(a))
+
+
+func _audit() -> void:
+	var a: Dictionary = e.agg()
+	var cur := _inc(a)
+	var em: Dictionary = e.empire()
+	print("---- AUDIT %s (run %s) net %s/s gross %s/s cash %s P%d" % [e.fmt_time(e.play_time), e.fmt_time(e.run_time), e.fmt_money(cur), e.fmt_money(em.gross), e.fmt_money(e.cash), e.prestiges])
+	var line := "  reps:"
+	for r in e.REPS:
+		line += " %s(%d)=%s" % [r, e.reps[r], _pb(e.rep_cost(r, 1), _inc(a, {r: int(e.reps[r]) + 1}) - cur)]
+	print(line)
+	var best := {}
+	for u in e.visible_upgrades():
+		var g := _inc(e.copy_with(a, u.eff)) - cur
+		var c: String = u.cat
+		if not best.has(c) or e.upgrade_cost(u) < float(best[c].cost):
+			best[c] = {"cost": e.upgrade_cost(u), "g": g, "name": u.name}
+	line = "  upgrades:"
+	for c in best:
+		line += " %s[%s %s]" % [c, e.fmt_money(best[c].cost), _pb(best[c].cost, best[c].g)]
+	print(line)
+	line = "  cities:"
+	for i in e.NC:
+		if e.city_unlocked(i):
+			var co: Array = e.cities.duplicate()
+			co[i] = int(co[i]) + 1
+			line += " %s(%d)=%s" % [e.CITY_NAMES[i].substr(0, 6), e.cities[i], _pb(e.city_next_cost(i), _inc(a, {}, co) - cur)]
+	print(line)
+	line = "  biz:"
+	for i in Biz.N:
+		var s: Dictionary = e.biz[i]
+		if not s.open:
+			if e.biz_unlocked(i):
+				line += " %s(closed, open %s)" % [Biz.DEFS[i].id, e.fmt_money(Biz.open_cost(i, e))]
+			continue
+		for w in ["a", "b"]:
+			var s2 := s.duplicate(true)
+			s2[w] = int(s2[w]) + 1
+			line += " %s.%s(%d)=%s" % [Biz.DEFS[i].id, w, s[w], _pb(e.biz_cost(i, w, 1), _inc(a, {}, [], {i: s2}) - cur)]
+	print(line)
+	print("  events cost ~%s per 100s-of-income, interest %s/s debt %s, tap %s (= %ss of net)" % [e.fmt_money(float(em.gross) * 100.0), e.fmt_money(em.interest), e.fmt_money(e.debt), e.fmt_money(e.tap_value()), e.fmt_num(e.tap_value() / maxf(cur, 1e-9))])

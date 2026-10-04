@@ -9,35 +9,50 @@ extends RefCounted
 ##   Hotel        set room rates per season; rent is paid on every room, full or empty.
 ##   Wholesale    warehouses fill with stock you sell on a moving market; trucks cut food costs empire-wide.
 ##
-## Every business has running costs per build (fuel, wages, rent) that grow with its own upgrades,
-## and some have per-sale costs, so a badly run business can lose money. Money is computed two ways: step() simulates the twist in real time while the
-## game runs, estimate() gives a steady-state rate for display, offline time and the balance bot.
+## Scaling: everything a business earns and costs is measured against P, the restaurant's peak
+## income this run (see Econ.biz_ref()). A truck earns a fixed slice of P and costs a fixed number
+## of seconds of P, so a business is worth the same whether you make $5M/s or $5T/s, and growing
+## the restaurant grows every business with it. Within a business, builds get ~5% pricier each
+## and every milestone (10, then every 25) doubles its income.
+##
+## Every business has running costs per build (fuel, wages, rent) and some have per-sale costs,
+## so a badly run business can lose money. Money is computed two ways: step() simulates the twist
+## in real time while the game runs; estimate() gives a steady-state rate for display, offline
+## time and the balance bot.
 
-const REV_K := 3.0e-6             # revenue per unit per second, relative to the business's scale
+const UNIT_SHARE := 4.0e-4        # one A build earns this fraction of P per second, before upgrades
+const UNIT_COST := 8.0e-3         # the first A build costs this many seconds of P (pays back in ~20s)
+const OPEN_SECS := 10.0           # opening costs 10 seconds of restaurant income
+const MILESTONE_X := 1.5          # each milestone multiplies the business's income
+const MARKET := 0.5               # market size: a business's sales level off near this share of P
+## Market saturation: raw sales s (as a share of P) become s / (1 + s / market). A small business
+## grows freely; a big one gets less from each new build while its running costs keep rising, so
+## over-expanding loses money. Growing the restaurant (P) grows every market. This is what keeps
+## businesses from snowballing past the restaurant that funds them.
 
 const DEFS := [
 	{"id": "truck", "name": "Food Truck", "unlock": 3.0e5, "a": "Truck", "as": "Trucks", "b": "Menu Item", "bs": "Menu Items",
-		"a_cost": 0.002, "b_cost": 0.02, "ga": 1.04, "gb": 1.1, "color": "ff8a3d", "rev": 0.5,
+		"b_cost": 10.0, "ga": 1.04, "gb": 1.1, "color": "ff8a3d",
 		"blurb": "Park where the crowds are. Each spot's crowd changes every few minutes; moving takes 15s.",
 		"a_desc": "+1 truck selling food", "b_desc": "+5% on every sale"},
 	{"id": "bakery", "name": "Bakery", "unlock": 3.0e7, "a": "Oven", "as": "Ovens", "b": "Counter", "bs": "Counters",
-		"a_cost": 0.002, "b_cost": 0.004, "ga": 1.04, "gb": 1.06, "color": "e0c27a", "rev": 6.0,
+		"b_cost": 2.0, "ga": 1.04, "gb": 1.06, "color": "e0c27a",
 		"blurb": "Ovens bake, counters sell. Unsold bread goes stale; a morning rush every 4 minutes sells triple.",
 		"a_desc": "+1 loaf/s baked", "b_desc": "+1.5 loaves/s sold"},
 	{"id": "catering", "name": "Catering Co.", "unlock": 3.0e9, "a": "Crew", "as": "Crew", "b": "Van", "bs": "Vans",
-		"a_cost": 0.002, "b_cost": 0.05, "ga": 1.04, "gb": 1.3, "color": "6cc56b",
+		"b_cost": 25.0, "ga": 1.04, "gb": 1.3, "color": "6cc56b",
 		"blurb": "Take contracts: weddings, galas, festivals. Crew is busy until the job ends, then it pays.",
 		"a_desc": "+1 crew member", "b_desc": "+1 job at a time"},
 	{"id": "bar", "name": "Cocktail Bar", "unlock": 3.0e11, "a": "Bartender", "as": "Bartenders", "b": "Bouncer", "bs": "Bouncers",
-		"a_cost": 0.002, "b_cost": 0.006, "ga": 1.04, "gb": 1.07, "color": "b58cff",
+		"b_cost": 3.0, "ga": 1.04, "gb": 1.07, "color": "b58cff",
 		"blurb": "Fat margins, rowdy crowds. When the rowdy meter fills there's an incident and a fine.",
 		"a_desc": "+1 drink/s", "b_desc": "Keeps the peace"},
 	{"id": "hotel", "name": "Boutique Hotel", "unlock": 3.0e13, "a": "Room", "as": "Rooms", "b": "Concierge", "bs": "Concierges",
-		"a_cost": 0.002, "b_cost": 0.005, "ga": 1.04, "gb": 1.07, "color": "5aa9e6",
+		"b_cost": 2.5, "ga": 1.04, "gb": 1.07, "color": "5aa9e6",
 		"blurb": "Set your room rate each season. Rent is due on every room, full or empty.",
 		"a_desc": "+1 room (+rent)", "b_desc": "+more guests want to stay"},
 	{"id": "wholesale", "name": "Wholesale Co.", "unlock": 3.0e15, "a": "Warehouse", "as": "Warehouses", "b": "Delivery Truck", "bs": "Delivery Trucks",
-		"a_cost": 0.002, "b_cost": 0.01, "ga": 1.04, "gb": 1.12, "color": "6ad1c0",
+		"b_cost": 5.0, "ga": 1.04, "gb": 1.12, "color": "6ad1c0",
 		"blurb": "Stock piles up; sell it when the market price is high. Trucks cut food costs across your empire.",
 		"a_desc": "+1 crate/s", "b_desc": "-food costs everywhere"},
 ]
@@ -73,43 +88,43 @@ static func blank(i: int) -> Dictionary:
 	return s
 
 
-## Scale of a business: everything is priced relative to cp(unlock).
-static func scale(i: int) -> float:
+## Run earnings needed before a business can be opened (keeps them arriving one by one).
+static func unlock_at(i: int) -> float:
 	return Econ.cp(float(DEFS[i].unlock))
 
 
-static func unit_rev(i: int) -> float:
-	return scale(i) * REV_K * float(DEFS[i].get("rev", 1.0))
+## What one A build earns per second (before multipliers), as money.
+static func unit_rev(_i: int, e) -> float:
+	return e.biz_ref() * UNIT_SHARE
 
 
-static func unlock_at(i: int) -> float:
-	return scale(i)
-
-
-static func open_cost(i: int) -> float:
-	return Econ.cp(float(DEFS[i].unlock) * 0.25)
+static func open_cost(_i: int, e) -> float:
+	return e.biz_ref() * OPEN_SECS
 
 
 static func growth(i: int, which: String) -> float:
 	return pow(float(DEFS[i]["g" + which]), Econ.COST_POW)
 
 
-static func base_cost(i: int, which: String) -> float:
-	return Econ.cp(float(DEFS[i].unlock) * float(DEFS[i][which + "_cost"]))
+## Price of a build in seconds of P.
+static func secs_at(i: int, which: String, n: int) -> float:
+	var base := UNIT_COST * (1.0 if which == "a" else float(DEFS[i].b_cost))
+	return base * pow(growth(i, which), n)
 
 
-static func cost_at(i: int, which: String, n: int) -> float:
-	return base_cost(i, which) * pow(growth(i, which), n)
+static func cost_at(i: int, which: String, n: int, e) -> float:
+	return secs_at(i, which, n) * e.biz_ref()
 
 
-static func cost_of(i: int, which: String, n: int, k: int) -> float:
+static func cost_of(i: int, which: String, n: int, k: int, e) -> float:
 	var g := growth(i, which)
-	return cost_at(i, which, n) * (pow(g, k) - 1.0) / (g - 1.0)
+	return cost_at(i, which, n, e) * (pow(g, k) - 1.0) / (g - 1.0)
 
 
-static func invested(i: int, s: Dictionary) -> float:
+## What the builds would cost at today's prices (used when selling a business off).
+static func invested(i: int, s: Dictionary, e) -> float:
 	# the first of each build comes with opening
-	return cost_of(i, "a", 1, maxi(0, int(s.a) - 1)) + cost_of(i, "b", 1, maxi(0, int(s.b) - 1)) + (open_cost(i) if s.open else 0.0)
+	return cost_of(i, "a", 1, maxi(0, int(s.a) - 1), e) + cost_of(i, "b", 1, maxi(0, int(s.b) - 1), e) + (open_cost(i, e) if s.open else 0.0)
 
 
 ## Running costs per second for the builds (not per-sale costs).
@@ -117,24 +132,18 @@ const RUN_A := {"truck": 0.35, "bakery": 0.0, "catering": 0.4, "bar": 0.2, "hote
 const RUN_B := {"truck": 0.0, "bakery": 0.2, "catering": 0.0, "bar": 0.4, "hotel": 0.0, "wholesale": 0.3}
 
 
-## Builds get pricier slowly (+5% each), and every milestone (10, then every 25 up to 1,000)
-## doubles the business's income, so the next build keeps paying back in minutes for a long time.
-static func compound(_i: int, _s: Dictionary) -> float:
-	return 1.0
-
-
 static func cost_mult(i: int, e, s = null) -> float:
 	var a: Dictionary = e.agg()
 	if s == null:
 		s = e.biz[i]
-	return float(a.biz[i]) * float(a.mul.biz) * compound(i, s) * float(a.upkeep) * e.effect_mult("wages")
+	return float(a.biz[i]) * float(a.mul.biz) * float(a.upkeep) * e.effect_mult("wages")
 
 
 static func upkeep(i: int, s: Dictionary, e) -> float:
 	if not s.open:
 		return 0.0
 	var id: String = DEFS[i].id
-	return (int(s.a) * float(RUN_A[id]) + int(s.b) * float(RUN_B[id])) * unit_rev(i) * cost_mult(i, e, s)
+	return (int(s.a) * float(RUN_A[id]) + int(s.b) * float(RUN_B[id])) * unit_rev(i, e) * cost_mult(i, e, s)
 
 
 # ------------------------------------------------------------------ helpers
@@ -143,12 +152,8 @@ static func mult(i: int, e, s = null) -> float:
 	var a: Dictionary = e.agg()
 	if s == null:
 		s = e.biz[i]
-	return compound(i, s) * float(a.biz[i]) * float(a.mul.biz) * brand(e) * e.star_mult(a) * e.grit_mult(a) * float(a.mul.empire) * e.effect_mult("income")
-
-
-## Franchising makes your name famous, which draws customers to every business you run.
-static func brand(e) -> float:
-	return 1.0 + 0.5 * log(e.franchise_mult(e.agg())) / log(10.0)
+	# stars, Grit, franchises and the rest already live in P; only business upgrades and events here
+	return float(a.biz[i]) * float(a.mul.biz) * e.effect_mult("income")
 
 
 static func has_mgr(i: int, e) -> bool:
@@ -161,7 +166,7 @@ static func food_cost(e) -> float:
 
 static func truck_rev(i: int, s: Dictionary, e, spot_mult: float) -> float:
 	var a: Dictionary = e.agg()
-	return int(s.a) * unit_rev(i) * (1.0 + 0.05 * int(s.b)) * spot_mult * float(a.twist.truck) * mult(i, e, s)
+	return int(s.a) * unit_rev(i, e) * (1.0 + 0.05 * int(s.b)) * spot_mult * float(a.twist.truck) * mult(i, e, s)
 
 
 static func bakery_sell_cap(s: Dictionary, e) -> float:
@@ -214,7 +219,7 @@ static func hotel_rev(i: int, s: Dictionary, e, sea: int, rate: float) -> Dictio
 	var rooms := float(int(s.a))
 	var occ := minf(rooms, hotel_demand(s, e, sea, rate))
 	var m := mult(i, e, s)
-	return {"rev": occ * rate * unit_rev(i) * 1.4 * m, "rent": rooms * unit_rev(i) * 0.6 * cost_mult(i, e, s), "occ": occ / maxf(rooms, 1.0)}
+	return {"rev": occ * rate * unit_rev(i, e) * 1.4 * m, "rent": rooms * unit_rev(i, e) * 0.6 * cost_mult(i, e, s), "occ": occ / maxf(rooms, 1.0)}
 
 
 static func wholesale_cap(s: Dictionary) -> float:
@@ -222,7 +227,7 @@ static func wholesale_cap(s: Dictionary) -> float:
 
 
 static func wholesale_price(i: int, s: Dictionary, e) -> float:
-	return unit_rev(i) * float(s.mprice) * float(e.agg().twist.wholesale) * mult(i, e, s)
+	return unit_rev(i, e) * float(s.mprice) * float(e.agg().twist.wholesale) * mult(i, e, s)
 
 
 ## Percentage points knocked off food costs everywhere by delivery trucks.
@@ -234,15 +239,39 @@ static func food_cut(s: Dictionary) -> float:
 
 # ------------------------------------------------------------------ steady-state estimates
 
-## {rev, cost} per second, the long-run average. offline=true assumes nobody is there to act.
+## Size of this business's market, as a share of P.
+static func market(_i: int, e) -> float:
+	return MARKET * float(e.agg().mul.market)
+
+
+## Fraction of raw sales that actually happen once the market is this saturated.
+static func sat_factor(i: int, s: Dictionary, e) -> float:
+	var raw: float = float(_raw(i, s, e, false).rev) / e.biz_ref()
+	return 1.0 / (1.0 + raw / market(i, e))
+
+
+## How much of its market the business has captured (0..1).
+static func saturation(i: int, s: Dictionary, e) -> float:
+	var raw: float = float(_raw(i, s, e, false).rev) / e.biz_ref()
+	return raw / (raw + market(i, e))
+
+
+## {rev, cost} per second, the long-run average, after market saturation.
+## offline=true assumes nobody is there to act.
 static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
+	var r := _raw(i, s, e, offline)
+	var f: float = 1.0 / (1.0 + float(r.rev) / e.biz_ref() / market(i, e))
+	return {"rev": float(r.rev) * f, "cost": float(r.fixed) + float(r.var) * f, "sat": 1.0 - f}
+
+
+static func _raw(i: int, s: Dictionary, e, offline: bool) -> Dictionary:
 	if not s.open:
-		return {"rev": 0.0, "cost": 0.0}
+		return {"rev": 0.0, "fixed": 0.0, "var": 0.0}
 	var a: Dictionary = e.agg()
 	var up := upkeep(i, s, e)
 	var mgr := has_mgr(i, e)
 	var rev := 0.0
-	var cost := up
+	var cost := 0.0
 	match String(DEFS[i].id):
 		"truck":
 			var sm := 1.0
@@ -254,17 +283,17 @@ static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
 		"bakery":
 			var made := float(int(s.a))
 			var sold := minf(made, bakery_sell_cap(s, e))
-			var price := unit_rev(i) * mult(i, e, s)
+			var price := unit_rev(i, e) * mult(i, e, s)
 			rev = sold * price
 			cost += made * price * 0.35 * food_cost(e) / 25.0
 		"catering":
 			var util := minf(0.9, 0.35 + 0.12 * int(s.b) + (0.15 if mgr else 0.0))
 			if offline and not mgr:
 				util = 0.0
-			rev = int(s.a) * unit_rev(i) * 1.6 * util * float(a.twist.catering) * mult(i, e, s)
+			rev = int(s.a) * unit_rev(i, e) * 1.6 * util * float(a.twist.catering) * mult(i, e, s)
 		"bar":
 			var m := bar_mix(s)
-			var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e, s)
+			var per := unit_rev(i, e) * 1.3 * float(m.price) * mult(i, e, s)
 			var full := int(s.a) * float(m.vol) * per
 			var inc := bar_incident_rate(s, e)
 			var lost := clampf(inc * 10.0, 0.0, 1.0)   # closed 10s per incident
@@ -280,11 +309,11 @@ static func estimate(i: int, s: Dictionary, e, offline := false) -> Dictionary:
 				tot += float(h.rev)
 				rent = float(h.rent)
 			rev = tot / seasons.size()
-			cost += rent
+			up += rent
 		"wholesale":
 			var pm := 1.35 if mgr else (0.85 if offline else 1.0)
-			rev = int(s.a) * unit_rev(i) * pm * float(a.twist.wholesale) * mult(i, e, s)
-	return {"rev": rev, "cost": cost}
+			rev = int(s.a) * unit_rev(i, e) * pm * float(a.twist.wholesale) * mult(i, e, s)
+	return {"rev": rev, "fixed": up, "var": cost}
 
 
 # ------------------------------------------------------------------ real-time simulation
@@ -295,9 +324,11 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 		return {"rev": 0.0, "cost": 0.0}
 	var a: Dictionary = e.agg()
 	var rng: RandomNumberGenerator = e.rng
-	var cost := upkeep(i, s, e) * dt
+	var fixed := upkeep(i, s, e) * dt
+	var cost := 0.0
 	var rev := 0.0
 	var mgr := has_mgr(i, e)
+	var f: float = sat_factor(i, s, e)
 	match String(DEFS[i].id):
 		"truck":
 			s.spot_t = float(s.spot_t) - dt
@@ -316,7 +347,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 		"bakery":
 			s.rush_t = fmod(float(s.rush_t) + dt, RUSH_PERIOD)
 			var rush := float(s.rush_t) < RUSH_LEN
-			var price := unit_rev(i) * mult(i, e, s)
+			var price := unit_rev(i, e) * mult(i, e, s)
 			var made := float(int(s.a)) * dt
 			cost += made * price * 0.35 * food_cost(e) / 25.0
 			var stock := float(s.stock) + made
@@ -349,7 +380,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 			if float(s.closed_t) > 0.0:
 				s.closed_t = maxf(0.0, float(s.closed_t) - dt)
 			else:
-				var per := unit_rev(i) * 1.3 * float(m.price) * mult(i, e, s)
+				var per := unit_rev(i, e) * 1.3 * float(m.price) * mult(i, e, s)
 				rev = int(s.a) * float(m.vol) * per * dt
 				cost += rev * 0.2 * food_cost(e) / 25.0
 				# meter fills at 100 per incident on average
@@ -360,7 +391,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 					s.incidents = int(s.incidents) + 1
 					var fine := int(s.a) * float(m.vol) * per * 30.0 * float(a.event_cost)
 					cost += fine
-					e.notify("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine))
+					e.notify("Bar fight! Fined %s and closed 10s" % Econ.fmt_money(fine * f))
 		"hotel":
 			var before := season(s)
 			s.season_t = fmod(float(s.season_t) + dt, SEASON_LEN * SEASONS.size())
@@ -369,7 +400,7 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 				s.rate = hotel_best_rate(i, s, e, sea)
 			var h := hotel_rev(i, s, e, sea, float(s.rate))
 			rev = float(h.rev) * dt
-			cost += float(h.rent) * dt
+			fixed += float(h.rent) * dt
 		"wholesale":
 			# mean-reverting random walk between 0.4x and 2.6x
 			var m0 := float(s.mprice)
@@ -377,8 +408,8 @@ static func step(i: int, s: Dictionary, e, dt: float) -> Dictionary:
 			s.mprice = clampf(m0, 0.4, 2.6)
 			s.stock = minf(float(s.stock) + int(s.a) * dt, wholesale_cap(s))
 			if mgr and bool(s.auto_sell) and (float(s.mprice) >= 1.4 or float(s.stock) >= wholesale_cap(s) * 0.98):
-				rev += sell_stock(i, s, e)
-	return {"rev": rev, "cost": cost}
+				rev += sell_stock(i, s, e) / f   # sell_stock is already saturated
+	return {"rev": rev * f, "cost": fixed + cost * f}
 
 
 # ------------------------------------------------------------------ twist actions
@@ -410,7 +441,7 @@ static func make_offers(i: int, s: Dictionary, e) -> Array:
 		# short jobs and big jobs pay a premium
 		var bonus := rng.randf_range(0.8, 1.6) * (1.0 + 30.0 / dur * 0.3) * (1.0 + frac * 0.4)
 		out.append({"name": JOB_NAMES[rng.randi() % JOB_NAMES.size()], "crew": need, "dur": dur,
-			"pay": need * dur * unit_rev(i) * 1.6 * bonus, "bonus": bonus})
+			"pay": need * dur * unit_rev(i, e) * 1.6 * bonus, "bonus": bonus})
 	return out
 
 
@@ -449,7 +480,7 @@ static func auto_accept(i: int, s: Dictionary, e) -> void:
 
 
 static func sell_stock(i: int, s: Dictionary, e) -> float:
-	var v := float(s.stock) * wholesale_price(i, s, e) * 0.9
+	var v := float(s.stock) * wholesale_price(i, s, e) * 0.9 * sat_factor(i, s, e)
 	s.stock = 0.0
 	return v
 
@@ -481,33 +512,34 @@ static func add_upgrades(e) -> void:
 			"Trading Desk", "Futures Contracts", "Auto Warehouse", "Global Sourcing", "Commodity Index", "Port Terminal",
 			"Cargo Airline", "Market Maker", "Robot Warehouse", "Supply Monopoly", "World Pantry", "Trade Empire"],
 	}
-	var b_eff := {"truck": "twist", "bakery": "twist", "catering": "twist", "bar": "twist", "hotel": "twist", "wholesale": "twist"}
-	var b_text := {"truck": "Crowds", "bakery": "Counter speed", "catering": "Contract pay", "bar": "Calm", "hotel": "Guest demand", "wholesale": "Sale price"}
 	var mgr_names := {"truck": "Route Planner", "bakery": "Head Baker", "catering": "Events Manager",
 		"bar": "Bar Manager", "hotel": "Revenue Manager", "wholesale": "Commodity Trader"}
+	var x_at := [5, 15, 30, 45, 60, 80, 100, 120, 140, 160, 180, 200, 230, 260, 290, 320, 360, 400]
 	for i in N:
 		var d: Dictionary = DEFS[i]
 		var id: String = d.id
-		var u := float(d.unlock)
 		for mi in A_MILESTONES.size():
 			var n: int = A_MILESTONES[mi]
-			var x := 2.0
-			var c := u * float(d.a_cost) * pow(float(d.ga), n - 1) * 3.0
-			e._add("bz_%s_a%d" % [id, n], "%s: %d %s" % [d.name, n, d.as], "business", c, [["biz", i, x]], ["biz", i, "a", n])
+			e._add("bz_%s_a%d" % [id, n], "%s: %d %s" % [d.name, n, d.as], "business", 0.0, [["biz", i, MILESTONE_X]], ["biz", i, "a", n],
+				{"pc": 3.0 * secs_at(i, "a", n - 1), "biz": i})
 		for mi in B_MILESTONES.size():
 			var n: int = B_MILESTONES[mi]
-			var c := u * float(d.b_cost) * pow(float(d.gb), n - 1) * 3.0
 			var eff: Array = [["twist", id, 1.25]]
 			if id == "bar":
 				eff = [["twist", id, 0.75]]
-			e._add("bz_%s_b%d" % [id, n], "%s: %d %s" % [d.name, n, d.bs], "business", c, eff, ["biz", i, "b", n])
-		e._add("bz_%s_mgr" % id, "%s: %s" % [d.name, mgr_names[id]], "business", u * 0.5, [["flag", "mgr_" + id]], ["biz", i, "open", 1])
+			e._add("bz_%s_b%d" % [id, n], "%s: %d %s" % [d.name, n, d.bs], "business", 0.0, eff, ["biz", i, "b", n],
+				{"pc": 3.0 * secs_at(i, "b", n - 1), "biz": i})
+		e._add("bz_%s_mgr" % id, "%s: %s" % [d.name, mgr_names[id]], "business", 0.0, [["flag", "mgr_" + id]], ["biz", i, "open", 1],
+			{"pc": 120.0, "biz": i})
+		e._add("bz_%s_auto" % id, "%s: Expansion Manager" % d.name, "business", 0.0, [["flag", "auto_" + id]], ["biz", i, "a", 25],
+			{"pc": 300.0, "biz": i})
 		var names: Array = extra_names[id]
 		for t in names.size():
-			var c := u * 0.02 * pow(10.0, 1.6 * t)
-			e._add("bz_%s_x%d" % [id, t], "%s: %s" % [d.name, names[t]], "business", c, [["biz", i, 1.25]], ["biz", i, "earn", c])
+			e._add("bz_%s_x%d" % [id, t], "%s: %s" % [d.name, names[t]], "business", 0.0, [["biz", i, 1.3]], ["biz", i, "a", x_at[t]],
+				{"pc": 15.0 * pow(2.5, t), "biz": i})
 	# a few that help every business
 	var all_names := ["Holding Company", "Shared Accounting", "Group Purchasing", "Executive Team", "Conglomerate",
 		"Board of Directors", "Stock Listing", "Global Brand Portfolio", "Mega Corp", "Empire Holdings"]
 	for t in all_names.size():
-		e._add("bz_all_%d" % t, all_names[t], "business", pow(10.0, 9.0 + 4.0 * t), [["mul", "biz", 1.25]], ["bizopen", mini(t / 2 + 1, N)])
+		e._add("bz_all_%d" % t, all_names[t], "business", 0.0, [["mul", "market", 1.25]], ["bizopen", mini(t / 2 + 1, N)],
+			{"pc": 300.0 * pow(3.0, t)})

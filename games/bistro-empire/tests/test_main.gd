@@ -58,7 +58,7 @@ func test_costs_finite_and_effects_described():
 		if u.legacy:
 			assert_gt(float(u.star), 0.0, "legacy star cost " + String(u.name))
 		else:
-			var c := float(u.cost)
+			var c := e.upgrade_cost(u)
 			assert_true(c > 0.0 and c < 1e250 and not is_inf(c) and not is_nan(c), "cost range " + String(u.name))
 		assert_ne(e.effect_text(u.eff), "", "effect text " + String(u.name))
 		assert_ne(e.req_text(u) if not u.legacy else "x", "", "requirement text " + String(u.name))
@@ -712,7 +712,7 @@ func test_businesses_open_and_earn():
 		assert_false(e.biz_unlocked(i), "%s locked at first" % Biz.DEFS[i].name)
 		e.run_earned = Biz.unlock_at(i)
 		assert_true(e.biz_unlocked(i), "unlocks with earnings")
-		e.cash = Biz.open_cost(i) * 0.99
+		e.cash = Biz.open_cost(i, e) * 0.99
 		assert_false(e.open_biz(i), "can't open without the money")
 		e.cash = 1e300
 		assert_true(e.open_biz(i), "opens")
@@ -827,7 +827,7 @@ func test_business_upgrades_and_save():
 	var id: int = e.by_key["bz_truck_a10"]
 	assert_true(e.available(e.upgrades[id]), "milestone upgrade offered")
 	assert_true(e.buy_upgrade(id), "bought")
-	assert_near(Biz.mult(0, e), m0 * 2.0, m0 * 1e-9, "doubles the truck's income")
+	assert_near(Biz.mult(0, e), m0 * Biz.MILESTONE_X, m0 * 1e-9, "milestone boosts the truck's income")
 	var d: Dictionary = JSON.parse_string(JSON.stringify(e.to_dict()))
 	var f := Econ.new()
 	f.from_dict(d)
@@ -860,7 +860,10 @@ func test_business_tab_ui():
 	main.press_button("biz_open:2")
 	await wait_frames(2)
 	assert_true(main.E.biz[0].open, "opened by button")
-	assert_true(_has_button(main, "biz:0:a"), "build buttons")
+	assert_true(_has_button(main, "biz:2:a"), "build buttons on the newest business's page")
+	main.press_button("biz_back")
+	await wait_frames(2)
+	assert_true(_has_button(main, "biz_page:0"), "list shows the truck")
 	assert_true(_has_button(main, "borrow:1.0"), "bank shown")
 	main.press_button("borrow:0.25")
 	assert_gt(main.E.debt, 0.0, "borrowed by button")
@@ -907,25 +910,122 @@ func _has_button(main, id: String) -> bool:
 
 
 func test_business_builds_keep_paying_back():
-	# the next build should pay for itself in minutes for a long while, not days
+	# while a business is small, the next build pays for itself in minutes
 	for i in Biz.N:
-		for n in [25, 100]:
-			var e := _with_biz(i)
-			var s: Dictionary = e.biz[i]
-			s.a = n
-			s.b = 3 if Biz.DEFS[i].id == "catering" else int(n * (0.7 if Biz.DEFS[i].id in ["bakery", "hotel"] else (0.6 if Biz.DEFS[i].id == "bar" else 0.3)))
-			for u in e.upgrades:
-				if not u.legacy and String(u.key).begins_with("bz_%s_a" % Biz.DEFS[i].id) and e.req_met(u):
-					e.owned[u.id] = true
-			e.mark_dirty()
-			var c0 := Biz.estimate(i, s, e)
-			var s2 := s.duplicate(true)
-			s2.a = n + 1
-			var cost := e.biz_cost(i, "a", 1)
-			if Biz.DEFS[i].id == "bakery":
-				s2.b = int(s.b) + 1
-				cost += e.biz_cost(i, "b", 1)
-			var c1 := Biz.estimate(i, s2, e)
-			var gain := (float(c1.rev) - float(c1.cost)) - (float(c0.rev) - float(c0.cost))
-			assert_gt(gain, 0.0, "%s build %d earns" % [Biz.DEFS[i].name, n])
-			assert_lt(cost / gain, 3600.0, "%s build %d pays back within an hour" % [Biz.DEFS[i].name, n])
+		var e := _with_biz(i)
+		var s: Dictionary = e.biz[i]
+		s.a = 25
+		s.b = 3 if Biz.DEFS[i].id == "catering" else int(25 * (0.7 if Biz.DEFS[i].id in ["bakery", "hotel"] else (0.6 if Biz.DEFS[i].id == "bar" else 0.3)))
+		for u in e.upgrades:
+			if not u.legacy and String(u.key).begins_with("bz_%s_a" % Biz.DEFS[i].id) and e.req_met(u):
+				e.owned[u.id] = true
+		e.mark_dirty()
+		var c0 := Biz.estimate(i, s, e)
+		var s2 := s.duplicate(true)
+		s2.a = 26
+		var cost := e.biz_cost(i, "a", 1)
+		if Biz.DEFS[i].id == "bakery":
+			s2.b = int(s.b) + 1
+			cost += e.biz_cost(i, "b", 1)
+		var c1 := Biz.estimate(i, s2, e)
+		var gain := (float(c1.rev) - float(c1.cost)) - (float(c0.rev) - float(c0.cost))
+		assert_gt(gain, 0.0, "%s: the 26th build earns" % Biz.DEFS[i].name)
+		assert_lt(cost / gain, 900.0, "%s: the 26th build pays back within 15 minutes" % Biz.DEFS[i].name)
+
+
+func test_businesses_cannot_snowball():
+	# however far you push a business, its sales level off at its market size (a share of the
+	# restaurant's income), so it can never outgrow the restaurant that funds it
+	for i in Biz.N:
+		var e := _with_biz(i)
+		var s: Dictionary = e.biz[i]
+		s.a = 900
+		s.b = 300 if Biz.DEFS[i].id != "catering" else 10
+		for u in e.upgrades:
+			if not u.legacy and u.has("biz") and int(u.biz) == i:
+				e.owned[u.id] = true
+		e.mark_dirty()
+		var est := Biz.estimate(i, s, e)
+		assert_lt(float(est.rev) / e.biz_ref(), Biz.market(i, e) * 1.0001, "%s sales capped by its market" % Biz.DEFS[i].name)
+		assert_gt(float(est.sat), 0.9, "%s is saturated" % Biz.DEFS[i].name)
+		# and over-building costs money: each extra build adds running costs but barely any sales
+		var s2 := s.duplicate(true)
+		s2.a = 901
+		var e2 := Biz.estimate(i, s2, e)
+		assert_lt(float(e2.rev) - float(e2.cost), float(est.rev) - float(est.cost) + float(est.rev) * 1e-3, "%s: over-building doesn't pay" % Biz.DEFS[i].name)
+
+
+func test_business_value_tracks_the_restaurant():
+	# the same business is worth the same share whether the restaurant makes $1M/s or $1T/s
+	var shares: Array = []
+	for p in [1.0e6, 1.0e12]:
+		var e := _with_biz(0)
+		e.rest_peak = p
+		e.biz[0].a = 40
+		var est := Biz.estimate(0, e.biz[0], e)
+		shares.append(float(est.rev) / p)
+		assert_near(e.biz_cost(0, "a", 1) / p, Biz.secs_at(0, "a", 40), 1e-9, "build price in seconds of income")
+	assert_near(float(shares[0]), float(shares[1]), float(shares[0]) * 1e-6, "same share at any scale")
+
+
+func test_business_has_its_own_page():
+	var main = await _fresh()
+	var e = main.E
+	e.run_earned = 1e30
+	e.cash = 1e12
+	main.press_button("tab:business")
+	await wait_frames(2)
+	main.press_button("biz_open:0")
+	await wait_frames(3)
+	assert_true(bool(e.biz[0].open), "truck opened")
+	assert_eq(main.biz_page, 0, "opening a business shows its page")
+	var ids := []
+	for b in main.buttons:
+		ids.append(String(b.id))
+	for want in ["biz_back", "biz:0:a", "biz:0:b", "sell_biz:0"]:
+		assert_true(ids.has(want), "page has " + want)
+	assert_false(ids.has("rep:tables"), "restaurant controls are not on the page")
+	# tapping the scene sells for the truck, not the restaurant
+	var taps0: int = e.taps
+	var c0: float = e.cash
+	var p: Vector2 = main.scene_r.get_center()
+	main._on_press(p)
+	main._on_release(p)
+	assert_gt(e.cash, c0, "tapping the truck earns")
+	assert_eq(e.taps, taps0, "it isn't a restaurant serve")
+	# business upgrades live on the page, not in the global list
+	main._refresh_cache(true)
+	for u in main.glob_vis:
+		assert_false(u.has("biz"), "no business upgrade in the Upgrades tab: " + String(u.name))
+	var mine: Array = main.biz_vis[0]
+	assert_gt(mine.size(), 0, "the truck has upgrades to buy on its page")
+	# back to the list, and tapping the tab again also returns
+	main.press_button("biz_back")
+	await wait_frames(2)
+	assert_eq(main.biz_page, -1, "back returns to the list")
+	main.press_button("biz_page:0")
+	assert_eq(main.biz_page, 0, "tile opens the page")
+	main.press_button("tab:business")
+	assert_eq(main.biz_page, -1, "tapping the tab again returns to the list")
+
+
+func test_every_business_page_draws():
+	var main = await _fresh()
+	var e = main.E
+	e.run_earned = 1e30
+	e.cash = 1e40
+	for i in Biz.N:
+		assert_true(e.open_biz(i), "open %d" % i)
+		e.buy_biz(i, "a", 30)
+		e.buy_biz(i, "b", 10)
+	for i in Biz.N:
+		main.open_biz_page(i)
+		await wait_frames(2)
+		var ids := []
+		for b in main.buttons:
+			ids.append(String(b.id))
+		assert_true(ids.has("biz:%d:a" % i), "page %d draws its builds" % i)
+		assert_gt(e.biz_tap(i), 0.0, "page %d tap pays" % i)
+	main.set_tab("build")
+	await wait_frames(2)
+	assert_false(main._on_biz_page(), "other tabs show the restaurant")

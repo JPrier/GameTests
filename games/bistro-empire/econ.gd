@@ -16,7 +16,7 @@ extends RefCounted
 const STATS := ["demand", "seating", "kitchen", "ticket"]
 const STAT_NAME := {"demand": "Demand", "seating": "Seating", "kitchen": "Kitchen", "ticket": "Ticket",
 	"global": "Restaurant income", "tap": "Serve tap", "royalty": "Franchise royalties", "ceiling": "Price ceiling",
-	"biz": "All business income", "empire": "All income"}
+	"biz": "All business income", "empire": "All income", "market": "Every business's market size"}
 const REPS := ["ads", "tables", "cooks", "recipes"]
 const REP_NAME := {"ads": "Ad Campaign", "tables": "Table", "cooks": "Line Cook", "recipes": "Recipe"}
 const REP_PLURAL := {"ads": "Ad Campaigns", "tables": "Tables", "cooks": "Line Cooks", "recipes": "Recipes"}
@@ -44,6 +44,7 @@ const INTEREST_BASE := 0.005 / 60.0  # 0.5% per minute at low borrowing
 const DEADLINE_BASE := 300.0      # seconds you can stay in the red
 const GRIT_BASE := 0.01           # +1% all income per unspent Grit
 const STAR_COEF := 25.0
+const TAP_SECS := 0.25            # every serve also pays this many seconds of restaurant income
 const VENT_GROWTH := 1.5
 
 const CONCEPTS := ["diner", "fastfood", "fine", "cafe"]
@@ -56,8 +57,8 @@ const CONCEPT := {
 	"fine": {"name": "Fine Dining", "blurb": "Few seats, enormous bills. Prices barely scare guests.",
 		"mult": {"ticket": 2.5, "seating": 0.4, "demand": 0.5}, "elastic": 1.7, "ceiling": 4.0,
 		"rep_cost": {"recipes": 0.7}, "unlock": 1, "color": "c58bff"},
-	"cafe": {"name": "Café", "blurb": "Hands-on. SERVE taps are worth far more, and earn % of income.",
-		"mult": {"tap": 10.0, "global": 0.9}, "tappct": 0.03, "elastic": 2.0, "ceiling": 3.0,
+	"cafe": {"name": "Café", "blurb": "Hands-on. Every serve is worth 10x and pays an extra second of income.",
+		"mult": {"tap": 10.0, "global": 0.9}, "tappct": 1.0, "elastic": 2.0, "ceiling": 3.0,
 		"rep_cost": {"recipes": 0.85}, "unlock": 2, "color": "6ad1c0"},
 }
 
@@ -124,6 +125,7 @@ var effects: Array = []           # [{kind, mult, t, dur, src}] timed effects fr
 var event: Dictionary = {}        # the event card waiting for an answer
 var event_t := Events.MIN_GAP     # seconds of active play until the next event
 var peak_gross := 0.0             # best gross income per second this run
+var rest_peak := 0.0              # best restaurant income per second this run, ignoring events (businesses scale on it)
 var events_on := true
 var last_bankrupt: Dictionary = {}
 var notes: Array = []             # short messages for the UI to show
@@ -228,7 +230,7 @@ func _build_catalogue() -> void:
 		"Indoor Waterfall", "Gold Leaf Ceiling", "Zero-G Lounge"]
 	var amb_era := ["", "Refined ", "Legendary "]
 	for i in 60:
-		var x := 1.3 if i % 4 != 3 else 1.6
+		var x := 1.35 if i % 4 != 3 else 1.7
 		_add("g_%d" % i, amb_era[i / 20] + amb[i % 20], "global", ladder(2.5, 1.7, 1.7, i, 60), [["mul", "global", x]])
 	# ---- 3. repeatable milestones: 4 x 21
 	for r in REPS:
@@ -268,7 +270,7 @@ func _build_catalogue() -> void:
 		if t % 2 == 0:
 			eff = [["mul", "tap", 3.0]]
 		else:
-			eff = [["tappct", 0.005]]
+			eff = [["tappct", 0.1]]
 		_add("tap_%d" % t, "%s %s" % [tap_names[t % 4], roman(t / 4 + 1)], "tap", ladder(1.3, 2.4, 2.4, t, 40), eff)
 	# ---- 7. brand / price ceiling: 25
 	var brand := ["Price Tags", "Word of Mouth", "Regulars", "Loyalty Program", "Signature Sauce", "Brand Story",
@@ -293,7 +295,7 @@ func _build_catalogue() -> void:
 		"Leadership Academy", "Data Analytics", "Global Standards", "Franchise Council", "Empire Charter"]
 	for t in 50:
 		var nm: String = ("" if t < 25 else "Global ") + roy[t % 25]
-		_add("r_%d" % t, nm, "royalty", 4.0e5 * ladder(0.0, 2.0, 2.0, t, 50), [["mul", "royalty", 1.25 if t % 5 != 4 else 1.5]], ["locs", 1 + t])
+		_add("r_%d" % t, nm, "royalty", 2.0e4 * ladder(0.0, 1.9, 1.9, t, 50), [["mul", "royalty", 1.25 if t % 5 != 4 else 1.5]], ["locs", 1 + t])
 	for t in 10:
 		_add("fc_%d" % t, "Franchise Lawyers %s" % roman(t + 1), "royalty", 1.0e7 * pow(10.0, 9.0 * t), [["citycost", 0.75]], ["locs", 3 + 4 * t])
 	# ---- 10. city-specific: 30 x 8
@@ -329,7 +331,7 @@ func _build_catalogue() -> void:
 		"diner": [["mul", "global", 1.4], ["syn", "tables", "ticket", 0.002], ["mul", "seating", 1.6], ["mul", "ticket", 1.5]],
 		"fastfood": [["mul", "demand", 2.0], ["mul", "kitchen", 1.6], ["mul", "seating", 1.6], ["cost", "ads", 0.7]],
 		"fine": [["mul", "ticket", 1.8], ["mul", "ceiling", 1.25], ["mul", "seating", 1.5], ["mul", "demand", 1.5]],
-		"cafe": [["mul", "tap", 3.0], ["tappct", 0.005], ["mul", "global", 1.35], ["offline", 0.05]],
+		"cafe": [["mul", "tap", 3.0], ["tappct", 0.25], ["mul", "global", 1.35], ["offline", 0.05]],
 	}
 	for cn in CONCEPTS:
 		for t in 30:
@@ -343,7 +345,7 @@ func _build_catalogue() -> void:
 		["Premium Pricing", [["mul", "ceiling", 1.5], ["mul", "demand", 0.85]], "Value Menu", [["mul", "demand", 2.0], ["mul", "ceiling", 0.9]]],
 		["Tasting Course", [["mul", "ticket", 2.5], ["mul", "seating", 0.8]], "Family Platters", [["mul", "seating", 2.0], ["mul", "ticket", 1.2]]],
 		["Corporate Chain", [["mul", "royalty", 2.5], ["citycost", 1.3]], "Owner-Operators", [["citycost", 0.5], ["mul", "royalty", 1.3]]],
-		["Front-Line Owner", [["mul", "tap", 10.0], ["tappct", 0.01]], "Absentee Owner", [["mul", "global", 1.4], ["offline", 0.1]]],
+		["Front-Line Owner", [["mul", "tap", 10.0], ["tappct", 0.5]], "Absentee Owner", [["mul", "global", 1.4], ["offline", 0.1]]],
 		["Imported Ingredients", [["mul", "ticket", 2.0]], "Local Sourcing", [["mul", "ticket", 1.4], ["cost", "recipes", 0.5]]],
 		["Open 24/7", [["mul", "global", 1.8], ["cost", "ads", 1.3], ["cost", "tables", 1.3], ["cost", "cooks", 1.3], ["cost", "recipes", 1.3]],
 			"Weekends Off", [["mul", "global", 1.3], ["cost", "ads", 0.8], ["cost", "tables", 0.8], ["cost", "cooks", 0.8], ["cost", "recipes", 0.8]]],
@@ -370,13 +372,13 @@ func _build_catalogue() -> void:
 			var sc := 1.0
 			match kind:
 				"startcash":
-					eff = [["startcash", pow(10.0, 3.0 + 3.0 * t)]]; sc = 1.0 + pow(t, 2.2) * 2.0
+					eff = [["startcash", pow(10.0, 2.0 + 2.5 * t)]]; sc = 2.0 * pow(4.0, t)
 				"global":
 					eff = [["mul", "global", 2.0]]; sc = 10.0 * pow(3.0, t)
 				"starpow":
 					eff = [["starpow", 0.005]]; sc = 10.0 * pow(2.5, t)
 				"startreps":
-					eff = [["startreps", 10]]; sc = 3.0 * pow(2.0, t)
+					eff = [["startreps", 10]]; sc = 4.0 * pow(2.5, t)
 				"royalty":
 					eff = [["mul", "royalty", 2.0]]; sc = 20.0 * pow(2.4, t)
 				"tap":
@@ -393,14 +395,14 @@ func _build_catalogue() -> void:
 	Biz.add_upgrades(self)
 	# ---- 16. grit perks (earned by going bankrupt, survive every reset): 73
 	var grit_lines := [
-		["Comeback Kid", 10, "empire", [["mul", "empire", 1.5]], 3.0, 2.2],
+		["Comeback Kid", 10, "empire", [["mul", "empire", 1.5]], 5.0, 2.5],
 		["Thick Skin", 8, "skin", [["event_cost", 0.8]], 2.0, 2.0],
 		["Line of Credit", 8, "credit", [["credit", 1.5]], 2.0, 2.0],
 		["Friendly Banker", 8, "rates", [["interest", 0.8]], 2.0, 2.0],
 		["Lean Operations", 8, "lean", [["upkeep", 0.8]], 3.0, 2.0],
 		["Bulk Buyer", 6, "food", [["foodcut", 3.0]], 3.0, 2.2],
 		["Second Wind", 5, "wind", [["deadline", 60.0]], 2.0, 2.5],
-		["Side Hustle", 10, "hustle", [["mul", "biz", 2.0]], 3.0, 2.2],
+		["Side Hustle", 10, "hustle", [["mul", "market", 1.3]], 3.0, 2.2],
 		["Lucky Break", 5, "luck", [["luck", 0.08]], 4.0, 2.5],
 		["Fire Sale", 5, "sale", [["firesale", 0.1]], 2.0, 2.0],
 	]
@@ -432,6 +434,7 @@ func reset_run_state() -> void:
 	debt = 0.0
 	red_t = 0.0
 	peak_gross = 0.0
+	rest_peak = 0.0
 	effects = []
 	event = {}
 	event_t = Events.MIN_GAP
@@ -501,6 +504,7 @@ func _blank_agg() -> Dictionary:
 	}
 	a.mul["biz"] = 1.0
 	a.mul["empire"] = 1.0
+	a.mul["market"] = 1.0
 	for i in Biz.N:
 		a.biz.append(1.0)
 	for i in NC:
@@ -728,12 +732,14 @@ func gross_income() -> float:
 	return float(empire().gross)
 
 
+## A serve is worth one guest's bill (multiplied by serving upgrades) plus a slice of a second of
+## your restaurant's income, so tapping stays worth something all game.
 func tap_value(a: Dictionary = {}) -> float:
 	if a.is_empty():
 		a = agg()
 	var inf := income_info(a)
 	var base := float(inf.ticket) * float(inf.price) * float(inf.global) * float(inf.fr) * float(inf.star)
-	return base * float(a.mul.tap) + float(inf.total) * float(a.tappct)
+	return base * float(a.mul.tap) + maxf(float(inf.total), biz_ref() * 0.5) * (TAP_SECS + float(a.tappct))
 
 
 # ================================================================= costs & buying
@@ -855,7 +861,7 @@ func req_met(u: Dictionary) -> bool:
 				"a": return int(s.a) >= int(q[3])
 				"b": return int(s.b) >= int(q[3])
 				"open": return true
-				"earn": return run_earned >= float(u.cost) * 0.08
+				"earn": return run_earned >= upgrade_cost(u) * 0.08
 	return false
 
 
@@ -874,7 +880,7 @@ func req_text(u: Dictionary) -> String:
 				"a": return "%d %s at the %s" % [int(q[3]), d.as, d.name]
 				"b": return "%d %s at the %s" % [int(q[3]), d.bs, d.name]
 				"open": return "Open the %s" % d.name
-				"earn": return "Open the %s and earn %s this run" % [d.name, fmt_money(float(u.cost) * 0.08)]
+				"earn": return "Open the %s and earn %s this run" % [d.name, fmt_money(upgrade_cost(u) * 0.08)]
 	return ""
 
 
@@ -899,7 +905,7 @@ func visible_upgrades() -> Array:
 	for u in upgrades:
 		if available(u):
 			out.append(u)
-	out.sort_custom(func(x, y): return float(x.cost) < float(y.cost))
+	out.sort_custom(func(x, y): return upgrade_cost(x) < upgrade_cost(y))
 	return out
 
 
@@ -909,7 +915,7 @@ func upcoming_upgrades(n: int) -> Array:
 	for u in upgrades:
 		if not u.legacy and not owned.has(u.id) and not blocked(u) and not req_met(u):
 			out.append(u)
-	out.sort_custom(func(x, y): return float(x.cost) < float(y.cost))
+	out.sort_custom(func(x, y): return upgrade_cost(x) < upgrade_cost(y))
 	return out.slice(0, n)
 
 
@@ -917,9 +923,10 @@ func buy_upgrade(id: int) -> bool:
 	var u: Dictionary = upgrades[id]
 	if u.legacy:
 		return buy_legacy(id)
-	if not available(u) or float(u.cost) > cash:
+	var c := upgrade_cost(u)
+	if not available(u) or c > cash:
 		return false
-	cash -= float(u.cost)
+	cash -= c
 	owned[id] = true
 	_dirty = true
 	return true
@@ -969,7 +976,7 @@ func effect_text(eff: Array) -> String:
 				parts.append("%s ×%s" % [STAT_NAME[e[1]], fmt_mult(float(e[2]))])
 			"cost": parts.append("%s cost ×%s" % [REP_NAME[e[1]], fmt_mult(float(e[2]))])
 			"syn": parts.append("%s +%s%% per %s" % [STAT_NAME[e[2]], fmt_mult(float(e[3]) * 100.0), REP_NAME[e[1]]])
-			"tappct": parts.append("Serve +%s%% of income/s" % fmt_mult(float(e[1]) * 100.0))
+			"tappct": parts.append("Each serve +%ss of income" % fmt_mult(float(e[1])))
 			"city": parts.append("%s locations ×%s" % [CITY_NAMES[int(e[1])], fmt_mult(float(e[2]))])
 			"citycost": parts.append("Franchise cost ×%s" % fmt_mult(float(e[1])))
 			"vent": parts.append("%s effect ×%s" % [VENTURES[int(e[1])].name, fmt_mult(float(e[2]))])
@@ -1013,6 +1020,9 @@ const FLAG_TEXT := {
 	"mgr_bar": "Calms rowdy crowds (-40% incidents)",
 	"mgr_hotel": "Sets the best room rate each season",
 	"mgr_wholesale": "Sells when prices are high",
+	"auto_truck": "Auto-buys trucks and menu items", "auto_bakery": "Auto-buys ovens and counters",
+	"auto_catering": "Auto-buys crew and vans", "auto_bar": "Auto-buys bartenders and bouncers",
+	"auto_hotel": "Auto-buys rooms and concierges", "auto_wholesale": "Auto-buys warehouses and trucks",
 }
 
 
@@ -1048,6 +1058,7 @@ func tick(dt: float, active := true) -> float:
 	play_time += dt
 	best_income = maxf(best_income, gross)
 	peak_gross = maxf(peak_gross, gross)
+	update_rest_peak()
 	if active:
 		_tick_events(dt, gross)
 		_tick_red(dt)
@@ -1194,7 +1205,7 @@ func _tick_red(dt: float) -> void:
 
 
 static func grit_for(earned: float) -> float:
-	return floor(6.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e7, 0.25))
+	return floor(3.0 * pow(pow(maxf(0.0, earned), 1.0 / COST_POW) / 1.0e8, 0.2))
 
 
 func grit_pending() -> float:
@@ -1224,7 +1235,7 @@ func sell_biz(i: int) -> float:
 	var s: Dictionary = biz[i]
 	if not s.open:
 		return 0.0
-	var v := Biz.invested(i, s) * refund_rate()
+	var v := Biz.invested(i, s, self) * refund_rate()
 	cash += v
 	biz[i] = Biz.blank(i)
 	_dirty = true
@@ -1244,6 +1255,28 @@ func sell_location() -> float:
 
 # ================================================================= businesses
 
+## P: the restaurant's best income per second this run, without temporary event effects.
+## Every business earns and costs in proportion to it (see biz.gd).
+func biz_ref() -> float:
+	if rest_peak <= 0.0:
+		update_rest_peak()
+	return maxf(rest_peak, 1.0)
+
+
+func update_rest_peak() -> void:
+	var saved := effects
+	effects = []
+	var v := float(income_info(agg()).total)
+	effects = saved
+	rest_peak = maxf(rest_peak, v)
+
+
+## Price of an upgrade right now. Business upgrades are priced in seconds of P.
+func upgrade_cost(u: Dictionary) -> float:
+	if u.has("pc"):
+		return float(u.pc) * biz_ref()
+	return float(u.cost)
+
 func biz_open_count() -> int:
 	var n := 0
 	for s in biz:
@@ -1258,9 +1291,9 @@ func biz_unlocked(i: int) -> bool:
 
 func open_biz(i: int) -> bool:
 	var s: Dictionary = biz[i]
-	if s.open or not biz_unlocked(i) or cash < Biz.open_cost(i):
+	if s.open or not biz_unlocked(i) or cash < Biz.open_cost(i, self):
 		return false
-	cash -= Biz.open_cost(i)
+	cash -= Biz.open_cost(i, self)
 	s.open = true
 	s.a = 1
 	s.b = 1
@@ -1277,12 +1310,12 @@ func biz_next_milestone(i: int, which: String) -> int:
 
 
 func biz_cost(i: int, which: String, k: int = 1) -> float:
-	return Biz.cost_of(i, which, int(biz[i][which]), k)
+	return Biz.cost_of(i, which, int(biz[i][which]), k, self)
 
 
 func biz_max_affordable(i: int, which: String) -> int:
 	var g := Biz.growth(i, which)
-	var c0 := Biz.cost_at(i, which, int(biz[i][which]))
+	var c0 := Biz.cost_at(i, which, int(biz[i][which]), self)
 	if cash < c0:
 		return 0
 	return maxi(1, int(floor(log(cash * (g - 1.0) / c0 + 1.0) / log(g))))
@@ -1319,10 +1352,37 @@ func run_automation() -> void:
 				var lim := int(floor(log(cash * 0.5 * (g - 1.0) / c0 + 1.0) / log(g)))
 				if lim > 0:
 					buy_rep(r, lim)
+	for i in Biz.N:
+		var bs: Dictionary = biz[i]
+		if bs.open and automation_active("auto_" + String(Biz.DEFS[i].id)):
+			_auto_biz(i)
 	if automation_active("auto_upg"):
 		var vis := visible_upgrades()
-		if not vis.is_empty() and float(vis[0].cost) <= cash * 0.5:
+		if not vis.is_empty() and upgrade_cost(vis[0]) <= cash * 0.5:
 			buy_upgrade(int(vis[0].id))
+
+
+## Expansion Manager: buys whichever build of this business pays back fastest, with up to a
+## quarter of your cash, as long as it pays back within 15 minutes.
+func _auto_biz(i: int) -> void:
+	for k in 4:
+		var s: Dictionary = biz[i]
+		var cur: Dictionary = Biz.estimate(i, s, self)
+		var best := ""
+		var best_pb := 900.0
+		for w in ["a", "b"]:
+			var c := biz_cost(i, w, 1)
+			if c > cash * 0.25:
+				continue
+			var s2 := s.duplicate(true)
+			s2[w] = int(s2[w]) + 1
+			var nx: Dictionary = Biz.estimate(i, s2, self)
+			var g := (float(nx.rev) - float(nx.cost)) - (float(cur.rev) - float(cur.cost))
+			if g > 0.0 and c / g < best_pb:
+				best_pb = c / g
+				best = w
+		if best == "" or not buy_biz(i, best, 1):
+			return
 
 
 func tap() -> float:
@@ -1331,6 +1391,18 @@ func tap() -> float:
 	run_earned += v
 	life_earned += v
 	taps += 1
+	return v
+
+
+## Selling by hand at a side business: half a second of its sales, at least a quarter of a restaurant tap.
+func biz_tap(i: int) -> float:
+	if not bool(biz[i].open):
+		return 0.0
+	var est: Dictionary = Biz.estimate(i, biz[i], self)
+	var v := maxf(float(est.rev) * 0.5, tap_value() * 0.25)
+	cash = minf(cash + v, MAX_MONEY)
+	run_earned += v
+	life_earned += v
 	return v
 
 
@@ -1375,7 +1447,7 @@ func to_dict() -> Dictionary:
 		"vents": vents.duplicate(), "price": price, "price_auto": price_auto, "auto_on": auto_on.duplicate(),
 		"run_time": run_time, "play_time": play_time, "taps": taps, "best_income": best_income,
 		"biz": biz.duplicate(true), "debt": debt, "grit": grit, "grit_earned": grit_earned, "bankruptcies": bankruptcies,
-		"red_t": red_t, "peak_gross": peak_gross, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
+		"red_t": red_t, "peak_gross": peak_gross, "rest_peak": rest_peak, "effects": effects.duplicate(true), "event": event.duplicate(true), "event_t": event_t}
 
 
 func _keys_of(d: Dictionary) -> Array:
@@ -1434,6 +1506,7 @@ func from_dict(d: Dictionary) -> void:
 	bankruptcies = int(d.get("bankruptcies", 0))
 	red_t = float(d.get("red_t", 0.0))
 	peak_gross = float(d.get("peak_gross", 0.0))
+	rest_peak = float(d.get("rest_peak", 0.0))
 	effects = d.get("effects", [])
 	event = d.get("event", {})
 	event_t = float(d.get("event_t", Events.MIN_GAP))
