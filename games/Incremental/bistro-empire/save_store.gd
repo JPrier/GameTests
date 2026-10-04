@@ -191,9 +191,16 @@ func best() -> Dictionary:
 	for c in candidates():
 		if not c.ok:
 			continue
-		if pick.is_empty() or int(c.t) > int(pick.t) or (int(c.t) == int(pick.t) and float(c.state.get("life_earned", 0.0)) > float(pick.state.get("life_earned", 0.0))):
+		if pick.is_empty() or int(c.t) > int(pick.t) or (int(c.t) == int(pick.t) and _life_l(c.state) > _life_l(pick.state)):
 			pick = c
 	return pick
+
+
+## Lifetime earnings of a saved state, as a log (older saves stored a plain number).
+static func _life_l(st: Dictionary) -> float:
+	if st.has("life_l"):
+		return float(st.life_l)
+	return Num.L(float(st.get("life_earned", 0.0)))
 
 
 ## True when something was saved but none of it can be read.

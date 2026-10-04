@@ -1,7 +1,7 @@
 class_name Events
 extends RefCounted
 ## Events pop up while you play as a card you must answer. Bad ones are drawn towards whatever
-## you're running too hot (see RISK_TEXT), and the card says why. Money amounts are measured in
+## you're running too hot (see RISK_TEXT), and the card says why. Money amounts (logs, see num.gd) are measured in
 ## seconds of your income (profit in a challenge), fixed when the card appears. Some outcomes are
 ## gambles whose odds depend on the same risk.
 ## Normal runs ("soft"): a bill takes at most the cash you have and the shortfall comes out of
@@ -122,11 +122,10 @@ const LIST := [
 static func risks(e) -> Dictionary:
 	var saved: Array = e.effects
 	e.effects = []
-	var inf: Dictionary = e.income_info(e.agg())
+	var info: Dictionary = e.income_info(e.agg())
 	e.effects = saved
-	var lim: float = e.credit_limit()
-	var du: float = e.debt / lim if lim > 0.0 else 0.0
-	var raw := {"kitchen": float(inf.kstrain), "floor": float(inf.fstrain), "queue": float(inf.queue), "debt": du}
+	var du: float = e.debt_use()
+	var raw := {"kitchen": float(info.kstrain), "floor": float(info.fstrain), "queue": float(info.queue), "debt": du}
 	var r := {"none": 0.0,
 		"kitchen": clampf((float(raw.kitchen) - 0.7) / 0.22, 0.0, 1.0),
 		"floor": clampf((float(raw.floor) - 0.7) / 0.22, 0.0, 1.0),
@@ -143,10 +142,10 @@ static func next_gap(rng: RandomNumberGenerator, rk: Dictionary) -> float:
 	return rng.randf_range(MIN_GAP, MAX_GAP) * (1.0 - 0.45 * worst)
 
 
-## A fresh event with money amounts fixed from the current gross income `r` (per second).
+## A fresh event with money amounts fixed from the current income `r_l` (log, per second).
 ## Bad events are drawn towards whatever you're running too hot; a calm, well-run restaurant
 ## mostly gets good news. `cmods` is the concept's risk table, `cover` the insured share of bills.
-static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: float, rk: Dictionary,
+static func make(rng: RandomNumberGenerator, r_l: float, luck: float, cost_mult: float, rk: Dictionary,
 		cmods: Dictionary = {}, cover := 0.0, only := "", soft := false) -> Dictionary:
 	var rr: Dictionary = rk.r
 	var worst := 0.0
@@ -189,7 +188,7 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 	var lvl := float(rr.get(key, 0.0)) * float(cmods.get(key, 1.0))
 	lvl = minf(lvl, 1.0)
 	var stakes := float(cmods.get("stakes", 1.0)) if key in ["floor", "queue"] or String(ev.id) == "critic" else 1.0
-	ev["r"] = r
+	ev["r_l"] = r_l
 	ev["cost_mult"] = cost_mult * stakes
 	ev["cover"] = cover
 	ev["soft"] = soft   # normal runs: a bill never takes you below $0; what you can't pay comes out of income
@@ -213,30 +212,34 @@ static func make(rng: RandomNumberGenerator, r: float, luck: float, cost_mult: f
 	return ev
 
 
-static func op_amount(ev: Dictionary, op: Array, cash: float, capped := true) -> float:
+## The money an op moves (log). capped: in a normal run a bill never takes more than your cash.
+static func op_amount(ev: Dictionary, op: Array, cash_l: float, capped := true) -> float:
+	var keep := Num.L(float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0))))
 	match String(op[0]):
 		"pay":
-			var amt := float(op[1]) * float(ev.r) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
-			return minf(amt, maxf(cash, 0.0)) if bool(ev.get("soft", false)) and capped else amt
-		"gain": return float(op[1]) * float(ev.r)
-		"cash_frac": return maxf(0.0, cash) * float(op[1]) * float(ev.cost_mult) * (1.0 - float(ev.get("cover", 0.0)))
-	return 0.0
+			var amt := Num.L(float(op[1])) + float(ev.r_l) + keep
+			return minf(amt, cash_l) if bool(ev.get("soft", false)) and capped else amt
+		"gain": return Num.L(float(op[1])) + float(ev.r_l)
+		"cash_frac": return cash_l + Num.L(float(op[1])) + keep
+	return Num.ZERO
 
 
-## The price shown on a choice button (upfront costs only). capped=false gives the full bill.
-static func upfront(ev: Dictionary, choice: Dictionary, cash: float, capped := true) -> float:
-	var tot := 0.0
+## The price shown on a choice button (upfront costs only, log). capped=false gives the full bill.
+static func upfront(ev: Dictionary, choice: Dictionary, cash_l: float, capped := true) -> float:
+	var tot := Num.ZERO
 	for op in choice.ops:
 		if String(op[0]) == "pay" or String(op[0]) == "cash_frac":
-			tot += op_amount(ev, op, cash, capped)
+			tot = Num.add(tot, op_amount(ev, op, cash_l, capped))
+	if capped and bool(ev.get("soft", false)):
+		tot = minf(tot, cash_l)
 	return tot
 
 
 ## In a normal run, the part of a bill you can't pay comes out of income: half your income for
 ## twice as many seconds as the shortfall is worth, so paying is never free.
 const SHORT_MULT := 0.5
-static func shortfall_secs(ev: Dictionary, shortfall: float) -> float:
-	return minf(1800.0, shortfall / maxf(float(ev.r), 1e-300) / (1.0 - SHORT_MULT))
+static func shortfall_secs(ev: Dictionary, shortfall_l: float) -> float:
+	return minf(1800.0, Num.V(minf(shortfall_l - float(ev.r_l), 10.0)) / (1.0 - SHORT_MULT))
 
 
 ## Applies a choice to the econ. Returns a short line describing what happened.
@@ -257,18 +260,17 @@ static func resolve(e, ev: Dictionary, idx: int) -> String:
 	for op in ops:
 		match String(op[0]):
 			"pay":
-				var full := op_amount(ev, op, e.cash, false)
-				var paid := op_amount(ev, op, e.cash)
-				e.cash -= paid
+				var full := op_amount(ev, op, e.cash_l, false)
+				var paid := op_amount(ev, op, e.cash_l)
+				e.charge(paid)
 				if full > paid + 1e-9:
-					var secs := shortfall_secs(ev, full - paid)
+					var secs := shortfall_secs(ev, Num.sub(full, paid))
 					e.add_effect("income", SHORT_MULT, secs, String(ev.title))
-					line = (line + " " if line != "" else "") + "Paid what you had; half your income for %s covers the rest." % e.fmt_time(secs)
+					line = (line + " " if line != "" else "") + "Paid what you had; half your income for %s covers the rest." % Econ.fmt_time(secs)
 			"cash_frac":
-				e.cash -= op_amount(ev, op, e.cash)
+				e.charge(op_amount(ev, op, e.cash_l))
 			"gain":
-				var g := op_amount(ev, op, e.cash)
-				e.cash += g
+				e.add_cash(op_amount(ev, op, e.cash_l))
 			"fx":
 				e.add_effect(String(op[1]), float(op[2]), float(op[3]), String(ev.title))
 			"closed":

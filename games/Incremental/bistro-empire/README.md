@@ -52,18 +52,18 @@ Run them alongside the restaurant. Each one unlocks as your earnings this run gr
 | Boutique Hotel | Set the room rate. The season changes every 4 minutes. Empty rooms earn nothing and a half-empty hotel earns less per guest (in a challenge, rent is due on every room instead). |
 | Wholesale Co. | Stock piles up in warehouses; sell it when the moving market price is high. Delivery trucks boost the restaurant's income by up to 15% (in a challenge they cut food costs across the empire instead). |
 
-**Every business has its own page.** The Business tab lists your businesses (and the bank, in a challenge), each with its income, how much of its market it has captured, and a badge for upgrades ready to buy. Tap one to open its page:
+**Every business has its own page.** The Business tab lists your businesses (and the bank, in a challenge), each with its income, progress to its next milestone, and a badge for upgrades ready to buy. Tap one to open its page:
 
-- The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, what it has earned this run (its costs, in a challenge) and its market share underneath. Tapping the scene sells by hand.
-- Below that are its twist controls, the market meter, its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
+- The top of the screen becomes that business's own animated scene (the truck drives between spots, ovens glow, the bar crowd gets rowdy, hotel windows light up with occupancy, the wholesale price line moves), with its sales, what it has earned this run (its costs, in a challenge) and its next milestone underneath. Tapping the scene sells by hand.
+- Below that are its twist controls, a growth card (next milestone, what its upgrades and your stars and Grit multiply it by), its two builds, its automation (manager and Expansion Manager toggles) and its own upgrades, including what unlocks next.
 - Business upgrades live only on their business's page. The Upgrades tab keeps the restaurant's and the company-wide ones.
 - Tap Back, the Business tab again, or Escape to return to the list.
 
-**How businesses scale.** Everything about a business is measured against your restaurant's best income this run (ignoring events), so a truck matters as much at $1B/s as at $1K/s:
+**How businesses scale: on their own.** A business doesn't depend on the restaurant at all. It has its own fixed prices and earnings (bigger for the ones that unlock later), so it costs the same to open after your tenth sale as after your first, and restaurant upgrades never change it. It grows through:
 
-- Each build adds a fixed share of that income, and its price is a number of seconds of it, rising about 5% per build. The first builds pay back in a minute or two, and each buy button shows its payback time.
-- Milestones (10, then every 25 up to 1,000) give that business ×1.5, and its upgrades are priced in seconds of income too.
-- **Market saturation.** Each business's sales level off as it fills its market, which is worth up to 20% of your restaurant's best sales this run. Company-wide upgrades and a Grit perk grow it with diminishing returns, up to 30%. Past that point, extra builds barely add anything, and in a challenge their running costs make them a loss. A well-run business adds 10–30% on top of the restaurant. No business can outgrow the restaurant that feeds it, and upgrading the restaurant grows every market.
+- **Its own builds.** Each build adds income; prices rise about 18% per build. The first builds pay back in seconds, and each buy button shows its payback time.
+- **Its own upgrades.** Milestones (10, then every 25 builds, forever) give that business ×1.5, extras along the way give ×1.3, and company-wide upgrades give every business ×1.25. All of these go on forever.
+- **Prestige.** Stars, Grit and Grit's Battle-Tested perk multiply every business exactly as they multiply the restaurant.
 - Each business has an optional manager that runs its twist, and an **Expansion Manager** (from 25 builds) that buys whichever build pays back fastest, using at most a quarter of your cash.
 
 ## Events
@@ -81,7 +81,7 @@ The card says why it happened and how to avoid it, and the odds of any gamble de
 
 ## Challenges and Grit
 
-Challenges are optional runs, started from the Legacy tab, where you can actually lose. Each has 10 levels. Reach the level's goal (earn $X in one run), then sell the company to collect Grit as well as your stars. The more you earned, the more Grit, and harder challenges and higher levels multiply it.
+Challenges are optional runs, started from the Legacy tab, where you can actually lose. Each one has endless levels. Reach the level's goal (earn $X in one run), then sell the company to collect Grit as well as your stars. The more you earned, the more Grit, and harder challenges and higher levels multiply it.
 
 | Challenge | Rules | Grit |
 |---|---|---|
@@ -96,7 +96,7 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 - **Running costs.** In a challenge the restaurant pays for food on every plate (35% of a plate's base value, adjusted by concept), rent on every seat, wages for every cook and ads for every guest they bring in, busy or not. A lopsided restaurant bleeds money, and the Profit & loss card shows where it goes. Costs are measured against a plate's base value, so raising prices widens your margin. Franchise royalties carry half the costs. Stars and Grit widen your margin too, by their square root.
 - **Bank.** Borrow up to 10 minutes of income to expand faster. Interest climbs as you max out your credit. **Insurance** pays 75% of every event bill for 2.5% of your sales.
 - **Going bust.** If cash drops below $0, the strip under the restaurant turns red with a 5-minute countdown (it replaces the stats strip, so nothing moves). Tap it for options: an emergency loan, selling a franchise location or a side business, or giving up. If time runs out, the challenge is over and you're back to a normal run. Nothing else is lost: that run's earnings still count towards your next sale's stars.
-- **Grit.** Every Grit you have ever earned adds +1% income for good, even after you spend it. Spend it on Grit perks (73 across 10 lines, each tier 4× the price of the last). Every line helps in normal runs, and some carry a smaller part marked "(challenges)" that only matters there:
+- **Grit.** Every Grit you have ever earned adds +1% income for good, even after you spend it. Spend it on Grit perks (73 tiers across 10 lines to start, each tier 4× the price of the last, and every line goes on forever past them). Every line helps in normal runs, and some carry a smaller part marked "(challenges)" that only matters there:
 
   | Perk | Every run | Challenges |
   |---|---|---|
@@ -117,7 +117,13 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 - **Text always fits.** Nothing is ever cut off with "...". Text with a fixed slot shrinks a little to fit, longer text wraps, and every row reserves a line for each thing it shows, so nothing overlaps. Tests check this on every screen.
 - **Nothing jumps.** Events and the in-the-red options are pop-ups. The bank, the income card, the "Buy all" bars, and each business page's automation and upgrade sections keep the same size whatever happens, so a button is never pushed out from under your thumb.
 
-## Upgrades: 1,726 in total
+## Numbers without a ceiling
+
+- **Big numbers.** Every amount that can grow (cash, income, prices, multipliers, stars, Grit) is stored as its base-10 logarithm (`num.gd`), so there is no maximum: past the named suffixes (K, M, B … Vg … Tg, 10^93) amounts read like `$3.98e12,345`. Saves keep the logs, and older saves stored as plain numbers convert when they load.
+- **Endless upgrade lines.** The catalogue below is only the start. When you own every tier of a line, it carries on with new, pricier tiers forever: stat tiers, ambience, build milestones (every 250 builds past 2,000), cheaper builds, serving, brand, franchise royalties, every city's milestones (every 25 locations past 50), every venture (every 100 levels past 400), concept signatures, each business's milestones and extras, the company-wide business upgrades, every Legacy perk line except Old Managers and Night Owl, and every Grit perk line. Run lines reset when you sell; perk lines don't.
+- **A slower prestige curve.** Stars grow with lifetime earnings to the power 0.13 (it was 0.2), and Grit likewise, so each sale lifts the next run less and the big numbers arrive later. In the balance bot, 10 hours of play now reaches about $1e34 a second, where the old curve passed $1e60. Past their catalogue tiers, perk prices also grow a little faster with every tier, so stars can never snowball through perks.
+
+## Upgrades: 1,726 to start, then endless
 
 | Kind | Count |
 |---|---|
@@ -164,19 +170,20 @@ Each level's goal is 1,000× the last, each level's running costs are 15% higher
 
 ## Code
 
-- `econ.gd`: all rules, the upgrade catalogue, expenses, loans, bankruptcy, saving to and loading from a dictionary, and number formatting. No rendering.
+- `num.gd`: big-number maths on base-10 logs (add, subtract, geometric prices) and formatting.
+- `econ.gd`: all rules, the upgrade catalogue and its endless lines (`track_next()`), expenses, loans, bankruptcy, and saving to and loading from a dictionary. No rendering.
 - `biz.gd`: the side businesses. `step()` simulates each twist in real time; `estimate()` gives steady-state rates for display, offline time and the balance bot.
 - `events.gd`: the events, what makes each one likely (kitchen strain, crowding, queues, debt), and how their choices resolve.
 - `main.gd`: input, layout and immediate-mode drawing. The scrolling list is a clipped child `Control`, and pop-ups draw on an overlay `Control`.
-- `tools/sim.gd`: a greedy bot that plays the economy headless and prints pacing. It isn't exported. Run it with `godot --headless --path . --script res://tools/sim.gd -- hours=8 concept=diner`. It takes options `noprestige=1`, `nobiz=1`, `events=0`, `reserve=SECONDS` (cash it keeps for emergencies), `taps=N`, `stars=N`, `challenge=ID` (play level I of a challenge, e.g. `challenge=margins`) and `policy=`:
-    - `greedy` (default) buys whatever pays back fastest. In normal runs it first sells after about 40–50 minutes, and each sale after that comes faster.
+- `tools/sim.gd`: a greedy bot that plays the economy headless and prints pacing. It isn't exported. Run it with `godot --headless --path . --script res://tools/sim.gd -- hours=8 concept=diner`. It takes options `noprestige=1`, `nobiz=1`, `events=0`, `reserve=SECONDS` (cash it keeps for emergencies), `taps=N`, `stars=LOG`, `challenge=ID` (play level I of a challenge, e.g. `challenge=margins`) and `policy=`:
+    - `greedy` (default) buys whatever pays back fastest. In normal runs it first sells after about 30 minutes, and each sale after that comes faster.
     - `skilled` also keeps spare capacity, insures and holds a bigger reserve. With no stars it reaches Tight Margins level I in about 85 minutes; Health Code can still bankrupt it.
     - `random` and `cheapest` click whatever they can afford. In a challenge they go bust within an hour or two.
 - Agent hooks:
   - `get_agent_state()`
   - `press_button("rep:tables")` (any button id)
-  - `dev_add_cash(x)`
+  - `dev_add_cash(x)`, `dev_add_cash_l(log)` for huge amounts
   - `dev_skip(seconds)`
   - `dev_event("lawsuit")` (any id from `events.gd`)
 
-Tests: `gck test bistro-empire` (`tests/test_main.gd`, 90 tests). They cover normal runs never losing money (no costs, no bank, event bills capped at your cash with the shortfall taken from income, cash floored at $0), every Grit perk line doing something in a normal run and labelling its challenge-only part, cost-only event choices turning into income penalties, the bar and hotel still having teeth without costs, Wholesale trucks boosting income, Fine Dining's pricier builds, challenge-only buttons doing nothing in a normal run, managers waiting while a pop-up is open, build rows explaining synergy upgrades, challenges (rules per challenge, goals, Grit on completion, rewards capped at 20× the goal, levels getting harder, going bust only ending the run and not unlocking concepts, saving), star and Grit bonuses counting everything ever earned, old saves having debt forgiven, text never overlapping, running off screen, spilling out of or under a button, or shrinking too small to read (16 tests walk every tab and filter top to bottom, every business page, every pop-up and event, and challenge runs, at 360px and 412px wide, early in a run and with enormous numbers), the bottleneck never flipping back to guests as you buy guests, every stat costing money to run in a challenge (a lopsided restaurant loses money), events following kitchen strain, crowding, queues and debt (and the odds changing with it), insurance, businesses never outgrowing the restaurant, nothing on screen moving when an event, debt or the red banner appears, each business's page, business payback staying under an hour, expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.
+Tests: `gck test bistro-empire` (`tests/test_main.gd`, 109 tests). They cover the big-number maths and formatting, buying a hundred tiers past the catalogue, star and Grit perk lines going on forever (and costing more than they give), playing normally past $1e300, old plain-number saves converting, businesses ignoring the restaurant entirely while their own upgrades and prestige move them, business lines going on forever, normal runs never losing money (no costs, no bank, event bills capped at your cash with the shortfall taken from income, cash floored at $0), every Grit perk line doing something in a normal run and labelling its challenge-only part, cost-only event choices turning into income penalties, the bar and hotel still having teeth without costs, Wholesale trucks boosting income, Fine Dining's pricier builds, challenge-only buttons doing nothing in a normal run, managers waiting while a pop-up is open, build rows explaining synergy upgrades, challenges (rules per challenge, goals, Grit on completion, rewards capped at 20× the goal, levels getting harder, going bust only ending the run and not unlocking concepts, saving), star and Grit bonuses counting everything ever earned, old saves having debt forgiven, text never overlapping, running off screen, spilling out of or under a button, or shrinking too small to read (28 tests walk every tab and filter top to bottom, every business page, every pop-up and event, and challenge runs, at 360px and 412px wide, early in a run and with enormous numbers), the bottleneck never flipping back to guests as you buy guests, every stat costing money to run in a challenge (a lopsided restaurant loses money), events following kitchen strain, crowding, queues and debt (and the odds changing with it), insurance, nothing on screen moving when an event, debt or the red banner appears, each business's page, business payback staying under an hour, expenses, loans, every event and both of its choices, timed effects, the deadline and bankruptcy, Grit perks, each business's twist run live, a real player's save from before these systems loading cleanly, save safety (checksums, fallback to the second copy and the backups, quarantine of unreadable saves, loading the old format, export and import, frozen upgrade keys), crediting time spent in the background, the catalogue size and uniqueness, bottleneck and pricing maths, crossroads locks, concepts, franchises and ventures, prestige, saving and offline earnings, and the UI: tap to buy, a drag doesn't buy, and the whole sell-and-pick-a-concept flow.

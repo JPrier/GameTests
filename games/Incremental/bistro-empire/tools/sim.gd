@@ -1,10 +1,9 @@
 extends SceneTree
 ## Balance simulator: a greedy bot plays Bistro Empire and logs progress.
 ##   godot --headless --path . --script res://tools/sim.gd -- hours=12 concept=diner taps=1
-## Options: noprestige=1 nobiz=1 events=0 stars=N log=SECONDS reserve=SECONDS taps=N
-##   policy=greedy|skilled|random|cheapest challenge=ID audit=SECONDS dump=SECONDS
-## Decisions use net income, including side businesses (food, upkeep and interest only exist
-## in challenge runs).
+## Options: noprestige=1 nobiz=1 events=0 stars=LOG log=SECONDS reserve=SECONDS taps=N
+##   policy=greedy|skilled|random|cheapest challenge=ID audit=SECONDS wall=SECONDS
+## Money is in logs (see num.gd); decisions compare signed net incomes [log, negative].
 ## Not exported (tools/* is excluded).
 
 var e
@@ -14,15 +13,15 @@ var no_biz := false
 var log_every := 600.0
 var next_log := 0.0
 var events: Array = []
-var start_stars := 0.0
-var real_agg := {}
+var start_stars := Num.ZERO
 var reserve_s := 60.0   # careful players keep this many seconds of income as cash
 var audit_every := 0.0
-var dump_at := -1.0
 var next_audit := 0.0
 var challenge_id := ""   # play this challenge (level I) instead of a normal run
 var goal_logged := false
-var policy := "greedy"   # greedy | skilled (greedy + spare capacity, insurance, bigger reserve) | random (buys any affordable thing) | cheapest (always the cheapest thing)
+var policy := "greedy"   # greedy | skilled | random | cheapest
+var wall := 110.0
+var quiet_events := false
 
 
 func _init() -> void:
@@ -44,13 +43,14 @@ func _init() -> void:
 			"stars": start_stars = float(kv[1])
 			"reserve": reserve_s = float(kv[1])
 			"audit": audit_every = float(kv[1])
-			"dump": dump_at = float(kv[1])
 			"policy": policy = kv[1]
 			"challenge": challenge_id = kv[1]
+			"wall": wall = float(kv[1])
+			"quiet": quiet_events = kv[1] == "1"
 	e = load("res://econ.gd").new()
 	e.rng.seed = 12345
 	e.events_on = ev_on
-	print("upgrades in catalogue: ", e.upgrades.size())
+	print("upgrades in catalogue: ", e.upgrades.size(), "  infinite lines: ", e.tracks.size())
 	e.new_game()
 	e.prestiges = 2
 	e.choose_concept(concept)
@@ -61,21 +61,19 @@ func _init() -> void:
 	if policy == "skilled":
 		reserve_s = maxf(reserve_s, 150.0)
 		e.insured = challenge_id != ""
-	e.stars = start_stars
-	e.stars_earned = start_stars
+	e.stars_l = start_stars
+	e.stars_earned_l = start_stars
+	e.mark_dirty()
 	_autos_off()
 	var limit := hours * 3600.0
 	var decisions := 0
 	var t0 := Time.get_ticks_msec()
 	while e.play_time < limit:
 		decisions += 1
-		if Time.get_ticks_msec() - t0 > 110000:
+		if Time.get_ticks_msec() - t0 > wall * 1000.0:
 			printerr("wall limit")
 			break
 		_step(concept)
-		if dump_at > 0.0 and e.play_time >= dump_at:
-			_dump()
-			dump_at = -1.0
 		if audit_every > 0.0 and e.play_time >= next_audit:
 			_audit()
 			next_audit += audit_every
@@ -84,15 +82,20 @@ func _init() -> void:
 			next_log += log_every
 	_log()
 	print("decisions: %d  wall: %.1fs" % [decisions, (Time.get_ticks_msec() - t0) / 1000.0])
-	print("owned upgrades this run: %d  legacy: %d  grit %s  bankruptcies %d" % [e.owned.size(), e.legacy.size(), e.grit, e.bankruptcies])
-	var cats := {}
-	for id in e.owned:
-		var c: String = e.upgrades[id].cat
-		cats[c] = int(cats.get(c, 0)) + 1
-	print("by category: ", cats)
-	for ev in events:
-		print(ev)
+	print("owned this run: %d (+%d generated)  legacy: %d (+%d generated)  grit %s  bankruptcies %d" % [
+		e.owned.size(), _sum(e.inf), e.legacy.size(), _sum(e.perk_inf), Num.fmt(e.grit_l), e.bankruptcies])
+	print("generated tiers: ", e.inf, " perks: ", e.perk_inf)
+	if not quiet_events:
+		for ev in events:
+			print(ev)
 	quit()
+
+
+func _sum(d: Dictionary) -> int:
+	var n := 0
+	for k in d:
+		n += int(d[k])
+	return n
 
 
 func _autos_off() -> void:
@@ -100,29 +103,41 @@ func _autos_off() -> void:
 		e.auto_on[k] = false
 
 
-## Net income with optional overrides. Businesses read e.agg(), so swap the aggregate in.
-func _inc(a: Dictionary, ro: Dictionary = {}, co: Array = [], bo := {}) -> float:
+## Signed net income [log, negative] with optional overrides. Businesses read e.agg(), so swap
+## the aggregate in.
+func _inc(a: Dictionary, ro: Dictionary = {}, co: Array = [], bo := {}) -> Array:
 	var swap: bool = a != e._agg
 	var saved: Dictionary = e._agg
 	if swap:
 		e._agg = a
 		e._dirty = false
-	var inf: Dictionary = e.income_info(a, ro, co, e.price_unlocked(a))
-	var net := float(inf.net)
+	var info: Dictionary = e.income_info(a, ro, co, e.price_unlocked(a))
+	var net: Array = Econ.net_of(info)
 	for i in e.biz.size():
 		var s: Dictionary = e.biz[i]
 		if bo.has(i):
 			s = bo[i]
+		if not s.open:
+			continue
 		var est: Dictionary = Biz.estimate(i, s, e, false)
-		net += float(est.rev) - float(est.cost)
-	net -= e.interest_per_s()
+		net = Num.sadd(net, Num.diff(float(est.rev_l), float(est.cost_l)))
+	net = Num.sadd(net, [e.interest_l(), true])
 	if swap:
 		e._agg = saved
 	return net
 
 
+## Gain from cur to nxt, as [log, negative].
+func _gain(nxt: Array, cur: Array) -> Array:
+	return Num.sadd(nxt, Num.sneg(cur))
+
+
+func _pos(x: Array) -> float:
+	return Num.ZERO if x[1] else float(x[0])
+
+
 func _event(s: String) -> void:
-	events.append("[%s] %s" % [e.fmt_time(e.play_time), s])
+	events.append("[%s] %s" % [Econ.fmt_time(e.play_time), s])
 
 
 func _log() -> void:
@@ -131,36 +146,30 @@ func _log() -> void:
 	for i in e.biz.size():
 		var s: Dictionary = e.biz[i]
 		var x: Dictionary = em.per[i]
-		bz.append("%d/%d:%s" % [s.a, s.b, e.fmt_num(float(x.rev) - float(x.cost))] if s.open else "-")
-	print("%9s run %8s | net %10s/s (rest %s, biz %s, costs %d%%) cash %10s | reps %s | upg %4d | locs %3d | biz %s | ★%s(+%s) G%s P%d B%d" % [
-		e.fmt_time(e.play_time), e.fmt_time(e.run_time), e.fmt_money(em.net), e.fmt_money(em.rest_rev), e.fmt_money(em.biz_rev),
-		int(100.0 * float(em.costs) / maxf(float(em.gross), 1e-9)), e.fmt_money(e.cash),
-		str([e.reps.ads, e.reps.tables, e.reps.cooks, e.reps.recipes]), e.owned.size(), e.locations(),
-		" ".join(bz), e.fmt_num(e.stars), e.fmt_num(e.stars_pending()), e.fmt_num(e.grit), e.prestiges, e.bankruptcies])
+		bz.append("%d/%d:%s" % [s.a, s.b, Num.fmt(float(x.rev_l))] if s.open else "-")
+	print("%9s run %8s | net %10s/s (rest %s, biz %s) cash %10s | reps %s | upg %4d+%d | locs %3d | biz %s | ★%s(+%s) G%s P%d" % [
+		Econ.fmt_time(e.play_time), Econ.fmt_time(e.run_time), Num.fmt_signed_money(float(em.net_l), bool(em.net_neg)),
+		Num.fmt_money(float(em.rest_l)), Num.fmt_money(float(em.biz_rev_l)), Num.fmt_money(e.cash_l),
+		str([e.reps.ads, e.reps.tables, e.reps.cooks, e.reps.recipes]), e.owned.size(), _sum(e.inf), e.locations(),
+		" ".join(bz), Num.fmt(e.stars_l), Num.fmt(maxf(e.stars_pending_l(), Num.ZERO)), Num.fmt(e.grit_l), e.prestiges])
 
 
 func _step(concept: String) -> void:
 	# answer events: pay upfront if it's cheap, otherwise gamble
 	if not e.event.is_empty():
 		var ev: Dictionary = e.event
-		var c0: float = Events.upfront(ev, ev.choices[0], e.cash)
-		var pick := 0 if (c0 <= e.cash * 0.5 or (ev.choices as Array).size() == 1 or bool(ev.good)) else 1
+		var c0: float = Events.upfront(ev, ev.choices[0], e.cash_l)
+		var pick := 0 if (c0 <= e.cash_l + Num.L(0.5) or (ev.choices as Array).size() == 1 or bool(ev.good)) else 1
 		if policy == "random" or policy == "cheapest":
 			pick = e.rng.randi() % (ev.choices as Array).size()
-		elif policy == "skilled" and (ev.choices as Array).size() > 1 and not bool(ev.good):
-			pick = 0 if c0 <= e.cash * 0.8 else 1
 		var line: String = e.answer_event(pick)
 		_event("event %s -> %s" % [ev.title, line])
-	if e.cash < 0.0:
-		var got: float = e.borrow(-e.cash * 1.2)
-		if got > 0.0:
-			var em: Dictionary = e.empire()
-			var per := []
-			for x in em.per:
-				per.append(e.fmt_money(float(x.rev) - float(x.cost)))
-			_event("borrowed %s to stay afloat (net %s rest %s food %s up %s biz %s int %s fx %s)" % [e.fmt_money(got), e.fmt_money(em.net), e.fmt_money(em.rest_rev), e.fmt_money(em.food), e.fmt_money(em.rest_upkeep), per, e.fmt_money(em.interest), e.effects.map(func(f): return f.kind)])
-	elif e.debt > 0.0 and e.cash > e.debt * 2.0:
-		e.repay(e.debt)
+	if e.in_red():
+		var got: float = e.borrow(e.owed_l + Num.L(1.2))
+		if not Num.is_zero(got):
+			_event("borrowed %s to stay afloat" % Num.fmt_money(got))
+	elif not Num.is_zero(e.debt_l) and e.cash_l > e.debt_l + Num.L(2.0):
+		e.repay(e.debt_l)
 	if not e.concept_chosen:
 		_event("BANKRUPT #%d: %s" % [e.bankruptcies, e.last_bankrupt])
 		e.choose_concept(concept if e.concept_unlocked(concept) else "diner")
@@ -168,18 +177,19 @@ func _step(concept: String) -> void:
 		return
 	if challenge_id != "" and not goal_logged and e.challenge_done():
 		goal_logged = true
-		_event("CHALLENGE GOAL reached after %s: +%s Grit" % [e.fmt_time(e.run_time), e.fmt_num(e.challenge_reward())])
+		_event("CHALLENGE GOAL reached after %s: +%s Grit" % [Econ.fmt_time(e.run_time), Num.fmt(e.challenge_reward_l())])
 	var a: Dictionary = e.agg()
 	if policy == "random" or policy == "cheapest":
 		_sloppy()
 		return
 	if e.price_unlocked(a):
-		e.price = e.best_price(a)
+		e.price_l = e.best_price_l(a)
 	var cur := _inc(a)
-	# --- prestige?
-	var pend: float = e.stars_pending()
-	if not no_prestige and pend >= maxf(15.0, e.stars_earned * 1.2) and e.run_time > 900.0:
-		_event("sell company #%d after %s: +%s stars (net %s/s)" % [e.prestiges + 1, e.fmt_time(e.run_time), e.fmt_num(pend), e.fmt_money(cur)])
+	var cur_l := _pos(cur)
+	# --- prestige? once the sale would at least double the stars ever earned
+	var pend: float = e.stars_pending_l()
+	if not no_prestige and pend >= maxf(Num.L(15.0), e.stars_earned_l + Num.L(1.2)) and e.run_time > 900.0:
+		_event("sell company #%d after %s: +%s stars (net %s/s)" % [e.prestiges + 1, Econ.fmt_time(e.run_time), Num.fmt(pend), Num.fmt_money(cur_l)])
 		e.prestige()
 		_spend_stars()
 		e.choose_concept(concept if e.concept_unlocked(concept) else "diner")
@@ -188,17 +198,12 @@ func _step(concept: String) -> void:
 	var best := {}
 	var best_score := INF
 	for r in e.REPS:
-		var c: float = e.rep_cost(r, 1)
-		var g := _inc(a, {r: int(e.reps[r]) + 1}) - cur
+		var c: float = e.rep_cost_l(r, 1)
+		var g := _gain(_inc(a, {r: int(e.reps[r]) + 1}), cur)
 		var nm: int = e.next_milestone(r)
 		if nm > 0 and nm - int(e.reps[r]) <= 3:
-			g += absf(cur) * 0.15
-		if policy == "skilled":
-			# keep the kitchen and dining room out of the danger zone
-			var inf: Dictionary = e.income_info(a)
-			if (r == "cooks" and float(inf.kstrain) > 0.8) or (r == "tables" and float(inf.fstrain) > 0.8):
-				g = maxf(g, 0.0) + absf(cur) * 0.02
-		var sc := _score(c, g, cur)
+			g = Num.sadd(g, [cur_l + Num.L(0.15), false])
+		var sc := _score(c, g, cur_l)
 		if sc < best_score:
 			best_score = sc
 			best = {"k": "rep", "r": r, "c": c}
@@ -208,39 +213,36 @@ func _step(concept: String) -> void:
 		n += 1
 		if n > 80:
 			break
-		var c: float = e.upgrade_cost(u)
-		var g := _inc(e.copy_with(a, u.eff)) - cur
-		if g <= absf(cur) * 1e-6:
-			if c <= e.cash * 0.2 or c <= absf(cur) * 30.0:
-				g = absf(cur) * 0.05
+		var c: float = float(u.cost_l)
+		var g := _gain(_inc(e.copy_with(a, u.eff)), cur)
+		if g[1] or float(g[0]) <= cur_l - 6.0:
+			if c <= e.cash_l + Num.L(0.2) or c <= cur_l + Num.L(30.0):
+				g = [cur_l + Num.L(0.05), false]
 			else:
 				continue
-		var sc := _score(c, g, cur)
+		var sc := _score(c, g, cur_l)
 		if sc < best_score:
 			best_score = sc
 			best = {"k": "upg", "id": u.id, "c": c}
 	for i in e.NC:
 		if not e.city_unlocked(i):
 			continue
-		var c: float = e.city_next_cost(i)
+		var c: float = e.city_next_cost_l(i)
 		var co: Array = e.cities.duplicate()
 		co[i] = int(co[i]) + 1
-		var g := _inc(a, {}, co) - cur
-		for m in e.CITY_MILESTONES:
-			if int(e.cities[i]) + 1 == m:
-				g *= 1.5
-		var sc := _score(c, g, cur)
+		var g := _gain(_inc(a, {}, co), cur)
+		var sc := _score(c, g, cur_l)
 		if sc < best_score:
 			best_score = sc
 			best = {"k": "city", "i": i, "c": c}
 	for i in e.NV:
 		if not e.vent_unlocked(i):
 			continue
-		var c: float = e.vent_next_cost(i)
+		var c: float = e.vent_next_cost_l(i)
 		e.vents[i] = int(e.vents[i]) + 1
-		var g := _inc(a) - cur
+		var g := _gain(_inc(a), cur)
 		e.vents[i] = int(e.vents[i]) - 1
-		var sc := _score(c, g, cur)
+		var sc := _score(c, g, cur_l)
 		if sc < best_score:
 			best_score = sc
 			best = {"k": "vent", "i": i, "c": c}
@@ -249,34 +251,34 @@ func _step(concept: String) -> void:
 			var s: Dictionary = e.biz[i]
 			if not s.open:
 				if e.biz_unlocked(i):
-					# value opening by what the first 10 builds would make
+					# value opening by what the first 50 builds would make
 					var s2 := s.duplicate(true)
 					s2.open = true
 					s2.a = 50
 					s2.b = 15 if Biz.DEFS[i].id != "catering" else 2
-					var c := Biz.open_cost(i, e) + Biz.cost_of(i, "a", 1, 49, e) + Biz.cost_of(i, "b", 1, int(s2.b) - 1, e)
-					var g := _inc(a, {}, [], {i: s2}) - cur
-					var sc := _score(c, g, cur)
+					var c := Num.sum([Biz.open_cost_l(i), Biz.cost_of_l(i, "a", 1, 49), Biz.cost_of_l(i, "b", 1, int(s2.b) - 1)])
+					var g := _gain(_inc(a, {}, [], {i: s2}), cur)
+					var sc := _score(c, g, cur_l)
 					if sc < best_score:
 						best_score = sc
-						best = {"k": "open", "i": i, "c": c}
+						best = {"k": "open", "i": i, "c": Biz.open_cost_l(i)}
 				continue
 			for w in ["a", "b", "ab"]:
-				var c: float = 0.0
+				var c := Num.ZERO
 				var s2 := s.duplicate(true)
 				for ch in w:
-					c += e.biz_cost(i, ch, 1)
+					c = Num.add(c, e.biz_cost_l(i, ch, 1))
 					s2[ch] = int(s2[ch]) + 1
-				var g := _inc(a, {}, [], {i: s2}) - cur
-				var sc := _score(c, g, cur)
+				var g := _gain(_inc(a, {}, [], {i: s2}), cur)
+				var sc := _score(c, g, cur_l)
 				if sc < best_score:
 					best_score = sc
 					best = {"k": "biz", "i": i, "w": w, "c": c}
 	if best.is_empty():
 		_wait(30.0)
 		return
-	var reserve: float = maxf(0.0, float(e.empire().gross)) * reserve_s
-	if float(best.c) <= e.cash - reserve:
+	var reserve: float = float(e.empire().gross_l) + Num.L(reserve_s)
+	if Num.add(float(best.c), reserve) <= e.cash_l + 1e-9:
 		var ok := true
 		match String(best.k):
 			"rep": ok = e.buy_rep(best.r, 1)
@@ -287,9 +289,7 @@ func _step(concept: String) -> void:
 				ok = e.buy_city(best.i)
 			"vent": ok = e.buy_vent(best.i)
 			"open":
-				_event("opened %s (net was %s/s)" % [Biz.DEFS[best.i].name, e.fmt_money(cur)])
-				if cur < 0.0:
-					printerr("NEG ", e.income_info(a), " int ", e.interest_per_s(), " debt ", e.debt, " fx ", e.effects, " cash ", e.cash)
+				_event("opened %s (net was %s/s)" % [Biz.DEFS[best.i].name, Num.fmt_money(cur_l)])
 				ok = e.open_biz(best.i)
 			"biz":
 				for ch in String(best.w):
@@ -298,22 +298,25 @@ func _step(concept: String) -> void:
 			printerr("buy failed ", best)
 			_wait(1.0)
 	else:
-		var inc_total := maxf(cur, 0.0) + _tap_rate()
-		_wait(clampf((float(best.c) + reserve - e.cash) / maxf(inc_total, 1e-9), 0.2, 30.0))
+		var inc_total := Num.add(cur_l, _tap_rate_l())
+		var need := Num.sub(Num.add(float(best.c), reserve), e.cash_l)
+		if OS.get_environment("SIMDBG") != "" and e.play_time > float(OS.get_environment("SIMDBG")) and e.play_time < float(OS.get_environment("SIMDBG")) + 120.0:
+			print("WAIT ", best, " need ", Num.fmt(need), " inc ", Num.fmt(inc_total), " cash ", Num.fmt(e.cash_l), " reserve ", Num.fmt(reserve))
+		_wait(clampf(Econ.secs_to_l(need, inc_total), 0.2, 30.0))
 
 
 ## A player who clicks whatever they can afford: never checks profit, never keeps a reserve.
 func _sloppy() -> void:
 	var opts: Array = []
 	for r in e.REPS:
-		if e.rep_cost(r, 1) <= e.cash:
-			opts.append(["rep", r, e.rep_cost(r, 1)])
+		if e.can_afford(e.rep_cost_l(r, 1)):
+			opts.append(["rep", r, e.rep_cost_l(r, 1)])
 	for u in e.visible_upgrades():
-		if e.upgrade_cost(u) <= e.cash:
-			opts.append(["upg", u.id, e.upgrade_cost(u)])
+		if e.can_afford(float(u.cost_l)):
+			opts.append(["upg", u.id, float(u.cost_l)])
 	for i in e.NC:
-		if e.city_unlocked(i) and e.city_next_cost(i) <= e.cash:
-			opts.append(["city", i, e.city_next_cost(i)])
+		if e.city_unlocked(i) and e.can_afford(e.city_next_cost_l(i)):
+			opts.append(["city", i, e.city_next_cost_l(i)])
 	if opts.is_empty():
 		_wait(2.0)
 		return
@@ -330,8 +333,8 @@ func _sloppy() -> void:
 	_wait(1.0)
 
 
-func _tap_rate() -> float:
-	return e.tap_value() * taps_per_s
+func _tap_rate_l() -> float:
+	return e.tap_value_l() + Num.L(taps_per_s) if taps_per_s > 0.0 else Num.ZERO
 
 
 func _wait(dt: float) -> void:
@@ -339,105 +342,62 @@ func _wait(dt: float) -> void:
 	var left := dt
 	while left > 0.0:
 		var h := minf(left, 5.0)
-		var tr := _tap_rate() * h
-		e.cash += tr
-		e.run_earned += tr
-		e.life_earned += tr
+		e.earn(_tap_rate_l() + Num.L(h))
 		e.tick(h)
 		left -= h
-		if not e.event.is_empty() or e.cash < 0.0:
+		if not e.event.is_empty() or e.in_red():
 			break
 	e.run_automation()
 
 
-func _score(cost: float, gain: float, cur: float) -> float:
-	if gain <= 0.0:
+## Seconds to pay back plus seconds to wait for the money.
+func _score(cost_l: float, gain: Array, cur_l: float) -> float:
+	if gain[1] or Num.is_zero(gain[0]):
 		return INF
-	var wait := maxf(0.0, cost - e.cash) / maxf(maxf(cur, 0.0) + _tap_rate(), 1e-9)
-	return cost / gain + wait
+	var wait := Econ.secs_to_l(Num.sub(cost_l, e.cash_l), Num.add(cur_l, _tap_rate_l()))
+	return Econ.secs_to_l(cost_l, gain[0]) + wait
 
 
+## Spends stars and Grit on perks: income perks while they beat what the stars are worth as
+## income, anything else that costs under 5% of the stars.
 func _spend_stars() -> void:
-	var changed := true
-	while changed:
-		changed = false
-		for u in e.upgrades:
-			if not e.legacy_available(u) or float(u.star) > e.wallet(e.currency(u)):
-				continue
-			if e.currency(u) == "grit":
-				e.buy_legacy(u.id)
-				changed = true
-				continue
-			var c: float = u.star
-			var buy := false
-			var eff: Array = u.eff
-			var kind: String = eff[0][0]
-			var r: float = e.STAR_BASE + float(e.agg().starpow)
-			if kind == "mul" and eff[0][1] == "global":
-				buy = (1.0 + r * (e.stars - c)) * 2.0 > 1.0 + r * e.stars
-			elif kind == "mul" and eff[0][1] == "royalty":
-				buy = (1.0 + r * (e.stars - c)) * 1.6 > 1.0 + r * e.stars
-			elif kind == "starpow":
-				buy = (1.0 + (r + 0.005) * (e.stars - c)) > 1.0 + r * e.stars
-			else:
-				buy = c <= e.stars * 0.05
-			if buy:
-				e.buy_legacy(u.id)
-				changed = true
-
-
-## Payback (cost / net gain) of everything you could buy right now.
-func _pb(c: float, g: float) -> String:
-	if g <= 0.0:
-		return "never"
-	return e.fmt_time(c / g)
-
-
-func _dump() -> void:
-	var a: Dictionary = e.agg()
-	var names := []
-	for id in e.legacy:
-		names.append(e.upgrades[id].name)
-	print("DUMP t=%s stars=%s grit=%s star_mult=%s grit_mult=%s mul=%s fr=%s cash=%s debt=%s legacy=%s" % [e.play_time, e.stars, e.grit, e.star_mult(a), e.grit_mult(), a.mul, e.franchise_mult(a), e.cash, e.debt, names])
-	print("INFO ", e.income_info(a))
+	for guard in 400:
+		var changed := false
+		for cur in ["star", "grit"]:
+			for ln in e.perk_lines(cur):
+				var u: Dictionary = ln.next
+				if u.is_empty() or not e.legacy_available(u) or float(u.star_l) > e.wallet_l(cur) + 1e-9:
+					continue
+				if cur == "grit":
+					e.buy_legacy(int(u.id))
+					changed = true
+					continue
+				var c: float = float(u.star_l)
+				var eff: Array = u.eff
+				var kind: String = eff[0][0]
+				var buy := false
+				if kind == "mul" and (eff[0][1] == "global" or eff[0][1] == "royalty"):
+					buy = c <= e.stars_l + Num.L(0.5)
+				elif kind == "starpow":
+					buy = c <= e.stars_l + Num.L(0.2)
+				else:
+					buy = c <= e.stars_l + Num.L(0.05)
+				if buy:
+					e.buy_legacy(int(u.id))
+					changed = true
+		if not changed:
+			break
 
 
 func _audit() -> void:
 	var a: Dictionary = e.agg()
 	var cur := _inc(a)
 	var em: Dictionary = e.empire()
-	print("---- AUDIT %s (run %s) net %s/s gross %s/s cash %s P%d" % [e.fmt_time(e.play_time), e.fmt_time(e.run_time), e.fmt_money(cur), e.fmt_money(em.gross), e.fmt_money(e.cash), e.prestiges])
-	var line := "  reps:"
-	for r in e.REPS:
-		line += " %s(%d)=%s" % [r, e.reps[r], _pb(e.rep_cost(r, 1), _inc(a, {r: int(e.reps[r]) + 1}) - cur)]
-	print(line)
-	var best := {}
-	for u in e.visible_upgrades():
-		var g := _inc(e.copy_with(a, u.eff)) - cur
-		var c: String = u.cat
-		if not best.has(c) or e.upgrade_cost(u) < float(best[c].cost):
-			best[c] = {"cost": e.upgrade_cost(u), "g": g, "name": u.name}
-	line = "  upgrades:"
-	for c in best:
-		line += " %s[%s %s]" % [c, e.fmt_money(best[c].cost), _pb(best[c].cost, best[c].g)]
-	print(line)
-	line = "  cities:"
-	for i in e.NC:
-		if e.city_unlocked(i):
-			var co: Array = e.cities.duplicate()
-			co[i] = int(co[i]) + 1
-			line += " %s(%d)=%s" % [e.CITY_NAMES[i].substr(0, 6), e.cities[i], _pb(e.city_next_cost(i), _inc(a, {}, co) - cur)]
-	print(line)
-	line = "  biz:"
+	print("---- AUDIT %s (run %s) net %s/s cash %s P%d stars %s (x%s) grit %s" % [Econ.fmt_time(e.play_time), Econ.fmt_time(e.run_time),
+		Num.fmt_money(_pos(cur)), Num.fmt_money(e.cash_l), e.prestiges, Num.fmt(e.stars_earned_l), Econ.fmt_mult_l(e.star_l(a)), Num.fmt(e.grit_earned_l)])
+	var line := "  biz:"
 	for i in Biz.N:
 		var s: Dictionary = e.biz[i]
-		if not s.open:
-			if e.biz_unlocked(i):
-				line += " %s(closed, open %s)" % [Biz.DEFS[i].id, e.fmt_money(Biz.open_cost(i, e))]
-			continue
-		for w in ["a", "b"]:
-			var s2 := s.duplicate(true)
-			s2[w] = int(s2[w]) + 1
-			line += " %s.%s(%d)=%s" % [Biz.DEFS[i].id, w, s[w], _pb(e.biz_cost(i, w, 1), _inc(a, {}, [], {i: s2}) - cur)]
-	print(line)
-	print("  events cost ~%s per 100s-of-income, interest %s/s debt %s, tap %s (= %ss of net)" % [e.fmt_money(float(em.gross) * 100.0), e.fmt_money(em.interest), e.fmt_money(e.debt), e.fmt_money(e.tap_value()), e.fmt_num(e.tap_value() / maxf(cur, 1e-9))])
+		if s.open:
+			line += " %s %d/%d=%s/s" % [Biz.DEFS[i].id, s.a, s.b, Num.fmt_money(float(em.per[i].rev_l))]
+	print(line, "  rest ", Num.fmt_money(float(em.rest_l)))
