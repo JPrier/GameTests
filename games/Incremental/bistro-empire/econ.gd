@@ -1053,7 +1053,7 @@ func effect_text(eff: Array) -> String:
 			"mul":
 				parts.append("%s ×%s" % [STAT_NAME[e[1]], fmt_mult(float(e[2]))])
 			"cost": parts.append("%s cost ×%s" % [REP_NAME[e[1]], fmt_mult(float(e[2]))])
-			"syn": parts.append("%s +%s%% per %s" % [STAT_NAME[e[2]], fmt_mult(float(e[3]) * 100.0), REP_NAME[e[1]]])
+			"syn": parts.append("Each %s you own: +%s%% %s" % [REP_NAME[e[1]], fmt_mult(float(e[3]) * 100.0), String(STAT_NAME[e[2]]).to_lower()])
 			"tappct": parts.append("Each serve +%ss of income" % fmt_mult(float(e[1])))
 			"city": parts.append("%s locations ×%s" % [CITY_NAMES[int(e[1])], fmt_mult(float(e[2]))])
 			"citycost": parts.append("Franchise cost ×%s" % fmt_mult(float(e[1])))
