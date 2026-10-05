@@ -1,3 +1,5 @@
 _site/
 .godot/
 __pycache__/
+_bench/
+.github/bench/node_modules

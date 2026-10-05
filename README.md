@@ -40,9 +40,10 @@ Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/page
 1. installs Godot 4.7.2 and only the web export templates (cached between runs),
 2. validates and runs the tests of every Godot project under `games/` (found in any category folder), failing the build on errors,
 3. exports each game to `/<folder>/` and generates the home page,
-4. deploys the result to GitHub Pages.
+4. benchmarks every game against an iPhone X class phone at 60 fps, failing the build if any game is over its frame budget ([details](.github/bench/README.md)),
+5. deploys the result to GitHub Pages.
 
-Pull requests run steps 1–3 without deploying.
+Pull requests run steps 1–4 without deploying. New games are tested and benchmarked automatically; there's nothing to register.
 
 To add a game, put a Godot project with a `Web` export preset in `games/<Category>/<name>/` (or one level deeper, `games/<Category>/<Subcategory>/<name>/`) and push. A new category is just a new folder.
 

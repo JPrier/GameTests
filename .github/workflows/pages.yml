@@ -50,6 +50,38 @@ jobs:
           chmod +x "$GODOT_BIN"
           bash .github/scripts/build-site.sh
 
+      # Frame budget: every game, iPhone X class phone, 60 fps. Fails the build (and so the deploy).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache benchmark browser
+        id: cache-browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('.github/bench/package.json') }}
+
+      - name: Install benchmark browser
+        working-directory: .github/bench
+        run: |
+          npm install --no-audit --no-fund --loglevel=error
+          npx playwright install-deps chromium-headless-shell
+          if [ "${{ steps.cache-browser.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install chromium-headless-shell
+          fi
+
+      - name: Benchmark every game (iPhone X, 60 fps)
+        run: bash .github/scripts/bench-site.sh
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frame-budget
+          path: _bench/results.json
+          if-no-files-found: ignore
+
       - name: Upload site
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

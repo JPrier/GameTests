@@ -1,0 +1,9 @@
+{
+  "name": "gametests-bench",
+  "private": true,
+  "type": "module",
+  "description": "iPhone X 60 fps benchmark for every game on the built site",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
