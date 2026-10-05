@@ -447,6 +447,10 @@ const md = lines.join("\n") + "\n";
 if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 fs.writeFileSync(process.env.BENCH_OUT || "bench-results.json", JSON.stringify({ target: TARGET, calibration: cal, results }, null, 2));
 
+gh(`::notice title=Frame budget calibration::runner CPU score ${cal.host}, throttle ${cal.rate}x, throttled score ${cal.throttled ?? "-"}, target ${TARGET.cpu.score}`);
+for (const r of results.filter((x) => !failed(x))) {
+  gh(`::notice title=${r.slug} inside the budget::${r.phases.map((p) => `${p.name} ${p.cpuFps} fps, avg ${p.avgMs} ms, worst ${p.maxMs} ms`).join("; ")}`);
+}
 for (const r of bad) {
   const why = r.crash || r.phases.filter((p) => p.fail.length).map((p) => `${p.name}: ${p.fail.join(", ")}`).join("; ");
   gh(`::error title=${r.slug} over the ${TARGET.device} 60 fps budget::${why}`);
