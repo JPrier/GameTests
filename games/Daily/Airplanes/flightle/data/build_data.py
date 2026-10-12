@@ -195,6 +195,134 @@ SYD MEL BNE PER ADL CBR OOL CNS DRW HBA AKL WLG CHC ZQN NAN PPT NOU APW GUM
 HNL OGG KOA LIH ANC FAI JNU
 """.split()
 
+# ISO 3166 alpha-2 -> display name for the airport picker (ASCII so search can fold it).
+COUNTRY_NAMES = {
+    "AE": "United Arab Emirates",
+    "AL": "Albania",
+    "AM": "Armenia",
+    "AR": "Argentina",
+    "AT": "Austria",
+    "AU": "Australia",
+    "AW": "Aruba",
+    "AZ": "Azerbaijan",
+    "BB": "Barbados",
+    "BD": "Bangladesh",
+    "BE": "Belgium",
+    "BG": "Bulgaria",
+    "BH": "Bahrain",
+    "BO": "Bolivia",
+    "BR": "Brazil",
+    "BS": "The Bahamas",
+    "BZ": "Belize",
+    "CA": "Canada",
+    "CH": "Switzerland",
+    "CI": "Ivory Coast",
+    "CL": "Chile",
+    "CN": "China",
+    "CO": "Colombia",
+    "CR": "Costa Rica",
+    "CU": "Cuba",
+    "CW": "Curacao",
+    "CY": "Cyprus",
+    "CZ": "Czechia",
+    "DE": "Germany",
+    "DK": "Denmark",
+    "DO": "Dominican Republic",
+    "DZ": "Algeria",
+    "EC": "Ecuador",
+    "EG": "Egypt",
+    "ES": "Spain",
+    "ET": "Ethiopia",
+    "FI": "Finland",
+    "FJ": "Fiji",
+    "FR": "France",
+    "GB": "United Kingdom",
+    "GE": "Georgia",
+    "GH": "Ghana",
+    "GR": "Greece",
+    "GT": "Guatemala",
+    "GU": "Guam",
+    "HK": "Hong Kong",
+    "HN": "Honduras",
+    "HR": "Croatia",
+    "HU": "Hungary",
+    "ID": "Indonesia",
+    "IE": "Ireland",
+    "IL": "Israel",
+    "IN": "India",
+    "IS": "Iceland",
+    "IT": "Italy",
+    "JM": "Jamaica",
+    "JO": "Jordan",
+    "JP": "Japan",
+    "KE": "Kenya",
+    "KH": "Cambodia",
+    "KR": "South Korea",
+    "KW": "Kuwait",
+    "KZ": "Kazakhstan",
+    "LA": "Laos",
+    "LB": "Lebanon",
+    "LK": "Sri Lanka",
+    "LU": "Luxembourg",
+    "LY": "Libya",
+    "MA": "Morocco",
+    "MG": "Madagascar",
+    "MK": "North Macedonia",
+    "MM": "Myanmar",
+    "MN": "Mongolia",
+    "MO": "Macau",
+    "MT": "Malta",
+    "MU": "Mauritius",
+    "MV": "Maldives",
+    "MX": "Mexico",
+    "MY": "Malaysia",
+    "NA": "Namibia",
+    "NC": "New Caledonia",
+    "NG": "Nigeria",
+    "NI": "Nicaragua",
+    "NL": "Netherlands",
+    "NO": "Norway",
+    "NP": "Nepal",
+    "NZ": "New Zealand",
+    "OM": "Oman",
+    "PA": "Panama",
+    "PE": "Peru",
+    "PF": "French Polynesia",
+    "PH": "Philippines",
+    "PK": "Pakistan",
+    "PL": "Poland",
+    "PR": "Puerto Rico",
+    "PT": "Portugal",
+    "PY": "Paraguay",
+    "QA": "Qatar",
+    "RO": "Romania",
+    "RS": "Serbia",
+    "RW": "Rwanda",
+    "SA": "Saudi Arabia",
+    "SC": "Seychelles",
+    "SE": "Sweden",
+    "SG": "Singapore",
+    "SI": "Slovenia",
+    "SK": "Slovakia",
+    "SN": "Senegal",
+    "SV": "El Salvador",
+    "TH": "Thailand",
+    "TN": "Tunisia",
+    "TR": "Turkey",
+    "TT": "Trinidad and Tobago",
+    "TW": "Taiwan",
+    "TZ": "Tanzania",
+    "UG": "Uganda",
+    "US": "United States",
+    "UY": "Uruguay",
+    "UZ": "Uzbekistan",
+    "VN": "Vietnam",
+    "WS": "Samoa",
+    "ZA": "South Africa",
+    "ZM": "Zambia",
+    "ZW": "Zimbabwe",
+}
+
 TURBOPROP = ("ATR", "Dash 8")
 REGIONAL = ("Embraer E17", "Embraer E19", "CRJ")
 
@@ -228,13 +356,6 @@ def minutes(km, aircraft):
     return int(round((km / speed * 60 + 22) / 5)) * 5
 
 
-def short_name(a):
-    n = a["name"]
-    for s in (" International Airport", " Airport", " International", " Intl"):
-        n = n.replace(s, "")
-    return n.strip()
-
-
 def main():
     airports = json.load(open(sys.argv[1]))
     by_iata = {v["iata"]: v for v in airports.values() if v.get("iata")}
@@ -259,7 +380,9 @@ def main():
     aps = []
     for c in pool:
         a = by_iata[c]
-        aps.append({"c": c, "n": short_name(a), "city": a["city"], "cc": a["country"],
+        assert a["country"] in COUNTRY_NAMES, f"add {a['country']} to COUNTRY_NAMES"
+        aps.append({"c": c, "n": a["name"].strip(), "city": a["city"], "cc": a["country"],
+                    "co": COUNTRY_NAMES[a["country"]],
                     "la": round(a["lat"], 4), "lo": round(a["lon"], 4)})
 
     land = json.load(open(sys.argv[2]))

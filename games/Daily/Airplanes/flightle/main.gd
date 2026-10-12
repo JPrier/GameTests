@@ -97,6 +97,23 @@ var archive_open := false
 var archive_page := 0
 var archive_results: Dictionary = {}
 
+# airport picker dropdown
+const MAX_MATCHES := 80
+const MAX_TEXT := 28
+const COUNTRY_ALIASES := {"US": ["USA", "America"], "GB": ["UK", "Britain", "England", "Scotland"],
+	"AE": ["UAE"], "NL": ["Holland"], "KR": ["Korea"], "CZ": ["Czech Republic"]}
+var search_keys: Array = []             # per airport: {city, name, country, words, combos}
+var dd_rect := Rect2()                  # dropdown panel (empty when hidden)
+var dd_list_rect := Rect2()             # scrolling area inside the panel
+var dd_rows: Array = []                 # [{code, y, h}] in content coordinates
+var dd_content_h := 0.0
+var dd_scroll := 0.0
+var dd_query := ""
+var dd_press := false
+var dd_moved := false
+var dd_press_y := 0.0
+var dd_clip: Control
+
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
@@ -106,6 +123,12 @@ func _ready() -> void:
 	_add_key_action("dev_toggle", [KEY_QUOTELEFT])
 	_add_key_action("back", [KEY_ESCAPE])
 	_load_data()
+	dd_clip = Control.new()
+	dd_clip.clip_contents = true
+	dd_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dd_clip.visible = false
+	dd_clip.draw.connect(_draw_dropdown_rows)
+	add_child(dd_clip)
 	today = Time.get_date_string_from_system(true)
 	var url := _read_url()
 	if String(url.get("base", "")) != "":
@@ -150,8 +173,24 @@ func _load_data() -> void:
 	routes = _data_cache.get("routes", [])
 	land = _data_cache.get("land_rings", [])
 	ap_index.clear()
+	search_keys.clear()
 	for i in airports.size():
-		ap_index[String(airports[i].c)] = i
+		var a: Dictionary = airports[i]
+		ap_index[String(a.c)] = i
+		var city := _norm(String(a.city))
+		var name := _norm(String(a.get("n", "")))
+		var country := _norm(String(a.get("co", a.get("cc", ""))))
+		var words: Array = []
+		var raw := "%s %s %s" % [a.city, a.get("n", ""), a.get("co", "")]
+		for al in COUNTRY_ALIASES.get(String(a.get("cc", "")), []):
+			raw += " " + String(al)
+			country += "|" + _norm(String(al))
+		for w in raw.replace("/", " ").replace("-", " ").replace("(", " ").split(" ", false):
+			var nw := _norm(w)
+			if nw != "":
+				words.append(nw)
+		search_keys.append({"city": city, "name": name, "country": country, "words": words,
+			"combos": "%s|%s|%s|%s" % [city + country, city + name, name + country, city + name + country]})
 
 
 func airport(code: String) -> Dictionary:
@@ -380,39 +419,64 @@ static func _norm(s: String) -> String:
 	return out
 
 
-func suggestions(query: String, limit := 4) -> Array:
+## Matches airports on code, city, airport name or country (and a few country nicknames).
+## Spaces and punctuation are ignored, so "NEWYORK" and "new york" both work, and
+## run-together queries like "PARISFRANCE" or "LONDONHEATHROW" match across fields.
+func suggestions(query: String, limit := MAX_MATCHES) -> Array:
 	var q := _norm(query)
 	if q == "":
 		return []
+	var long := q.length() >= 3
 	var scored: Array = []
-	for a in airports:
+	for i in airports.size():
+		var a: Dictionary = airports[i]
+		var k: Dictionary = search_keys[i]
 		var code := String(a.c)
-		var city := _norm(String(a.city))
-		var name := _norm(String(a.n))
+		var city := String(k.city)
 		var s := -1
 		if code == q:
 			s = 0
-		elif code.begins_with(q):
+		elif city == q:
 			s = 1
-		elif city.begins_with(q):
+		elif code.begins_with(q):
 			s = 2
-		elif name.begins_with(q):
+		elif city.begins_with(q):
 			s = 3
-		elif q.length() >= 3 and city.contains(q):
+		elif String(k.name).begins_with(q):
 			s = 4
-		elif q.length() >= 3 and name.contains(q):
+		elif String(k.country).begins_with(q) or String(k.country).contains("|" + q):
 			s = 5
+		elif long and k.words.any(func(w): return String(w).begins_with(q)):
+			s = 6
+		elif long and (city.contains(q) or String(k.name).contains(q) or String(k.country).contains(q)):
+			s = 7
+		elif long and String(k.combos).contains(q):
+			s = 8
 		if s >= 0:
-			scored.append([s, code])
-	scored.sort_custom(func(x, y): return x[0] < y[0] or (x[0] == y[0] and String(x[1]) < String(y[1])))
+			scored.append([s, city, code])
+	scored.sort_custom(func(x, y):
+		if x[0] != y[0]:
+			return x[0] < y[0]
+		if x[1] != y[1]:
+			return String(x[1]) < String(y[1])
+		return String(x[2]) < String(y[2]))
 	var out: Array = []
 	for i in mini(limit, scored.size()):
-		out.append(String(scored[i][1]))
+		out.append(String(scored[i][2]))
 	return out
 
 
+## "Seattle, United States" style label for a code.
+func place_label(code: String) -> String:
+	var a := airport(code)
+	if a.is_empty():
+		return code
+	var co := String(a.get("co", ""))
+	return String(a.city) if co == "" else "%s, %s" % [a.city, co]
+
+
 func current_suggestions() -> Array:
-	if phase != Phase.PLAYING or solved(slot) or picks[slot] != "":
+	if phase != Phase.PLAYING or solved(slot) or picks[slot] != "" or dev_open or help_open or archive_open:
 		return []
 	return suggestions(texts[slot])
 
@@ -428,12 +492,17 @@ func type_char(ch: String) -> void:
 	if phase != Phase.PLAYING or solved(slot):
 		return
 	var c := ch.to_upper()
+	if c == " ":
+		var cur := String(texts[slot])
+		if picks[slot] == "" and cur != "" and not cur.ends_with(" ") and cur.length() < MAX_TEXT:
+			texts[slot] = cur + " "
+		return
 	if not ((c >= "A" and c <= "Z") or (c >= "0" and c <= "9")):
 		return
 	if picks[slot] != "":
 		picks[slot] = ""
 		texts[slot] = ""
-	if String(texts[slot]).length() < 18:
+	if String(texts[slot]).length() < MAX_TEXT:
 		texts[slot] = String(texts[slot]) + c
 
 
@@ -1041,12 +1110,60 @@ func _flash(id: String) -> void:
 
 
 func _input(ev: InputEvent) -> void:
-	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+	if ev is InputEventMouseButton:
 		var p: Vector2 = make_input_local(ev).position
-		if ev.pressed:
-			_on_press(p)
-		else:
-			press_t = -1.0
+		var in_list := dropdown_visible() and dd_list_rect.has_point(p)
+		if ev.button_index == MOUSE_BUTTON_LEFT:
+			if ev.pressed:
+				if dropdown_visible() and dd_rect.has_point(p):
+					# the list scrolls on drag and picks on a clean tap; the header strip swallows taps
+					dd_press = in_list
+					dd_moved = false
+					dd_press_y = p.y
+					return
+				_on_press(p)
+			else:
+				if dd_press and not dd_moved and dropdown_visible():
+					dd_tap(p)
+				dd_press = false
+				press_t = -1.0
+		elif ev.pressed and in_list and ev.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			dd_scroll += (-48.0 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else 48.0)
+			_clamp_scroll()
+	elif ev is InputEventMouseMotion and dd_press:
+		var y: float = make_input_local(ev).position.y
+		if not dd_moved and absf(y - dd_press_y) > 10.0:
+			dd_moved = true
+		if dd_moved:
+			dd_scroll -= y - dd_press_y
+			dd_press_y = y
+			_clamp_scroll()
+
+
+func dropdown_visible() -> bool:
+	return dd_rect.size.y > 0.0
+
+
+## Code of the dropdown row under a point (screen space), or "".
+func dd_code_at(p: Vector2) -> String:
+	if not dd_list_rect.has_point(p):
+		return ""
+	var y := p.y - dd_list_rect.position.y + dd_scroll
+	for row in dd_rows:
+		if y >= float(row.y) and y < float(row.y) + float(row.h):
+			return String(row.code)
+	return ""
+
+
+func dd_tap(p: Vector2) -> void:
+	var code := dd_code_at(p)
+	if code != "":
+		key_flash["dd_" + code] = 1.0
+		choose(code)
+
+
+func _clamp_scroll() -> void:
+	dd_scroll = clampf(dd_scroll, 0.0, maxf(0.0, dd_content_h - dd_list_rect.size.y))
 
 
 func _on_press(p: Vector2) -> void:
@@ -1077,9 +1194,6 @@ func _do(id: String) -> void:
 		return
 	if id.begins_with("day_"):
 		pick_day(id.substr(4))
-		return
-	if id.begins_with("sug_"):
-		choose(id.substr(4))
 		return
 	match id:
 		"slot0": select_slot(0)
@@ -1152,6 +1266,54 @@ func _layout() -> void:
 	clue_rect = Rect2(col.position.x, list_rect.position.y - (8 if rows > 0 else 0) - clue_h, col.size.x, clue_h)
 	var map_top := 78.0
 	map_rect = Rect2(col.position.x, map_top, col.size.x, maxf(110.0, clue_rect.position.y - 8 - map_top))
+	_layout_dropdown(vs)
+
+
+const DD_TOP := 54.0
+const DD_HEAD := 30.0
+const DD_CODE_W := 58.0
+const DD_PAD := 10.0
+
+
+## Full-width airport picker. It has a fixed size whenever it shows (top of the screen down to
+## the input row) so nothing moves under a finger as the match list changes while typing.
+func _layout_dropdown(vs: Vector2) -> void:
+	var sug := current_suggestions()
+	if sug.is_empty():
+		dd_rect = Rect2()
+		dd_list_rect = Rect2()
+		dd_rows = []
+		dd_query = ""
+		dd_press = false
+		return
+	var w := minf(vs.x - 16.0, 760.0)
+	dd_rect = Rect2((vs.x - w) * 0.5, DD_TOP, w, maxf(120.0, input_rect.position.y - 8.0 - DD_TOP))
+	dd_list_rect = Rect2(dd_rect.position.x, dd_rect.position.y + DD_HEAD, w, dd_rect.size.y - DD_HEAD)
+	var key := "%d|%s|%d" % [slot, texts[slot], int(w)]
+	if key != dd_query:
+		if dd_query.get_slice("|", 1) != String(texts[slot]) or dd_query.get_slice("|", 0) != str(slot):
+			dd_scroll = 0.0
+		dd_query = key
+		dd_rows = []
+		var tw := _dd_text_w()
+		var y := 0.0
+		for code in sug:
+			var h1 := _wrap_h(place_label(code), 15, tw)
+			var h2 := _wrap_h(String(airport(code).get("n", "")), 12, tw)
+			var h := maxf(DD_PAD * 2 + h1 + 3 + h2, 52.0)
+			dd_rows.append({"code": code, "y": y, "h": h})
+			y += h
+		dd_content_h = y
+	_clamp_scroll()
+
+
+func _dd_text_w() -> float:
+	return dd_list_rect.size.x - DD_PAD * 2 - DD_CODE_W - 8
+
+
+func _wrap_h(s: String, size: int, width: float) -> float:
+	return font.get_multiline_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, width, size, -1,
+		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE).y
 
 
 func _layout_input(key_h: float) -> void:
@@ -1161,13 +1323,7 @@ func _layout_input(key_h: float) -> void:
 	_btn("slot0", Rect2(r.position.x, r.position.y, sw, 44), "", "slot", not solved(0))
 	_btn("slot1", Rect2(r.position.x + sw + 22, r.position.y, sw, 44), "", "slot", not solved(1))
 	_btn("go", Rect2(r.end.x - go_w, r.position.y, go_w, 44), "GO", "primary", ready_to_guess())
-	var sug := current_suggestions()
-	var sy := r.position.y + 50
-	if sug.size() > 0:
-		var cw := (r.size.x - 6 * 3) / 4.0
-		for i in sug.size():
-			_btn("sug_" + String(sug[i]), Rect2(r.position.x + i * (cw + 6), sy, cw, 34), String(sug[i]), "chip")
-	var ky := sy + 40
+	var ky := r.position.y + 90
 	var gap := 4.0
 	var kw := (r.size.x - gap * 9) / 10.0
 	for ri in KEY_ROWS.size():
@@ -1266,7 +1422,14 @@ func _draw() -> void:
 		_draw_input()
 	else:
 		_draw_end()
-	if dev_mode and not dev_open:
+	if dropdown_visible():
+		_draw_dropdown()
+	dd_clip.visible = dropdown_visible()
+	if dd_clip.visible:
+		dd_clip.position = dd_list_rect.position
+		dd_clip.size = dd_list_rect.size
+		dd_clip.queue_redraw()
+	if dev_mode and not dev_open and not dropdown_visible():
 		_text(Vector2(map_rect.position.x + 12, map_rect.end.y - 10), "DEV · tap the title 5x, hold it, or press `", 10, Color(C_ACCENT, 0.8))
 	if help_open:
 		_draw_help(vs)
@@ -1279,7 +1442,7 @@ func _draw() -> void:
 	if toast_t > 0.0 and toast != "":
 		var a := clampf(toast_t / 0.3, 0.0, 1.0)
 		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 32
-		var ty := _dev_card(vs).end.y + 12 if dev_open else map_rect.position.y + 10
+		var ty := _dev_card(vs).end.y + 12 if dev_open else (dd_rect.position.y - 2 if dropdown_visible() else map_rect.position.y + 10)
 		var tr := Rect2((vs.x - tw) * 0.5, ty, tw, 34)
 		draw_rect(tr, Color(C_ACCENT, 0.95 * a))
 		_text(Vector2(tr.position.x, tr.position.y + 22), toast, 14, Color(C_BG, a), HORIZONTAL_ALIGNMENT_CENTER, tr.size.x)
@@ -1632,15 +1795,22 @@ func _draw_input() -> void:
 					sub = String(airport(main).city)
 				elif String(texts[i]) != "":
 					main = String(texts[i])
+				var avail := r.size.x - 20
+				var fs := 16
+				while fs > 11 and main != "" and font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > avail:
+					fs -= 1
+				# like a text field, a still-too-long entry shows its newest characters
+				while main.length() > 1 and font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > avail:
+					main = main.substr(1)
+				var mw := font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x if main != "" else 0.0
 				if main == "":
-					_text(Vector2(r.position.x + 9, r.position.y + 34), "city or code", 13, C_DIM)
+					_text(Vector2(r.position.x + 9, r.position.y + 34), "search airports", 13, C_DIM)
 				else:
-					_text(Vector2(r.position.x + 9, r.position.y + 35), main, 16, color)
-					var mw := font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
-					if sub != "":
-						_text(Vector2(r.position.x + 15 + mw, r.position.y + 34), _fit(sub, 11, r.size.x - mw - 24), 11, C_MUTED)
+					_text(Vector2(r.position.x + 9, r.position.y + 35), main, fs, color)
+					if sub != "" and font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x <= r.size.x - mw - 24:
+						_text(Vector2(r.position.x + 15 + mw, r.position.y + 34), sub, 11, C_MUTED)
 				if slot == i and not lock and picks[i] == "" and fmod(anim_t, 1.0) < 0.55:
-					var cx := r.position.x + 10 + (font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x if main != "" else 0.0)
+					var cx := r.position.x + 10 + mw
 					draw_line(Vector2(cx, r.position.y + 20), Vector2(cx, r.position.y + 38), C_ACCENT, 2.0)
 				if i == 0:
 					_draw_plane(Vector2(r.end.x + 11, r.get_center().y), PI * 0.5, 7.0, C_DIM)
@@ -1651,12 +1821,6 @@ func _draw_input() -> void:
 				_round_rect(r, c, 8.0)
 				_text(Vector2(r.position.x, r.position.y + r.size.y * 0.5 + 6), String(b.label), 16,
 					C_BG if b.enabled else C_DIM, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
-			"chip":
-				var code := String(b.label)
-				_round_rect(r, C_CARD_HI.lightened(0.15 * flash), 17.0)
-				var city := String(airport(code).city)
-				_text(Vector2(r.position.x + 9, r.position.y + 22), code, 13, C_ACCENT)
-				_text(Vector2(r.position.x + 44, r.position.y + 22), _fit(city, 11, r.size.x - 50), 11, C_INK)
 			"key", "key_wide":
 				var kc := C_KEY.lerp(C_ACCENT, 0.55 * flash)
 				_round_rect(r, kc, 6.0)
@@ -1667,17 +1831,64 @@ func _draw_input() -> void:
 					var fs := 11 if String(b.style) == "key_wide" else 17
 					_text(Vector2(r.position.x, r.position.y + r.size.y * 0.5 + fs * 0.36), String(b.label), fs, C_INK,
 						HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
-	if current_suggestions().is_empty():
-		var hint := ""
+	var hint := ""
+	if not current_suggestions().is_empty():
+		hint = "Tap an airport, or Enter picks the top one"
+	else:
 		if not solved(slot) and picks[slot] == "" and String(texts[slot]) != "":
-			hint = "No match. Try a city name or 3-letter code"
+			hint = "No match. Try a city, country, airport name or code"
 		elif ready_to_guess():
 			hint = "Tap GO or press Enter"
 		elif not solved(slot) and picks[slot] == "":
-			hint = "Type the %s city or airport code" % ("departure" if slot == 0 else "arrival")
-		if hint != "":
-			_text(Vector2(input_rect.position.x, input_rect.position.y + 72), hint, 13, C_MUTED,
-				HORIZONTAL_ALIGNMENT_CENTER, input_rect.size.x)
+			hint = "Type the %s city, country, airport or code" % ("departure" if slot == 0 else "arrival")
+	if hint != "":
+		_text(Vector2(input_rect.position.x, input_rect.position.y + 72), hint, 13, C_MUTED,
+			HORIZONTAL_ALIGNMENT_CENTER, input_rect.size.x)
+
+
+func _draw_dropdown() -> void:
+	var r := dd_rect
+	draw_rect(Rect2(0, r.position.y - 4, get_viewport_rect().size.x, r.size.y + 8), Color(C_BG, 0.85))
+	_round_rect(r, C_CARD, 12.0)
+	_outline_rect(r, C_LINE, 12.0, 1)
+	var n := current_suggestions().size()
+	var head := "%s · %s" % ["DEPARTURE" if slot == 0 else "ARRIVAL",
+		("%d+ matches, keep typing to narrow" % n) if n >= MAX_MATCHES else ("1 match" if n == 1 else "%d matches" % n)]
+	_text(Vector2(r.position.x + DD_PAD + 2, r.position.y + 20), head, 11, C_MUTED)
+	draw_line(Vector2(r.position.x, dd_list_rect.position.y), Vector2(r.end.x, dd_list_rect.position.y), C_LINE, 1.0)
+
+
+func _draw_dropdown_rows() -> void:
+	var w := dd_list_rect.size.x
+	var view_h := dd_list_rect.size.y
+	var tw := _dd_text_w()
+	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	for i in dd_rows.size():
+		var row: Dictionary = dd_rows[i]
+		var y := float(row.y) - dd_scroll
+		var h := float(row.h)
+		if y + h < 0.0 or y > view_h:
+			continue
+		var code := String(row.code)
+		var flash := float(key_flash.get("dd_" + code, 0.0))
+		if i == 0 or flash > 0.0:
+			# the top row is what Enter picks
+			dd_clip.draw_rect(Rect2(0, y, w, h), C_CARD_HI.lerp(C_ACCENT, 0.25 * flash))
+		if i > 0:
+			dd_clip.draw_line(Vector2(DD_PAD, y), Vector2(w - DD_PAD, y), C_LINE, 1.0)
+		var tx := DD_PAD + DD_CODE_W + 8
+		var h1 := _wrap_h(place_label(code), 15, tw)
+		var asc1 := font.get_ascent(15)
+		dd_clip.draw_multiline_string(font, Vector2(tx, y + DD_PAD + asc1), place_label(code),
+			HORIZONTAL_ALIGNMENT_LEFT, tw, 15, -1, C_INK, flags)
+		dd_clip.draw_multiline_string(font, Vector2(tx, y + DD_PAD + h1 + 3 + font.get_ascent(12)),
+			String(airport(code).get("n", "")), HORIZONTAL_ALIGNMENT_LEFT, tw, 12, -1, C_MUTED, flags)
+		dd_clip.draw_string(font, Vector2(DD_PAD, y + h * 0.5 + 6), code, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, C_ACCENT)
+	if dd_content_h > view_h:
+		var bar_h := maxf(24.0, view_h * view_h / dd_content_h)
+		var t := dd_scroll / maxf(1.0, dd_content_h - view_h)
+		var br := Rect2(w - 5, 4 + (view_h - 8 - bar_h) * t, 3, bar_h)
+		dd_clip.draw_rect(br, Color(C_MUTED, 0.6))
 
 
 func _draw_end() -> void:

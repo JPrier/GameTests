@@ -3,7 +3,9 @@
 A daily flight puzzle. A real flight route is drawn with both airports hidden; the plane flies from
 DEP to ARR with north up and no map. Name the departure and arrival airports in 6 guesses.
 
-- Type a city or 3-letter code (on-screen keyboard or a real one). Enter picks the top match.
+- Type a city, country, airport name or 3-letter code (on-screen keyboard or a real one). Matches
+  appear in a full-width list showing city, country, full airport name and code; tap one, or press
+  Enter for the top match. Drag or scroll the list when there are many.
 - Each end of a guess shows its distance and a direction arrow toward the real airport. A correct end
   locks in, so later guesses only need the other one. Guessing the right airport for the wrong end
   shows blue.
