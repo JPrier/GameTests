@@ -88,6 +88,62 @@ func test_suggestions():
 	assert_true(main.suggestions("london").has("LHR"), "city search finds Heathrow")
 	assert_true(main.suggestions("NEWYORK").has("JFK"), "spaces ignored")
 	assert_eq(main.suggestions("").size(), 0, "empty query, no suggestions")
+	assert_eq(main.suggestions("new york")[0], main.suggestions("NEWYORK")[0], "typed spaces don't matter")
+	# all four fields are searchable
+	assert_true(main.suggestions("heathrow").has("LHR"), "airport name search")
+	assert_true(main.suggestions("kennedy").has("JFK"), "mid-name word search")
+	assert_true(main.suggestions("japan").has("HND"), "country search")
+	assert_true(main.suggestions("united kingdom").has("LHR"), "multi-word country search")
+	assert_true(main.suggestions("usa").has("JFK"), "country nickname search")
+	assert_true(main.suggestions("parisfrance").has("CDG"), "city + country run together")
+	assert_gt(main.suggestions("united states").size(), 4, "many results, not just four")
+	assert_eq(main.suggestions("lhr")[0], "LHR", "exact code still first")
+	assert_eq(main.suggestions("paris")[0], "CDG", "exact city before partial matches")
+
+
+func test_full_names_in_data():
+	var main = await _fresh()
+	for a in main.airports:
+		assert_ne(String(a.get("co", "")), "", "%s has a country name" % a.c)
+		assert_true(String(a.co).length() > 2, "%s country is a full name" % a.c)
+		assert_true(String(a.n).length() >= String(a.city).length() or String(a.n).contains(" "), "%s has a full airport name" % a.c)
+	assert_eq(main.place_label("LHR"), "London, United Kingdom")
+	assert_true(String(main.airport("LHR").n).contains("Heathrow"), "Heathrow's full name")
+
+
+func test_dropdown_picker():
+	var main = await _fresh()
+	await wait_frames(2)
+	assert_false(main.dropdown_visible(), "hidden with an empty query")
+	main.type_text("san")
+	await wait_frames(2)
+	assert_true(main.dropdown_visible(), "shows while typing")
+	var vs: Vector2 = main.get_viewport_rect().size
+	assert_near(main.dd_rect.size.x, minf(vs.x - 16.0, 760.0), 0.5, "fills the screen width")
+	assert_gt(main.dd_rows.size(), 4, "lists every match, more than the old 4 chips")
+	var r0: Rect2 = main.dd_rect
+	main.type_text("FRANCISCO")
+	await wait_frames(2)
+	assert_eq(main.dd_rect, r0, "panel stays put as matches change")
+	# rows are tall enough for their wrapped text (no clipping, no ellipsis)
+	var tw: float = main._dd_text_w()
+	for row in main.dd_rows:
+		var need: float = main._wrap_h(main.place_label(row.code), 15, tw) + main._wrap_h(String(main.airport(row.code).n), 12, tw)
+		assert_true(float(row.h) >= need, "%s row fits its text" % row.code)
+	# a tap on the first row picks it
+	var top: String = main.current_suggestions()[0]
+	var p: Vector2 = main.dd_list_rect.position + Vector2(40, float(main.dd_rows[0].h) * 0.5)
+	assert_eq(main.dd_code_at(p), top, "first row is the top match")
+	main.dd_tap(p)
+	assert_eq(main.picks[0], top, "tapping a row picks it")
+	await wait_frames(2)
+	assert_false(main.dropdown_visible(), "closes after a pick")
+	# scrolling
+	main.type_text("united states")
+	await wait_frames(2)
+	main.dd_scroll = 1.0e9
+	main._clamp_scroll()
+	assert_near(main.dd_scroll, maxf(0.0, main.dd_content_h - main.dd_list_rect.size.y), 0.5, "scroll clamps to the end")
 
 
 func test_core_loop_by_scripted_typing():
