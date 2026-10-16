@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "about": "The six attributes the game compares. class: exact (yes/no fact), categorical (one named value, with optional related groups for yellow), approximate (an ordered scale; feedback is an arrow). Fields in drinks.json that are not listed here are optional flavour and never used for feedback.",
+  "attributes": [
+    {
+      "id": "family", "label": "Family", "kind": "category", "class": "categorical",
+      "help": "What kind of drink it is.",
+      "values": {
+        "sour": "Sour", "tiki": "Tiki", "highball": "Highball", "spritz": "Spritz",
+        "punch": "Punch", "beer": "Beer drink", "martini": "Martini", "lowball": "Lowball",
+        "creamy": "Creamy", "coffee": "Coffee", "hot": "Hot drink", "soft": "Soft drink"
+      },
+      "describe": {
+        "sour": "spirit + citrus + sugar, shaken",
+        "tiki": "rum, tropical fruit, shaken",
+        "highball": "spirit topped up with a mixer in a tall glass",
+        "spritz": "wine or bubbly topped up, light",
+        "punch": "wine or spirit with mixed fruit, by the jug",
+        "beer": "made with beer",
+        "martini": "almost all spirit, served in a stemmed glass",
+        "lowball": "almost all spirit, served short over ice",
+        "creamy": "made with cream, milk or ice cream",
+        "coffee": "made with coffee",
+        "hot": "served hot (coffee drinks are their own family)",
+        "soft": "cold, alcohol-free"
+      },
+      "groups": [
+        {"id": "shaken", "label": "Shaken & citrusy", "members": ["sour", "tiki"]},
+        {"id": "long", "label": "Long & topped up", "members": ["highball", "spritz", "beer", "punch"]},
+        {"id": "spirit", "label": "Spirit-forward", "members": ["martini", "lowball"]},
+        {"id": "cozy", "label": "Rich & cozy", "members": ["creamy", "coffee", "hot"]}
+      ]
+    },
+    {
+      "id": "base", "label": "Base", "kind": "category", "class": "categorical",
+      "help": "The main alcohol. For alcohol-free drinks, the main ingredient.",
+      "values": {
+        "vodka": "Vodka", "gin": "Gin", "rum": "Rum", "cachaca": "Cachaça", "tequila": "Tequila",
+        "whiskey": "Whiskey", "brandy": "Brandy", "liqueur": "Liqueur",
+        "sparkling": "Sparkling wine", "wine": "Wine", "beer": "Beer",
+        "coffee": "Coffee", "tea": "Tea", "cocoa": "Cocoa", "juice": "Juice", "soda": "Soda"
+      },
+      "groups": [
+        {"id": "rum", "label": "Sugar-cane spirits", "members": ["rum", "cachaca"]},
+        {"id": "wine", "label": "Wine", "members": ["sparkling", "wine"]},
+        {"id": "free", "label": "Alcohol-free", "members": ["coffee", "tea", "cocoa", "juice", "soda"]}
+      ]
+    },
+    {
+      "id": "fruit", "label": "Fruit", "kind": "category", "class": "categorical",
+      "help": "The main fruit or juice that goes into it. Garnishes (a twist, a cherry, a wedge on the rim) don't count.",
+      "values": {
+        "lime": "Lime", "lemon": "Lemon", "orange": "Orange", "grapefruit": "Grapefruit",
+        "cranberry": "Cranberry", "berry": "Berry", "peach": "Peach", "pineapple": "Pineapple",
+        "passion": "Passion fruit", "tomato": "Tomato", "none": "None"
+      },
+      "groups": [
+        {"id": "citrus", "label": "Citrus", "members": ["lime", "lemon", "orange", "grapefruit"]},
+        {"id": "red", "label": "Red berries", "members": ["cranberry", "berry"]},
+        {"id": "tropical", "label": "Tropical", "members": ["pineapple", "passion"]}
+      ]
+    },
+    {
+      "id": "bubbles", "label": "Bubbles", "kind": "bool", "class": "exact",
+      "help": "Fizzy (soda, tonic, ginger beer, sparkling wine, beer) or still.",
+      "values": {"true": "Fizzy", "false": "Still"}
+    },
+    {
+      "id": "sweet", "label": "Sweet", "kind": "ordinal", "class": "approximate",
+      "help": "How sweet it tastes. Arrows point toward the mystery drink.",
+      "min": 1, "levels": ["Dry", "Balanced", "Sweet", "Very sweet"]
+    },
+    {
+      "id": "strength", "label": "Strength", "kind": "ordinal", "class": "approximate",
+      "help": "None: alcohol-free. Light: a shot topped up with lots of mixer, or wine/beer. Medium: a standard shaken cocktail. Strong: almost all spirit.",
+      "min": 0, "levels": ["None", "Light", "Medium", "Strong"]
+    }
+  ]
+}
