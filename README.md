@@ -9,7 +9,7 @@ Games live in category folders under `games/`, and the home page has one section
 ```
 games/
   Daily/
-    bloom/  daily-bridge/  earthquake-test/  seating-chart/  ticker-time/
+    bloom/  daily-bridge/  earthquake-test/  plans-tonight/  seating-chart/  ticker-time/
     Airplanes/
       flightle/  xray-shift/
   Incremental/
@@ -24,6 +24,7 @@ games/
 | Bloom: a daily Game of Life puzzle | [`games/Daily/bloom`](games/Daily/bloom) |
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/Daily/daily-bridge`](games/Daily/daily-bridge) |
 | Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/Daily/earthquake-test`](games/Daily/earthquake-test) |
+| Plans Tonight?: a daily deduction puzzle, find the one plan that works for the whole friend group | [`games/Daily/plans-tonight`](games/Daily/plans-tonight) |
 | Seating Chart: seat ten wedding guests so every clue holds; a daily logic puzzle, easy on Monday, devious by Sunday | [`games/Daily/seating-chart`](games/Daily/seating-chart) |
 | Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/Daily/ticker-time`](games/Daily/ticker-time) |
 | **Daily / Airplanes** | |
