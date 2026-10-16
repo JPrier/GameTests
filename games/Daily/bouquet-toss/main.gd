@@ -27,6 +27,8 @@ const MIN_PULL := 18.0           # shorter pulls are taps, not throws
 const PREVIEW_STEPS := 40        # 1/3 s of predicted flight
 const SETTLE_TIME := 1.0
 const ARCHIVE_ROWS := 6
+const SAVE_VERSION := 2
+const HOLES_H := 66
 
 const C_BG := Color("fdf3e6")
 const C_PANEL := Color("fffaf2")
@@ -52,9 +54,13 @@ var phase := "loading"            # loading, aim, flight, settle, won
 var pending_day := ""
 var load_frames := 0
 
-var throws: Array = []            # this day's counted throws: {a, p, o, acc}
-var done := false                 # caught it (result is final)
-var result: Dictionary = {}       # {throws, accuracy, seconds, outcomes}
+var hole := 0                     # which of the day's five throws is on stage
+var holes: Array = []             # per throw: {throws: [{a, p, o, acc}], done, acc, aim}
+var levels: Array = []            # level per throw, built on first visit
+var throws: Array = []            # the current throw's counted attempts (same Array as in holes)
+var done := false                 # all five caught (result is final)
+var result: Dictionary = {}       # {throws (total attempts), accuracy, seconds, holes: [[outcomes]]}
+var next_pending := -1.0
 var practice_throws := 0
 var elapsed := 0.0
 var started := false
@@ -190,7 +196,7 @@ func _layout() -> void:
 	k = ui_scale()
 	uvs = vs / k
 	ui_layer.scale = Vector2(k, k)
-	var hh := HEADER_H * k
+	var hh := (HEADER_H + HOLES_H) * k
 	var fh := FOOTER_H * k
 	var avail := Rect2(0, hh, vs.x, maxf(100.0, vs.y - hh - fh))
 	world_scale = minf((avail.size.x - 8.0) / float(L.W), avail.size.y / float(L.H))
@@ -243,74 +249,126 @@ func request_day(d: String) -> void:
 
 func load_day(d: String) -> void:
 	date = d
-	level = level_for(d)
-	comp = P.compile(level)
-	throws = []
+	holes = []
+	levels = []
+	for i in Daily.HOLES:
+		holes.append({"throws": [], "done": false, "acc": 0, "aim": []})
+		levels.append({})
 	done = false
 	result = {}
 	practice_throws = 0
 	elapsed = 0.0
 	started = false
+	particles = []
+	end_pending = -1.0
+	next_pending = -1.0
+	var start := _load_progress()
+	enter_hole(start)
+	if done:
+		modal = "end"
+
+
+## Puts throw `i` of the day on stage (building its level the first time).
+func enter_hole(i: int) -> void:
+	hole = clampi(i, 0, Daily.HOLES - 1)
+	if (levels[hole] as Dictionary).is_empty():
+		levels[hole] = level_for(date, hole)
+	level = levels[hole]
+	comp = P.compile(level)
+	throws = holes[hole].throws
 	flight = {}
 	ghost = PackedFloat64Array()
 	ghost_end = Vector2(-1, -1)
-	particles = []
 	status = ""
 	status_good = false
-	end_pending = -1.0
 	has_aim = false
-	last_aim = Vector2i(-1, -1)
+	preview = PackedFloat64Array()
+	next_pending = -1.0
 	aim_a = 135 if bool(level.mirror) else 45
 	aim_p = 55
-	_load_progress()
+	last_aim = Vector2i(-1, -1)
+	var aim: Array = holes[hole].get("aim", [])
+	if aim.size() == 2:
+		aim_a = int(aim[0])
+		aim_p = int(aim[1])
+		last_aim = Vector2i(aim_a, aim_p)
 	phase = "aim"
-	if done:
-		modal = "end"
-	elif show_tutorial and modal == "":
-		modal = ""   # the tutorial is a coach mark on the stage, not a modal
 	_redraw_all()
 
 
-## The level for a date: the precomputed table, then the local cache, then a full search.
-func level_for(d: String) -> Dictionary:
-	var lv := Levels.from_table(d)
+## The first throw still to land (or the first one, once the day is done).
+func next_open_hole(after := -1) -> int:
+	for k in Daily.HOLES:
+		var i := (after + 1 + k) % Daily.HOLES
+		if not bool(holes[i].done):
+			return i
+	return 0
+
+
+func attempts_total() -> int:
+	var n := 0
+	for h in holes:
+		n += (h.throws as Array).size()
+	return n
+
+
+func holes_done() -> int:
+	var n := 0
+	for h in holes:
+		if bool(h.done):
+			n += 1
+	return n
+
+
+## The level for one of a date's throws: the precomputed table, then the local cache, then a
+## full search.
+func level_for(d: String, i: int) -> Dictionary:
+	var lv := Levels.from_table(d, i)
 	if not lv.is_empty():
 		return lv
-	var path := "user://level_v%d_%s.json" % [Gen.GEN_VERSION, d]
+	var path := "user://level_v%d_%s_%d.json" % [Gen.GEN_VERSION, d, i]
 	var cached = Save.read_json(path)
 	if cached is Dictionary and String(cached.get("date", "")) == d:
 		var c: Dictionary = L.normalize(cached)
 		if c.has("solution") and P.throw(c, int(c.solution.a), int(c.solution.p)).outcome == "catch":
 			return c
-	lv = Levels.search(d)
+	lv = Levels.search(d, i)
 	Save.write_json(path, lv)
 	return lv
 
 
-func _load_progress() -> void:
+## Restores the day from the save; returns which throw to show first.
+func _load_progress() -> int:
 	var data: Dictionary = save.load_day(date)
 	if data.is_empty():
-		return
-	throws = data.get("throws", [])
-	done = bool(data.get("done", false))
-	result = data.get("result", {})
+		return 0
+	if int(data.get("v", 1)) != SAVE_VERSION:
+		# A save from the one-throw version of the game: start the day fresh, and drop its old
+		# result from the past-days list and the home page.
+		save.wipe_day(date)
+		if not dev_mode and OS.has_feature("web"):
+			JavaScriptBridge.eval("try{localStorage.removeItem(%s)}catch(e){}" % JSON.stringify("gametests:bouquet-toss:" + date), true)
+		return 0
+	var saved: Array = data.get("holes", [])
+	if saved.size() != Daily.HOLES:
+		return 0
+	for i in Daily.HOLES:
+		var h = saved[i]
+		if h is Dictionary and h.get("throws", []) is Array:
+			holes[i] = {"throws": h.throws, "done": bool(h.get("done", false)), "acc": int(h.get("acc", 0)), "aim": h.get("aim", [])}
+	done = bool(data.get("done", false)) and holes_done() == Daily.HOLES
+	result = data.get("result", {}) if done else {}
 	elapsed = float(data.get("seconds", 0.0))
 	practice_throws = int(data.get("practice", 0))
-	started = not throws.is_empty()
-	var aim: Array = data.get("aim", [])
-	if aim.size() == 2:
-		aim_a = int(aim[0])
-		aim_p = int(aim[1])
-		last_aim = Vector2i(aim_a, aim_p)
-	if done and result.is_empty():
-		done = false
+	started = attempts_total() > 0
+	return clampi(int(data.get("hole", 0)), 0, Daily.HOLES - 1) if not done else 0
 
 
 func _save_now() -> void:
-	if level.is_empty() or phase == "loading":
+	if level.is_empty() or phase == "loading" or holes.is_empty():
 		return
-	save.save_day(date, {"throws": throws, "done": done, "result": result, "seconds": elapsed,
-		"practice": practice_throws, "aim": [aim_a, aim_p]})
+	save.save_day(date, {"v": SAVE_VERSION, "holes": holes, "hole": hole, "done": done, "result": result,
+		"seconds": elapsed, "practice": practice_throws})
 
 
 # ------------------------------------------------------------------ throwing (also used by tests)
@@ -341,7 +399,7 @@ func throw(a: int, p: int) -> bool:
 	flight = P.simulate(comp, aim_a, aim_p, 1)
 	flight_t = 0.0
 	flight_event = 0
-	flight_counted = not done
+	flight_counted = not bool(holes[hole].done)
 	phase = "flight"
 	status = ""
 	audio.play("whoosh", 0.8 + aim_p / 200.0)
@@ -395,6 +453,7 @@ func _land() -> void:
 	var path: PackedFloat64Array = flight.path
 	ghost = path
 	ghost_end = Vector2(float(flight.end_x), float(flight.end_y))
+	holes[hole].aim = [aim_a, aim_p]
 	if flight_counted:
 		throws.append({"a": aim_a, "p": aim_p, "o": o, "acc": acc})
 	else:
@@ -427,17 +486,30 @@ func _catch(acc: int) -> void:
 	_burst(Vector2(level.target.hands[0], level.target.hands[1]))
 	status_good = true
 	if flight_counted:
-		done = true
-		var outs: Array = []
-		for t in throws:
-			outs.append(String(t.o))
-		result = {"throws": throws.size(), "accuracy": acc, "seconds": snappedf(elapsed, 0.1), "outcomes": outs}
-		save.record_result(date, Scoring.label(result))
-		_mark_played()
-		audio.play("fanfare", 1.0, -4.0)
-		status = "Caught it! %s in %d." % [Scoring.rating(throws.size()), throws.size()] if throws.size() > 1 else "Caught it first time! Perfect."
-		end_pending = 1.7
-		_confetti()
+		holes[hole].done = true
+		holes[hole].acc = acc
+		if holes_done() == Daily.HOLES:
+			done = true
+			var outs: Array = []
+			var acc_sum := 0
+			for h in holes:
+				var o: Array = []
+				for t in h.throws:
+					o.append(String(t.o))
+				outs.append(o)
+				acc_sum += int(h.acc)
+			result = {"throws": attempts_total(), "accuracy": int(round(float(acc_sum) / Daily.HOLES)),
+				"seconds": snappedf(elapsed, 0.1), "holes": outs}
+			save.record_result(date, Scoring.label(result))
+			_mark_played()
+			audio.play("fanfare", 1.0, -4.0)
+			status = "All five caught! %s: %d tries." % [Scoring.rating_total(int(result.throws), Daily.HOLES), int(result.throws)]
+			end_pending = 1.7
+			_confetti()
+		else:
+			var n := throws.size()
+			status = "Caught it %s! %d of 5 done." % ["first try" if n == 1 else "in %d tries" % n, holes_done()]
+			next_pending = 1.5
 	else:
 		status = "Caught it! (practice, %d%%)" % acc
 
@@ -505,6 +577,11 @@ func _process(delta: float) -> void:
 				if end_pending <= 0.0:
 					end_pending = -1.0
 					modal = "end"
+			elif next_pending > 0.0:
+				next_pending -= delta
+				if next_pending <= 0.0:
+					next_pending = -1.0
+					enter_hole(next_open_hole(hole))
 			elif won_t > 1.6 and modal == "":
 				phase = "aim"
 	_keyboard(delta)
@@ -607,7 +684,10 @@ func _pointer_down(p: Vector2) -> void:
 		pressing = false
 		return
 	if phase == "won" and end_pending < 0.0:
-		phase = "aim"
+		if next_pending > 0.0:
+			next_pending = 0.01        # a tap moves straight on to the next throw
+		else:
+			phase = "aim"
 
 
 func _pointer_move(p: Vector2) -> void:
@@ -670,11 +750,14 @@ func _press(id: String) -> void:
 		"dev_random": dev_random_day()
 		"dev_reset": dev_reset()
 		"dev_win": dev_win()
+		"dev_win_day": dev_win_day()
 		"dev_reveal": dev_reveal()
 		"dev_close": dev_open = false
 		_:
 			if id.begins_with("day:"):
 				pick_day(id.substr(4))
+			elif id.begins_with("hole:"):
+				pick_hole(int(id.substr(5)))
 	_redraw_all()
 
 
@@ -802,6 +885,15 @@ func _notification(what: int) -> void:
 		_save_now()
 
 
+## Tapping a throw's chip goes to it (finished throws can be replayed as practice).
+func pick_hole(i: int) -> void:
+	if i == hole or phase == "flight":
+		return
+	end_pending = -1.0
+	_save_now()
+	enter_hole(i)
+
+
 # ------------------------------------------------------------------ past days
 
 func archive_count() -> int:
@@ -866,6 +958,16 @@ func dev_win() -> void:
 		skip_flight()
 
 
+## Lands every remaining throw of the day with its reference throw.
+func dev_win_day() -> void:
+	if not dev_mode:
+		return
+	for i in Daily.HOLES:
+		if not bool(holes[i].done):
+			enter_hole(i)
+			dev_win()
+
+
 ## Shows the reference throw's whole path as the ghost and sets the aim to it.
 func dev_reveal() -> void:
 	if not dev_mode or level.is_empty():
@@ -886,11 +988,19 @@ func dev_stats() -> Dictionary:
 	return level.stats
 
 
+func _tries() -> Array:
+	var out: Array = []
+	for h in holes:
+		out.append((h.throws as Array).size())
+	return out
+
+
 func get_agent_state() -> Dictionary:
 	return {
 		"day": date, "today": today, "number": int(level.get("number", 0)), "seed": int(level.get("seed", 0)),
 		"archetype": String(level.get("archetype", "")), "attempt": int(level.get("attempt", 0)),
 		"state": "loading" if phase == "loading" else ("won" if done else "playing"), "phase": phase,
+		"hole": hole, "tries": _tries(), "holes_done": holes_done(),
 		"throws": throws.size(), "practice_throws": practice_throws, "result": result,
 		"aim": [aim_a, aim_p], "modal": modal, "dev_mode": dev_mode, "share_text": share_text(),
 		"solution": level.get("solution", {}) if dev_mode else {}, "status": status,
@@ -980,7 +1090,7 @@ func _draw_actors() -> void:
 		ci.draw_set_transform(Vector2(sin(anim_t * 70.0), cos(anim_t * 53.0)) * shake * 14.0)
 	var tg: Dictionary = level.target
 	var hands := Vector2(float(tg.hands[0]), float(tg.hands[1]))
-	var caught := phase == "won" or (done and phase != "flight")
+	var caught := phase == "won"
 	# Catch zone glow
 	var pulse := 0.5 + 0.5 * sin(anim_t * 3.2)
 	if not caught or phase != "won":
@@ -1223,6 +1333,38 @@ func _draw_header(ci: CanvasItem) -> void:
 	elif date > today:
 		sub += " · future (dev)"
 	_text(ci, Vector2(54, 54), sub, 16, C_MUTED, 0, title_w - 50)
+	_draw_holes(ci)
+
+
+## The day's five throws, each with its attempt counter. Fixed size; tap to switch throws.
+func _draw_holes(ci: CanvasItem) -> void:
+	var y0 := HEADER_H
+	ci.draw_rect(Rect2(0, y0, uvs.x, HOLES_H), C_PANEL)
+	ci.draw_rect(Rect2(0, y0 + HOLES_H - 2, uvs.x, 2), C_FAINT)
+	var pad := 10.0
+	var gap := 6.0
+	var cw := (uvs.x - pad * 2 - gap * (Daily.HOLES - 1)) / Daily.HOLES
+	for i in Daily.HOLES:
+		var r := Rect2(pad + i * (cw + gap), y0 + 6, cw, HOLES_H - 14)
+		var h: Dictionary = holes[i] if i < holes.size() else {"throws": [], "done": false}
+		var n := (h.throws as Array).size()
+		var cur := i == hole
+		var fill := C_BTN
+		if bool(h.done):
+			fill = Color("d7efe9")
+		if cur:
+			fill = C_ACCENT
+		buttons.append({"id": "hole:%d" % i, "rect": r, "enabled": true})
+		Art.rrect(ci, r, fill, 10)
+		var tc := Color("ffffff") if cur else C_INK
+		var cx := r.get_center().x
+		_text(ci, Vector2(cx, r.position.y + 17), "Throw %d" % (i + 1), 13, Color(tc, 0.8), 1, r.size.x - 8)
+		var count := "%d" % n if n > 0 else "–"
+		if bool(h.done):
+			var tw := _text(ci, Vector2(cx + 9, r.end.y - 7), count, 21, tc, 1, r.size.x - 30, true)
+			Art.bouquet(ci, Vector2(cx - tw / 2.0 - 4, r.end.y - 14), -0.2, 0.75)
+		else:
+			_text(ci, Vector2(cx, r.end.y - 7), count, 21, tc, 1, r.size.x - 8, true)
 
 
 func _icon_sound(ci: CanvasItem, c: Vector2, on: bool) -> void:
@@ -1270,16 +1412,21 @@ func _draw_footer(ci: CanvasItem) -> void:
 	var lw := uvs.x - pad * 3 - rw
 	var line1 := ""
 	if done:
-		line1 = "Caught in %d · %d%%" % [int(result.throws), int(result.accuracy)]
-		if practice_throws > 0:
-			line1 += " · practice %d" % practice_throws
+		line1 = "All 5 in %d tries · %d%%" % [int(result.throws), int(result.accuracy)]
+	elif bool(holes[hole].done):
+		line1 = "Throw %d/5 · done" % (hole + 1)
 	else:
 		var n := throws.size() + (0 if phase == "flight" else 1)
-		line1 = "Throw %d" % maxi(1, n)
+		line1 = "Throw %d/5 · try %d" % [hole + 1, maxi(1, n)]
 		if started:
 			line1 += " · " + Scoring.clock(elapsed)
 	_text(ci, Vector2(pad, r.position.y + 38), line1, 24, C_INK, 0, lw, true)
-	var msg := status if status != "" else (GOAL if not done else "Practice away: it won't change your result.")
+	var msg := status
+	if msg == "":
+		if bool(holes[hole].done):
+			msg = "Already caught: practice away, it won't change your result."
+		else:
+			msg = GOAL
 	var wr := _wrap(msg, 18, lw, 2)
 	var y := r.position.y + 66
 	for l in wr[1]:
@@ -1307,7 +1454,7 @@ func _draw_tutorial(ci: CanvasItem) -> void:
 		ci.draw_circle(hand, 18, Color(C_ACCENT, 0.3))
 		ci.draw_circle(hand, 9, C_ACCENT)
 	var bw := minf(uvs.x - 32, 460.0)
-	var box := Rect2((uvs.x - bw) / 2, HEADER_H + 12, bw, 80)
+	var box := Rect2((uvs.x - bw) / 2, HEADER_H + HOLES_H + 12, bw, 80)
 	Art.rrect(ci, Rect2(box.position + Vector2(0, 3), box.size), Color(0, 0, 0, 0.1), 16)
 	Art.rrect(ci, box, Color(C_PANEL, 0.97), 16)
 	_text(ci, Vector2(box.get_center().x, box.position.y + 32), "Drag back from anywhere, then let go.", 20, C_INK, 1, bw - 28, true)
@@ -1331,7 +1478,7 @@ func _draw_help(ci: CanvasItem) -> void:
 	_text(ci, Vector2(r.get_center().x, r.position.y + 48), "How to play", 28, C_INK, 1, w, true)
 	var lines := [
 		"Drag back from anywhere on the screen, aim, and let go to throw.",
-		"Land the bouquet in the glowing hands. Fewer throws is better.",
+		"Five throws a day, each to a different guest. Fewest tries wins; tap a number to switch.",
 		"Bounce off walls, ceilings and tables all you like. Not the cake.",
 		"Everyone gets the same venue each day. Arrow keys and Space work too.",
 	]
@@ -1351,42 +1498,32 @@ func _draw_end(ci: CanvasItem) -> void:
 	var w := r.size.x - 48
 	var cx := r.get_center().x
 	var y := r.position.y + 50
-	_text(ci, Vector2(cx, y), "Caught it!", 32, C_ACCENT_DARK, 1, w, true)
+	_text(ci, Vector2(cx, y), "All five caught!", 32, C_ACCENT_DARK, 1, w, true)
 	y += 30
 	_text(ci, Vector2(cx, y), "Bouquet Toss #%d · %s" % [int(level.number), Daily.short_date(date)], 17, C_MUTED, 1, w)
-	y += 22
+	y += 16
 	var t := int(result.get("throws", 0))
-	var icons := mini(t, 5)
-	var span := icons * 44.0
-	for i in icons:
-		Art.bouquet(ci, Vector2(cx - span / 2 + 22 + i * 44, y + 34), -0.3 + 0.15 * i, 1.6)
-	y += 92
-	_text(ci, Vector2(cx, y), Scoring.rating(t), 30, C_INK, 1, w, true)
+	var per: Array = result.get("holes", [])
+	# one bouquet per throw, with how many tries it took underneath
+	var slot := minf(64.0, w / Daily.HOLES)
+	for i in Daily.HOLES:
+		var c := Vector2(cx - slot * Daily.HOLES / 2.0 + slot * (i + 0.5), y + 34)
+		var n: int = (per[i] as Array).size() if i < per.size() else 0
+		Art.bouquet(ci, c, -0.3 + 0.15 * i, 1.4 if n == 1 else 1.1)
+		_text(ci, c + Vector2(0, 42), "%d" % n, 18, C_INK if n == 1 else C_MUTED, 1, slot - 6, true)
+	y += 108
+	_text(ci, Vector2(cx, y), Scoring.rating_total(t, Daily.HOLES), 30, C_INK, 1, w, true)
 	y += 20
 	# three stat cells
 	var cw := (w - 16) / 3.0
-	var labels := ["Throws", "Accuracy", "Time"]
+	var labels := ["Tries", "Accuracy", "Time"]
 	var vals := [str(t), "%d%%" % int(result.get("accuracy", 0)), Scoring.clock(float(result.get("seconds", 0)))]
 	for i in 3:
 		var cr := Rect2(r.position.x + 24 + i * (cw + 8), y, cw, 70)
 		Art.rrect(ci, cr, C_BTN, 12)
 		_text(ci, Vector2(cr.get_center().x, cr.position.y + 34), vals[i], 26, C_INK, 1, cw - 12, true)
 		_text(ci, Vector2(cr.get_center().x, cr.position.y + 58), labels[i], 15, C_MUTED, 1, cw - 12)
-	y += 86
-	# throw history as small marks (no positions, same as the share text)
-	var outs: Array = result.get("outcomes", [])
-	var shown := mini(outs.size(), 10)
-	var mw := shown * 30.0
-	for i in shown:
-		var c := Vector2(cx - mw / 2 + 15 + i * 30, y + 8)
-		var o := String(outs[outs.size() - shown + i])
-		if o == "catch":
-			Art.bouquet(ci, c, 0.0, 0.85)
-		else:
-			ci.draw_circle(c, 10, Color(C_INK, 0.12))
-			ci.draw_line(c + Vector2(-4, -4), c + Vector2(4, 4), C_MUTED, 2)
-			ci.draw_line(c + Vector2(-4, 4), c + Vector2(4, -4), C_MUTED, 2)
-	y += 34
+	y += 90
 	var bw := (w - 12) / 2.0
 	_button(ci, "share", Rect2(r.position.x + 24, y, bw, 54), "Share", true)
 	_button(ci, "copy", Rect2(r.position.x + 36 + bw, y, bw, 54), "Copy result", false)
@@ -1427,12 +1564,12 @@ func _draw_archive(ci: CanvasItem) -> void:
 
 func _draw_dev(ci: CanvasItem) -> void:
 	var w := minf(340.0, uvs.x - 24)
-	var r := Rect2(12, HEADER_H + 10, w, 222)
+	var r := Rect2(12, HEADER_H + HOLES_H + 10, w, 268)
 	Art.rrect(ci, r, Color(0.1, 0.08, 0.14, 0.86), 12)
 	var st := dev_stats() if level.has("stats") else {}
 	var sol: Dictionary = level.get("solution", {})
 	var lines := [
-		"DEV  %s  #%d  %s" % [date, int(level.number), String(level.archetype)],
+		"DEV  %s  #%d  throw %d %s" % [date, int(level.number), hole + 1, String(level.archetype)],
 		"seed %d  attempt %d  %s" % [int(level.seed), int(level.attempt), "mirrored" if bool(level.mirror) else ""],
 		"rate %.3f  robust %d  clusters %d" % [float(st.get("rate", 0)), int(st.get("robust", 0)), int(st.get("clusters", 0))],
 		"routes %s" % ", ".join(st.get("routes", [])),
@@ -1443,7 +1580,8 @@ func _draw_dev(ci: CanvasItem) -> void:
 		_text(ci, Vector2(r.position.x + 12, y), l, 14, Color(1, 1, 1, 0.92), 0, w - 24)
 		y += 19
 	var ids := [["dev_prev", "< Day"], ["dev_next", "Day >"], ["dev_today", "Today"], ["dev_random", "Random"],
-		["dev_reset", "Reset"], ["dev_win", "Win"], ["dev_reveal", "Reveal"], ["dev_close", "Hide"]]
+		["dev_reset", "Reset"], ["dev_win", "Win"], ["dev_win_day", "Win all"], ["dev_reveal", "Reveal"],
+		["dev_close", "Hide"]]
 	var bw := (w - 24 - 9) / 4.0
 	for i in ids.size():
 		var br := Rect2(r.position.x + 12 + (i % 4) * (bw + 3), y + 8 + (i / 4) * 46, bw, 40)

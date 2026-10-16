@@ -13,11 +13,12 @@ func _init() -> void:
 	var d: String = args[1] if args.size() > 1 else Daily.EPOCH
 	var total := 0.0
 	for i in n:
-		var t0 := Time.get_ticks_usec()
-		var lv := Levels.search(d)
-		var ms := (Time.get_ticks_usec() - t0) / 1000.0
-		total += ms
-		print("%s %-10s attempt %2d  rate %.3f robust %d routes %s  %.0f ms" % [d, lv.archetype, lv.attempt, lv.stats.rate, lv.stats.robust, ",".join(lv.stats.routes), ms])
+		for hole in Daily.HOLES:
+			var t0 := Time.get_ticks_usec()
+			var lv := Levels.search(d, hole)
+			var ms := (Time.get_ticks_usec() - t0) / 1000.0
+			total += ms
+			print("%s #%d %-10s attempt %2d  rate %.3f robust %d routes %s  %.0f ms" % [d, hole + 1, lv.archetype, lv.attempt, lv.stats.rate, lv.stats.robust, ",".join(lv.stats.routes), ms])
 		d = Daily.add_days(d, 1)
-	print("avg %.0f ms" % (total / n))
+	print("avg %.0f ms per level" % (total / (n * Daily.HOLES)))
 	quit()

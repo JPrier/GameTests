@@ -1,11 +1,13 @@
 extends RefCounted
-## The level for a date: generate attempt 0, 1, 2... until the validator accepts one.
+## The level for one of a date's throws: generate attempt 0, 1, 2... until the validator
+## accepts one.
 ##
-## core/attempts.json lists, for each upcoming date, which attempt was accepted and the
-## validator's reference throw (made by tools/precompute.gd). A phone then builds just that one
-## attempt and checks the reference throw still catches (one simulation) instead of searching.
-## The level is identical either way; dates missing from the table search (and the game caches
-## the result locally). Tests check the table against a fresh search.
+## core/attempts.json lists, for each upcoming date and each of its throws, which attempt was
+## accepted and the validator's reference throw (made by tools/precompute.gd). A phone then
+## builds just that one attempt and checks the reference throw still catches (one simulation)
+## instead of searching. The level is identical either way; dates missing from the table
+## search (and the game caches the result locally). Tests check the table against a fresh
+## search.
 
 const Gen = preload("res://core/generator.gd")
 const V = preload("res://core/validator.gd")
@@ -30,15 +32,15 @@ static func attempt_table() -> Dictionary:
 	return _table
 
 
-static func make_attempt(d: String, attempt: int) -> Dictionary:
-	return Gen.make(d, Daily.day_number(d), Daily.seed_for(d, attempt), attempt, Daily.archetype_for(d))
+static func make_attempt(d: String, hole: int, attempt: int) -> Dictionary:
+	return Gen.make(d, Daily.day_number(d), Daily.seed_for(d, hole, attempt), attempt, Daily.archetype_for(d, hole), hole)
 
 
 ## Searches from attempt 0. Returns the accepted level with "stats" and "solution" filled in.
-static func search(d: String) -> Dictionary:
+static func search(d: String, hole: int) -> Dictionary:
 	var last: Dictionary = {}
 	for attempt in MAX_ATTEMPTS:
-		var lv := make_attempt(d, attempt)
+		var lv := make_attempt(d, hole, attempt)
 		var st := V.evaluate(lv)
 		if st.ok:
 			return _finish(lv, st)
@@ -46,26 +48,29 @@ static func search(d: String) -> Dictionary:
 		last.stats = st
 	# Never expected (the sweep tool checks this); fall back to the most solvable easy layout.
 	for attempt in MAX_ATTEMPTS:
-		var lv2 := Gen.make(d, Daily.day_number(d), Daily.seed_for(d, 1000 + attempt), 1000 + attempt, "open")
+		var lv2 := Gen.make(d, Daily.day_number(d), Daily.seed_for(d, hole, 1000 + attempt), 1000 + attempt, "open", hole)
 		var st2 := V.evaluate(lv2)
 		if st2.solves > 0 and st2.robust > 0:
 			return _finish(lv2, st2)
 	return last
 
 
-static func for_date(d: String) -> Dictionary:
-	var lv := from_table(d)
-	return lv if not lv.is_empty() else search(d)
+static func for_date(d: String, hole: int) -> Dictionary:
+	var lv := from_table(d, hole)
+	return lv if not lv.is_empty() else search(d, hole)
 
 
 ## The level from the precomputed table, or {} when the date isn't listed (or the entry no
 ## longer matches the generator, which tests catch).
-static func from_table(d: String) -> Dictionary:
+static func from_table(d: String, hole: int) -> Dictionary:
 	var t := attempt_table()
 	if not t.has(d):
 		return {}
-	var e: Array = t[d]
-	var lv := make_attempt(d, int(e[0]))
+	var day: Array = t[d]
+	if hole < 0 or hole >= day.size():
+		return {}
+	var e: Array = day[hole]
+	var lv := make_attempt(d, hole, int(e[0]))
 	if not L.geometry_errors(lv).is_empty():
 		return {}
 	if P.throw(lv, int(e[1]), int(e[2])).outcome != "catch":

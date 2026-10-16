@@ -1,28 +1,29 @@
 extends RefCounted
-## Builds the day's venue from the date seed. Pure data, no validation (validator.gd decides
-## whether an attempt is good enough; for_date() in levels.gd re-rolls until it is).
+## Builds one venue (one of the day's five throws) from its seed. Pure data, no validation
+## (validator.gd decides whether an attempt is good enough; levels.gd re-rolls until it is).
 ##
-## Every venue is laid out with the thrower on the left and then, on some days, mirrored.
-## Weekday archetypes introduce one idea each, gently:
-##   Mon open        a table or two between you and the target, lots of headroom
-##   Tue chandelier  a low ceiling and hanging chandeliers: flatter throws
-##   Wed cake        the cake table guards the target (hit it and it's a splat)
-##   Thu arch        a curtain wall with a floral arch: throw through the opening
-##   Fri balcony     the target waves from a balcony
-##   Sat garden      outdoors, no ceiling, a steady breeze
-##   Sun bank        a tall divider: lob through the gap or bank it off the ceiling
+## Every venue is laid out with the thrower on the left and then, sometimes, mirrored.
+## Each archetype introduces one idea:
+##   open        a table or two between you and the target, lots of headroom
+##   chandelier  a low ceiling and hanging chandeliers: flatter throws
+##   cake        the cake table guards the target (hit it and it's a splat)
+##   garden      outdoors, no ceiling, a steady breeze
+##   balcony     the target waves from a balcony
+##   arch        a curtain wall with a floral arch: throw through the opening
+##   bank        a tall divider: lob through the gap or bank it off the ceiling
 
 const L = preload("res://core/level.gd")
 const Rng = preload("res://core/rng.gd")
 
-const GEN_VERSION := 1
+const GEN_VERSION := 2
 const LOOKS := 12
+const THROWER_SHIFT := 110
 
 
-static func make(date: String, number: int, seed_value: int, attempt: int, archetype: String) -> Dictionary:
+static func make(date: String, number: int, seed_value: int, attempt: int, archetype: String, hole := 0) -> Dictionary:
 	var rng := Rng.new(seed_value)
 	var lv := {
-		"v": GEN_VERSION, "date": date, "number": number, "seed": seed_value, "attempt": attempt,
+		"v": GEN_VERSION, "date": date, "number": number, "hole": hole, "seed": seed_value, "attempt": attempt,
 		"archetype": archetype, "theme": "garden" if archetype == "garden" else "ballroom",
 		"mirror": false, "w": L.W, "h": L.H, "floor": L.FLOOR, "ceiling": 80, "wind": 0,
 		"solids": [], "decor": [], "palette": rng.range_i(0, 5),
@@ -46,6 +47,9 @@ static func make(date: String, number: int, seed_value: int, attempt: int, arche
 
 static func _people(lv: Dictionary, rng: Rng, g: Array, thrower_x: int, target_x: int, target_feet: int) -> void:
 	var fl: int = lv.floor
+	# Archetypes pick 70..140; the thrower stands well in from the wall so the bouquet (and
+	# the natural place to start a drag) isn't at the edge of a phone screen.
+	thrower_x += THROWER_SHIFT
 	lv.thrower = {"x": thrower_x, "feet": fl, "face": 1, "look": rng.range_i(0, LOOKS - 1)}
 	lv.release = [thrower_x + 16, fl - L.RELEASE_UP]
 	var look := rng.range_i(0, LOOKS - 1)
@@ -132,9 +136,10 @@ static func _chandelier_at(lv: Dictionary, rng: Rng, g: Array, x: int, drop: int
 
 ## Random extra clutter between the thrower and the target.
 static func _clutter(lv: Dictionary, rng: Rng, g: Array, x0: int, x1: int, tries: int) -> void:
+	x0 = maxi(x0, int(lv.thrower.x) + 80)
 	for i in tries:
 		var kind: String = rng.pick(["table", "table", "guest", "balloons", "plant"])
-		var x := rng.range_i(x0, x1)
+		var x := rng.range_i(x0, maxi(x0, x1))
 		match kind:
 			"table": _table(lv, rng, g, x)
 			"guest": _bystander(lv, rng, g, x)

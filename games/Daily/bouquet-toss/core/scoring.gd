@@ -1,7 +1,9 @@
 extends RefCounted
-## Scoring. A day's result is the run up to the first catch:
-##   1. fewest throws, 2. best accuracy (how close to the centre of the catch), 3. fastest time.
-## Ratings are par-style and generous: 1 throw Perfect, 2 Great, 3 Good, 4-5 Nice, more = Caught.
+## Scoring. A day is five throws; each counts its tries up to its first catch. The day ranks by
+##   1. fewest total tries, 2. average accuracy (how close to the centre of each catch),
+##   3. fastest time. Ratings are par-style and generous (par = 5 tries): Perfect at par,
+##   Great within 2 over, Good within 5, Nice within 9, otherwise Caught. rating() rates a
+##   single throw the same way.
 
 const MIN_ACCURACY := 60
 
@@ -46,10 +48,26 @@ static func better(a: Dictionary, b: Dictionary) -> bool:
 	return compare(a, b) < 0
 
 
+## The day's rating from total tries over all its throws (par = one try each).
+static func rating_total(tries: int, throws: int) -> String:
+	if tries <= 0:
+		return ""
+	var over := tries - throws
+	if over <= 0:
+		return "Perfect"
+	if over <= 2:
+		return "Great"
+	if over <= 5:
+		return "Good"
+	if over <= 9:
+		return "Nice"
+	return "Caught"
+
+
 ## Short label for the past-days list and the home page.
 static func label(result: Dictionary) -> String:
 	var t := int(result.get("throws", 0))
-	return "%d throw%s · %d%%" % [t, "" if t == 1 else "s", int(result.get("accuracy", 0))]
+	return "%d %s · %d%%" % [t, "try" if t == 1 else "tries", int(result.get("accuracy", 0))]
 
 
 static func clock(seconds: float) -> String:
