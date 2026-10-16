@@ -1,8 +1,8 @@
-# Mystery Drink
+# Drinkle
 
 Cocktail Wordle meets Mastermind. Every day there is one mystery drink, the same for everyone. Guess drinks from the list; each guess shows how it compares to the mystery drink on six things, and you deduce the answer in six guesses. It rewards reasoning, not trivia: a player who only knows common drinks can still work it out.
 
-**Play:** https://jprier.github.io/GameTests/mystery-drink/
+**Play:** https://jprier.github.io/GameTests/drinkle/
 
 ## Playing
 

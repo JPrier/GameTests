@@ -1,5 +1,5 @@
 extends Node2D
-## Mystery Drink: the UI. Everything that decides the game lives in core/ (pure, tested);
+## Drinkle: the UI. Everything that decides the game lives in core/ (pure, tested);
 ## this script only lays out, draws and routes input.
 
 const Schema = preload("res://core/schema.gd")
@@ -14,7 +14,7 @@ const Save = preload("res://core/save.gd")
 const Daily = preload("res://core/daily.gd")
 const Analysis = preload("res://core/analysis.gd")
 
-const DEFAULT_URL := "https://jprier.github.io/GameTests/mystery-drink/"
+const DEFAULT_URL := "https://jprier.github.io/GameTests/drinkle/"
 const GOAL := "Name the mystery drink in 6 guesses."
 const TIER_NAMES := ["Easy", "Medium", "Hard"]
 const COL_LABELS := ["Family", "Base", "Fruit", "Bubbles", "Sweet", "Strength"]
@@ -463,7 +463,7 @@ func _mark_played() -> void:
 	if dev_mode or not OS.has_feature("web"):
 		return
 	var js := "try{localStorage.setItem(%s,%s)}catch(e){}" % [
-		JSON.stringify("gametests:mystery-drink:" + date), JSON.stringify(JSON.stringify({"result": game.result_label()}))]
+		JSON.stringify("gametests:drinkle:" + date), JSON.stringify(JSON.stringify({"result": game.result_label()}))]
 	JavaScriptBridge.eval(js, true)
 
 
@@ -1224,7 +1224,7 @@ func _draw() -> void:
 func _draw_head() -> void:
 	var r := head_rect
 	var title_size := 34 if portrait else 30
-	cv.draw_string(bold, Vector2(r.position.x, r.position.y + 34), "Mystery Drink", HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, C_INK)
+	cv.draw_string(bold, Vector2(r.position.x, r.position.y + 34), "Drinkle", HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, C_INK)
 	var sub := "#%d · %s · %s" % [number, Daily.short_date(date), TIER_NAMES[tier]]
 	if date < today:
 		sub += " · past day"
@@ -1710,7 +1710,7 @@ func _end_content(y0: float, draw: bool) -> float:
 	var w := modal_body.size.x
 	var t: Dictionary = game.target
 	var y := y0
-	var sub := "Mystery Drink #%d · %s" % [number, game.result_label()]
+	var sub := "Drinkle #%d · %s" % [number, game.result_label()]
 	if game.hints_used > 0:
 		sub += " · %d hint%s" % [game.hints_used, "" if game.hints_used == 1 else "s"]
 	y += _draw_para(Vector2(x, y), w, sub, 21, C_MUTED, font, draw) + 14
