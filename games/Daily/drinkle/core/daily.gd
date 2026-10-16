@@ -13,7 +13,7 @@ const DB = preload("res://core/db.gd")
 const Analysis = preload("res://core/analysis.gd")
 
 const EPOCH := "2026-10-16"          # puzzle #1
-const GAME := "mystery-drink"
+const GAME := "mystery-drink"     # seed salt; kept from the original name so answers never change
 const SCHEDULE_PATH := "res://data/schedule.json"
 
 static var _schedule: Dictionary = {}

@@ -118,7 +118,7 @@ func test_win_shows_end_screen_and_share():
 	await wait_seconds(1.6)
 	assert_eq(main.modal, "end", "end screen after the reveal")
 	var s: String = main.share_text()
-	assert_true(s.begins_with("Mystery Drink #%d" % Daily.day_number(DAY)), "share header: " + s)
+	assert_true(s.begins_with("Drinkle #%d" % Daily.day_number(DAY)), "share header: " + s)
 	assert_true(s.contains("2/6"), "score")
 	assert_true(s.ends_with(main.base_url), "plain game link")
 	assert_false(s.contains("dev=1"), "no dev flag")

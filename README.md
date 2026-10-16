@@ -9,7 +9,7 @@ Games live in category folders under `games/`, and the home page has one section
 ```
 games/
   Daily/
-    bloom/  bouquet-toss/  daily-bridge/  earthquake-test/  mystery-drink/  plans-tonight/  seating-chart/  ticker-time/
+    bloom/  bouquet-toss/  daily-bridge/  earthquake-test/  drinkle/  plans-tonight/  seating-chart/  ticker-time/
     Airplanes/
       flightle/  xray-shift/
   Incremental/
@@ -25,7 +25,7 @@ games/
 | Bouquet Toss: a daily wedding bouquet trick shot; drag, aim, let go, fewest throws wins | [`games/Daily/bouquet-toss`](games/Daily/bouquet-toss) |
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/Daily/daily-bridge`](games/Daily/daily-bridge) |
 | Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/Daily/earthquake-test`](games/Daily/earthquake-test) |
-| Mystery Drink: Cocktail Wordle meets Mastermind; every guess shows how close you are, deduce the drink in six | [`games/Daily/mystery-drink`](games/Daily/mystery-drink) |
+| Drinkle: Cocktail Wordle meets Mastermind; every guess shows how close you are, deduce the drink in six | [`games/Daily/drinkle`](games/Daily/drinkle) |
 | Plans Tonight?: a daily deduction puzzle, find the one plan that works for the whole friend group | [`games/Daily/plans-tonight`](games/Daily/plans-tonight) |
 | Seating Chart: seat ten wedding guests so every clue holds; a daily logic puzzle, easy on Monday, devious by Sunday | [`games/Daily/seating-chart`](games/Daily/seating-chart) |
 | Ticker Time: guess the year of real stock charts, then bet up or down with $1,000 | [`games/Daily/ticker-time`](games/Daily/ticker-time) |
