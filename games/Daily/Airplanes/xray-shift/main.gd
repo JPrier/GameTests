@@ -105,10 +105,15 @@ var archive_results: Dictionary = {}
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_PANEL, "surface_high": C_PANEL_HI, "text": C_INK, "text_muted": C_MUTED,
+		"border": Color(C_INK, 0.1), "accent": C_ACCENT, "on_accent": Color("1a1300"),
+		"success": C_GREEN, "danger": C_RED, "focus": C_ACCENT, "scrim": Color(0, 0, 0, 0.6),
+	})
 	_build_catalog()
 	_add_key_action("flag", [KEY_F, KEY_DOWN, KEY_X])
 	_add_key_action("confirm", [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_RIGHT])
-	_add_key_action("legend", [KEY_L, KEY_TAB])
+	_add_key_action("legend", [KEY_L])   # Tab is reserved for keyboard focus
 	_add_key_action("back", [KEY_ESCAPE])
 	_add_key_action("dev_toggle", [KEY_QUOTELEFT])
 	demo_bag = {"items": _place(["clothes", "hair_dryer", "knife", "phone", "keys"], _rng_for("demo")), "bad": [2]}
@@ -1103,6 +1108,8 @@ func _process(delta: float) -> void:
 func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventMouse or not ev.is_pressed() or ev.is_echo():
 		return
+	if GTUI.focused_id() != "" and ev.is_action_pressed("confirm"):
+		return   # Enter/Space press the focused control instead
 	var key := ev as InputEventKey
 	if ev.is_action_pressed("dev_toggle") and dev_mode:
 		dev_open = not dev_open
@@ -1133,6 +1140,15 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		if ev.pressed:
 			_on_press(make_input_local(ev).position)
@@ -1201,11 +1217,14 @@ func _btn(id: String, r: Rect2, label: String, style := "") -> void:
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24.0, 560.0)
+	var w := minf(vs.x - GTUI.dp(GTUI.SP_L) * 2, 560.0)
+	var th := GTUI.target()
 	col = Rect2((vs.x - w) * 0.5, 0, w, vs.y)
-	title_rect = Rect2(col.position.x, 0, 220, 56)
-	legend_rect = Rect2(col.position.x, 60, col.size.x, 74)
-	ctrl = Rect2(col.position.x, vs.y - 92, col.size.x, 76)
+	var head_h := GTUI.dp(GTUI.SP_S) * 2 + th
+	title_rect = Rect2(col.position.x, 0, 220, head_h)
+	legend_rect = Rect2(col.position.x, head_h, col.size.x, 74)
+	var ctrl_h := maxf(76.0, th)
+	ctrl = Rect2(col.position.x, vs.y - ctrl_h - GTUI.dp(GTUI.SP_L), col.size.x, ctrl_h)
 	var top := legend_rect.end.y + 10
 	mon = Rect2(col.position.x, top, col.size.x, maxf(220.0, ctrl.position.y - top - 52))
 	mon.size.y = minf(mon.size.y, col.size.x * 1.1)
@@ -1218,10 +1237,11 @@ func _layout() -> void:
 		_layout_archive(vs)
 		return
 	if legend_open:
-		_btn("legend_close", Rect2(col.end.x - 44, legend_rect.position.y + 6, 38, 38), "X", "ghost")
+		_btn("legend_close", Rect2(col.end.x - th - GTUI.dp(GTUI.SP_S), legend_rect.position.y + GTUI.dp(GTUI.SP_S), th, th), "", "close")
 		return
 	if screen != Screen.PLAY:
-		_btn("archive", Rect2(col.end.x - 44, 10, 44, 42), "", "icon")
+		var icons := GTUI.icon_row(col.end.x, GTUI.dp(GTUI.SP_S), ["archive"])
+		_btn("archive", icons["archive"], "", "icon")
 	match screen:
 		Screen.MENU:
 			mon.size.y = minf(mon.size.y, 250.0)
@@ -1230,41 +1250,42 @@ func _layout() -> void:
 			_layout_play()
 		Screen.END:
 			if date != today:
-				var hw := (ctrl.size.x - 12) * 0.5
-				_btn("share", Rect2(ctrl.position.x, ctrl.position.y, hw, ctrl.size.y), "Share result", "primary")
-				_btn("today", Rect2(ctrl.position.x + hw + 12, ctrl.position.y, hw, ctrl.size.y), "Today's shift", "ghost_big")
+				var rr := GTUI.row(ctrl, 2)
+				_btn("today", rr[0], "Today's shift", "ghost_big")
+				_btn("share", rr[1], "Share result", "primary")
 			else:
 				_btn("share", ctrl, "Share result", "primary")
 
 
-func _archive_row_h(vs: Vector2) -> float:
-	return clampf((vs.y - 62 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+func _archive_row_h(_vs: Vector2) -> float:
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_card(vs: Vector2) -> Rect2:
-	var w := minf(col.size.x, 440.0)
-	return Rect2((vs.x - w) * 0.5, 62, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h(vs) - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 440, GTUI.modal_height(content_h))
 
 
 func _layout_archive(vs: Vector2) -> void:
-	var c := _archive_card(vs)
+	var card := _archive_card(vs)
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h(vs)
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
-		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "arch")
-	var bw := (c.size.x - 24 - 16) / 3.0
-	var by := c.end.y - 58
-	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "arch")
-	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close", "arch")
-	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "arch")
+		_btn("day_" + String(days[i]), Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target()), "", "arch")
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	_btn("arch_newer", pr[0], "Newer", "arch")
+	_btn("arch_older", pr[1], "Older", "arch")
+	_btn("arch_close", GTUI.modal_close_rect(card), "", "arch")
 
 
 func _layout_play() -> void:
-	var hw := (ctrl.size.x - 12) * 0.5
 	if phase == Phase.SCAN or phase == Phase.ENTER or phase == Phase.EXIT:
 		if phase == Phase.SCAN:
-			_btn("clear", Rect2(ctrl.position.x, ctrl.position.y, hw, ctrl.size.y), "CLEAR", "clear")
-			_btn("flag", Rect2(ctrl.position.x + hw + 12, ctrl.position.y, hw, ctrl.size.y), "FLAG", "flag")
+			var rr := GTUI.row(ctrl, 2)
+			_btn("clear", rr[0], "Clear", "clear")
+			_btn("flag", rr[1], "Flag", "flag")
 	elif phase == Phase.OPEN and close_hold < 0.0:
 		_btn("done", ctrl, "Done - close bag", "ghost_big")
 	if phase in [Phase.OPENING, Phase.OPEN, Phase.CLOSING]:
@@ -1365,6 +1386,7 @@ func _draw_icon(id: String, r: Rect2, real := 0.0, max_sc := INF) -> void:
 
 
 func _draw() -> void:
+	GTUI.begin()
 	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), C_BG)
 	_draw_header()
 	match screen:
@@ -1373,11 +1395,10 @@ func _draw() -> void:
 		Screen.END: _draw_end()
 	_draw_legend_strip()
 	for b in buttons:
-		if not String(b.style) in ["dev", "arch", "icon"] and not String(b.id) == "legend_close":
+		if not String(b.style) in ["dev", "arch", "icon", "close"]:
 			_draw_button(b)
 		elif String(b.style) == "icon":
-			_round_rect(b.rect, C_PANEL_HI, 10)
-			_draw_calendar(b.rect.get_center(), C_INK)
+			GTUI.icon_button(self, String(b.id), b.rect, "calendar")
 	if legend_open:
 		_draw_legend_panel()
 	if archive_open:
@@ -1393,50 +1414,55 @@ func _draw() -> void:
 	if dev_open:
 		_draw_dev()
 	if toast_t > 0.0:
-		var a := clampf(toast_t * 3.0, 0.0, 1.0)
-		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 32
-		var r := Rect2(col.get_center().x - tw * 0.5, ctrl.position.y - 52, tw, 38)
-		_round_rect(r, Color(C_PANEL_HI, a), 19)
-		_center_text(r.get_center().x, r.position.y + 25, toast, 16, Color(C_INK, a))
+		GTUI.toast(self, toast, clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0), ctrl.position.y - GTUI.dp(GTUI.SP_M))
 
 
 func _draw_header() -> void:
 	var x := col.position.x
-	_text(Vector2(x, 32), "X-RAY SHIFT", 24, C_ACCENT)
-	_text(Vector2(x, 50), "Shift #%d  ·  %s%s" % [puzzle_no, date, "  ·  DEV" if dev_mode else ""], 12, C_MUTED)
+	var th := GTUI.target()
+	var y0 := GTUI.dp(GTUI.SP_S)
+	var lt := GTUI.line_height(GTUI.FS_HEADING) - GTUI.dp(GTUI.SP_XS)
+	var lm := GTUI.line_height(GTUI.FS_CAPTION)
+	var ty := y0 + (th - lt - lm) / 2.0
+	var meta := "Shift #%d · %s%s" % [puzzle_no, _pretty_date(date), " · DEV" if dev_mode else ""]
 	if date != today and screen != Screen.PLAY:
-		var sw := font.get_string_size("Shift #%d  ·  %s%s" % [puzzle_no, date, "  ·  DEV" if dev_mode else ""], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-		_text(Vector2(x + sw + 10, 50), "PAST SHIFT", 12, C_ACCENT)
+		meta += " · past shift"
+	# the stencil-yellow wordmark is X-Ray Shift's own lettering
+	GTUI.text_in(self, Rect2(x, ty, col.size.x * 0.6, lt), "X-RAY SHIFT", GTUI.FS_HEADING, C_ACCENT, -1, true)
+	GTUI.text_in(self, Rect2(x, ty + lt, col.size.x * 0.7, lm), meta, GTUI.FS_CAPTION, C_MUTED if date == today else C_ACCENT, -1)
 	if screen == Screen.PLAY:
-		var shown := base_score()
-		_text(Vector2(col.end.x - 200, 30), _num(shown), 24, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, 200)
-		_text(Vector2(col.end.x - 200, 50), "%s   bag %d/%d" % [clock(elapsed), mini(bag_i + 1, BAGS), BAGS], 13, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 200)
+		var w := GTUI.dp(160)
+		GTUI.text_in(self, Rect2(col.end.x - w, ty, w, lt), _num(base_score()), GTUI.FS_HEADING, C_INK, 1, true)
+		GTUI.text_in(self, Rect2(col.end.x - w, ty + lt, w, lm), "%s · bag %d/%d" % [clock(elapsed), mini(bag_i + 1, BAGS), BAGS], GTUI.FS_CAPTION, C_MUTED, 1)
 
 
 func _draw_legend_strip() -> void:
 	var r := legend_rect
-	_round_rect(r, Color("2a1d22"), 10)
-	draw_rect(r.grow(-1), Color(C_RED, 0.35), false, 1.0)
-	_text(Vector2(r.position.x + 10, r.position.y + 15), "CONTRABAND - flag bags with any of these", 11, Color("ff9aa2"))
-	_text(Vector2(r.end.x - 70, r.position.y + 15), "tap: details", 10, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 60)
+	GTUI.register("legend", r, not (legend_open or archive_open or dev_open))
+	GTUI.box(self, r, Color("2a1d22"), GTUI.R_PANEL, Color(C_RED, 0.35))
+	var cap := GTUI.line_height(GTUI.FS_CAPTION)
+	GTUI.text_in(self, Rect2(r.position.x + 10, r.position.y + 2, r.size.x * 0.7, cap), "Contraband: flag bags with any of these", GTUI.FS_CAPTION, Color("ff9aa2"), -1, true)
+	GTUI.text_in(self, Rect2(r.end.x - 110, r.position.y + 2, 100, cap), "tap: details", GTUI.FS_CAPTION, C_MUTED, 1)
 	var cw := (r.size.x - 8) / BAD_IDS.size()
 	for i in BAD_IDS.size():
-		var cell := Rect2(r.position.x + 4 + i * cw, r.position.y + 19, cw, 54)
-		_round_rect(Rect2(cell.position.x + 3, cell.position.y + 1, cell.size.x - 6, 34), C_SCREEN, 6)
-		_draw_icon(BAD_IDS[i], Rect2(cell.position.x + 7, cell.position.y + 4, cell.size.x - 14, 28))
-		_center_text(cell.get_center().x, cell.position.y + 49, CAT[BAD_IDS[i]].name, 10, C_INK)
+		var cell := Rect2(r.position.x + 4 + i * cw, r.position.y + cap, cw, r.size.y - cap)
+		_round_rect(Rect2(cell.position.x + 3, cell.position.y + 1, cell.size.x - 6, 32), C_SCREEN, GTUI.R_CONTROL)
+		_draw_icon(BAD_IDS[i], Rect2(cell.position.x + 7, cell.position.y + 3, cell.size.x - 14, 28))
+		GTUI.text_in(self, Rect2(cell.position.x, cell.position.y + 33, cell.size.x, cell.size.y - 35), CAT[BAD_IDS[i]].name, GTUI.FS_CAPTION - 1, C_INK, 0, false, 8)
+	GTUI.focus_ring(self, "legend", r)
 
 
 func _draw_legend_panel() -> void:
 	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
+	GTUI.scrim(self)   # overlay layer; the legend card below keeps its own shape
 	var top := legend_rect.position.y
 	var p := Rect2(col.position.x, top, col.size.x, minf(vs.y - top - 12, 620))
-	_round_rect(p, C_PANEL, 12)
-	_text(Vector2(p.position.x + 14, top + 30), "What to flag", 20, C_ACCENT)
-	_draw_button({"id": "legend_close", "rect": Rect2(col.end.x - 44, top + 6, 38, 38), "label": "X", "style": "ghost"})
-	var y := top + 48
-	_text(Vector2(p.position.x + 14, y + 6), "X-ray colours:", 12, C_MUTED)
+	GTUI.box(self, p, C_PANEL, GTUI.R_OVERLAY, Color(C_INK, 0.12))
+	var th := GTUI.target()
+	GTUI.text_in(self, Rect2(p.position.x + GTUI.dp(GTUI.SP_L), top + GTUI.dp(GTUI.SP_S), p.size.x - th * 2, th), "What to flag", GTUI.FS_TITLE, C_ACCENT, -1, true)
+	GTUI.icon_button(self, "legend_close", Rect2(col.end.x - th - GTUI.dp(GTUI.SP_S), top + GTUI.dp(GTUI.SP_S), th, th), "close")
+	var y := top + th + GTUI.dp(GTUI.SP_M)
+	GTUI.text_in(self, Rect2(p.position.x + 14, y - 8, 100, 20), "X-ray colours:", GTUI.FS_CAPTION, C_MUTED, -1)
 	var kx := p.position.x + 108
 	for pair in [["metal", "metal"], ["organic", "organic"], ["plastic", "plastic"]]:
 		var c: Color = XR[pair[0]]
@@ -1449,7 +1475,7 @@ func _draw_legend_panel() -> void:
 	rh = minf(rh, 84)
 	for id in BAD_IDS:
 		var row := Rect2(p.position.x + 10, y, p.size.x - 20, rh - 6)
-		_round_rect(row, C_PANEL_HI, 8)
+		GTUI.box(self, row, C_PANEL_HI, GTUI.R_CONTROL)
 		var ic := Rect2(row.position.x + 6, row.position.y + 6, 62, row.size.y - 12)
 		_round_rect(ic, C_SCREEN, 6)
 		var ok: String = LOOKALIKE[id]
@@ -1461,8 +1487,8 @@ func _draw_legend_panel() -> void:
 		var tx := ic.end.x + 10
 		var tw := ic2.position.x - tx - 8
 		_text(Vector2(tx, row.position.y + 22), CAT[id].name, 16, Color("ff8f98"))
-		draw_multiline_string(font, Vector2(tx, row.position.y + 38), LEGEND_NOTE[id], HORIZONTAL_ALIGNMENT_LEFT, tw, 11, 2, C_INK)
-		_text(Vector2(tx, row.end.y - 8), "OK: " + CAT[ok].name, 11, C_GREEN, HORIZONTAL_ALIGNMENT_LEFT, tw)
+		draw_multiline_string(font, Vector2(tx, row.position.y + 38), LEGEND_NOTE[id], HORIZONTAL_ALIGNMENT_LEFT, tw, 12, 2, C_INK)
+		_text(Vector2(tx, row.end.y - 8), "OK: " + CAT[ok].name, 12, C_GREEN, HORIZONTAL_ALIGNMENT_LEFT, tw)
 		y += rh
 
 
@@ -1510,23 +1536,22 @@ func _draw_menu() -> void:
 	_ring(c + kn.pos * s, 40 * s, Color(C_RED, pulse), 3)
 	_text(mon.position + Vector2(8, 15), "TRAINING IMAGE", 11, Color(0.2, 0.25, 0.3, 0.8))
 	_draw_monitor_frame("")
-	var y := mon.end.y + 30
+	var y := mon.end.y + GTUI.dp(GTUI.SP_L)
 	var cx := col.get_center().x
-	_center_text(cx, y, "Clear the clean bags. Flag the ones with contraband,", 15, C_INK)
-	_center_text(cx, y + 20, "then tap every illegal item inside.", 15, C_INK)
-	y += 52
+	y = GTUI.paragraph(self, col.position.x, y, col.size.x, "Clear the clean bags. Flag the ones with contraband, then tap every illegal item inside.", GTUI.FS_BODY, C_INK, true) + GTUI.dp(GTUI.SP_S)
 	var lines := [["+%d" % FIND_PTS, "each contraband item you find", C_GREEN],
 		["%d" % FALSE_ALARM_PTS, "flagging a clean bag", C_RED],
 		["%d" % WRONG_PTS, "tapping a harmless item", C_RED],
 		["+%d/s" % TIME_PTS, "time bonus under %s" % clock(TIME_PAR), C_ACCENT]]
+	var lh := GTUI.line_height(GTUI.FS_LABEL)
 	for l in lines:
-		if y > ctrl.position.y - 12:
+		if y + lh > ctrl.position.y - 12:
 			break
-		_text(Vector2(cx - 150, y), l[0], 15, l[2], HORIZONTAL_ALIGNMENT_RIGHT, 60)
-		_text(Vector2(cx - 80, y), l[1], 14, C_MUTED)
-		y += 21
-	if y < ctrl.position.y - 16:
-		_center_text(cx, y + 8, "%d bags · Keys: Space clear, F flag, 1-9 pick, L legend" % BAGS, 11, Color(C_MUTED, 0.8))
+		GTUI.text_in(self, Rect2(cx - 150, y, 60, lh), l[0], GTUI.FS_LABEL, l[2], 1, true)
+		GTUI.text_in(self, Rect2(cx - 80, y, col.end.x - cx + 80, lh), l[1], GTUI.FS_LABEL, C_MUTED, -1)
+		y += lh
+	if y + lh < ctrl.position.y - 16:
+		GTUI.text_in(self, Rect2(col.position.x, y + GTUI.dp(GTUI.SP_XS), col.size.x, GTUI.line_height(GTUI.FS_CAPTION)), "%d bags · Keys: Space clear, F flag, 1-9 pick, L legend" % BAGS, GTUI.FS_CAPTION, Color(C_MUTED, 0.8))
 
 
 func _draw_play() -> void:
@@ -1657,114 +1682,75 @@ func _draw_end() -> void:
 	var cx := col.get_center().x
 	var top := legend_rect.end.y + 14
 	var card := Rect2(col.position.x, top, col.size.x, ctrl.position.y - top - 14)
-	_round_rect(card, C_PANEL, 12)
-	var y := top + 34
-	_center_text(cx, y, "SHIFT COMPLETE", 16, C_MUTED)
-	y += 54
-	_center_text(cx, y, _num(total_score()), 52, C_ACCENT)
-	y += 22
-	_center_text(cx, y, "points", 13, C_MUTED)
-	y += 30
+	GTUI.panel(self, card)
+	var y := top + GTUI.dp(GTUI.SP_L)
+	GTUI.text_in(self, Rect2(card.position.x, y, card.size.x, GTUI.line_height(GTUI.FS_CAPTION)), "SHIFT COMPLETE", GTUI.FS_CAPTION, C_MUTED, 0, true)
+	y += GTUI.line_height(GTUI.FS_CAPTION)
+	GTUI.text_in(self, Rect2(card.position.x, y, card.size.x, GTUI.line_height(GTUI.FS_DISPLAY)), _num(total_score()), GTUI.FS_DISPLAY, C_ACCENT, 0, true)
+	y += GTUI.line_height(GTUI.FS_DISPLAY)
+	GTUI.text_in(self, Rect2(card.position.x, y, card.size.x, GTUI.line_height(GTUI.FS_LABEL)), "points", GTUI.FS_LABEL, C_MUTED)
+	y += GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_M)
 	var dw := minf(28.0, (col.size.x - 40 - 9 * 6) / BAGS)
 	var dx := cx - (dw * BAGS + 6 * (BAGS - 1)) * 0.5
 	for i in BAGS:
 		var m := bag_mark(i)
 		var cc: Color = [C_PANEL_HI, C_GREEN, C_ACCENT, C_RED][m + 1]
 		_round_rect(Rect2(dx + i * (dw + 6), y, dw, dw), cc, 5)
-	y += dw + 30
+	y += dw + GTUI.dp(GTUI.SP_L)
 	var rows := [
 		["Contraband found  %d/%d" % [found_total(), contraband_total()], found_total() * FIND_PTS, C_GREEN],
 		["False alarms  %d" % false_alarms(), false_alarms() * FALSE_ALARM_PTS, C_RED],
 		["Harmless items tapped  %d" % wrong_total(), wrong_total() * WRONG_PTS, C_RED],
 		["Time  %s" % clock(elapsed), time_bonus(), C_ACCENT],
 	]
-	var lx := card.position.x + 22
-	var rx := card.end.x - 22
+	var lx := card.position.x + GTUI.dp(GTUI.SP_L)
+	var rx := card.end.x - GTUI.dp(GTUI.SP_L)
+	var lh := GTUI.line_height(GTUI.FS_BODY)
 	for row in rows:
-		if y > card.end.y - 40:
+		if y + lh > card.end.y - 30:
 			break
-		_text(Vector2(lx, y), row[0], 15, C_INK)
+		GTUI.text_in(self, Rect2(lx, y, rx - lx - 100, lh), row[0], GTUI.FS_BODY, C_INK, -1)
 		var v: int = row[1]
-		_text(Vector2(rx - 120, y), ("+" if v > 0 else "") + _num(v), 15, row[2] if v != 0 else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 120)
-		y += 28
+		GTUI.text_in(self, Rect2(rx - 100, y, 100, lh), ("+" if v > 0 else "") + _num(v), GTUI.FS_BODY, row[2] if v != 0 else C_MUTED, 1, true)
+		y += lh
 	var left := 86400 - int(Time.get_unix_time_from_system()) % 86400
-	if y < card.end.y - 16:
+	if y < card.end.y - 24:
 		var nxt := "Next shift in %d:%02d:%02d" % [left / 3600, (left / 60) % 60, left % 60] if date == today else "Past shift · %s" % _pretty_date(date)
-		_center_text(cx, card.end.y - 16, nxt, 12, C_MUTED)
+		GTUI.text_in(self, Rect2(card.position.x, card.end.y - GTUI.dp(GTUI.SP_L) - GTUI.line_height(GTUI.FS_CAPTION), card.size.x, GTUI.line_height(GTUI.FS_CAPTION)), nxt, GTUI.FS_CAPTION, C_MUTED)
 
 
 func _draw_button(b: Dictionary) -> void:
 	var r: Rect2 = b.rect
 	var style := String(b.style)
-	var bg := C_PANEL_HI
-	var fg := C_INK
-	var size := 18
+	var id := String(b.id)
 	match style:
 		"primary":
-			bg = C_ACCENT
-			fg = Color("1a1300")
-			size = 20
-		"clear":
-			bg = Color("1f7a4c")
-			size = 24
-		"flag":
-			bg = Color("b8323e")
-			size = 24
-		"ghost_big":
-			bg = C_PANEL_HI
-			size = 20
-		"ghost":
-			bg = Color(C_PANEL_HI, 0.8)
-			size = 16
+			GTUI.button(self, id, r, String(b.label), "primary", true, GTUI.FS_BODY + 2)
+		"clear", "flag":
+			# the two verdicts are the game's core actions: semantic colours + their key hint
+			GTUI.button(self, id, r.grow_individual(0, 0, 0, -GTUI.dp(14)), String(b.label), "success" if style == "clear" else "danger", true, GTUI.FS_TITLE)
+			var ink := GTUI.ink_on(C_GREEN if style == "clear" else C_RED)
+			GTUI.text_in(self, Rect2(r.position.x, r.end.y - GTUI.dp(22), r.size.x, GTUI.dp(16)), "Space" if style == "clear" else "F", GTUI.FS_CAPTION, Color(ink, 0.6))
 		"dev":
-			bg = Color("3a2f55")
-			size = 14
-	_round_rect(r, bg, 10)
-	var ty := r.position.y + r.size.y * 0.5 + size * 0.35
-	if style == "clear" or style == "flag":
-		ty -= 7
-		var hint := "Space" if style == "clear" else "F"
-		_center_text(r.get_center().x, r.end.y - 10, hint, 11, Color(1, 1, 1, 0.55))
-	_center_text(r.get_center().x, ty, String(b.label), size, fg)
-
-
-## Small calendar glyph for the past-shifts button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var r := Rect2(c.x - 9, c.y - 8, 18, 17)
-	draw_rect(r, col_, false, 1.8)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5), col_)
-	draw_line(Vector2(c.x - 4.5, c.y - 11), Vector2(c.x - 4.5, c.y - 6), col_, 1.8)
-	draw_line(Vector2(c.x + 4.5, c.y - 11), Vector2(c.x + 4.5, c.y - 6), col_, 1.8)
-	for i in 3:
-		draw_rect(Rect2(c.x - 6.5 + i * 4.5, c.y + 1.5, 3, 3), col_)
+			GTUI.button(self, id, r, String(b.label), "secondary", true, GTUI.FS_LABEL)
+		_:
+			GTUI.button(self, id, r, String(b.label), "secondary", true, GTUI.FS_BODY)
 
 
 func _draw_archive() -> void:
 	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
-	var c := _archive_card(vs)
-	_round_rect(c, C_PANEL, 14)
-	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past shifts", 20, C_INK)
-	_text(Vector2(c.position.x, c.position.y + 34), "Page %d of %d" % [archive_page + 1, archive_pages()], 12, C_MUTED,
-		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	var c := GTUI.modal(self, _archive_card(vs), "Past shifts", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		var id := String(b.id)
 		var r: Rect2 = b.rect
 		if id.begins_with("day_"):
 			var d := id.substr(4)
-			_round_rect(r, C_PANEL_HI, 8)
-			if d == date:
-				draw_rect(r, C_ACCENT, false, 2.0)
-			var mid := r.position.y + r.size.y * 0.5 + 6
-			_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
-			_text(Vector2(r.position.x + 64, mid), "Today" if d == today else _pretty_date(d), 15, C_INK)
 			var res := String(archive_results.get(d, ""))
-			_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12,
-				C_GREEN if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
-		elif id.begins_with("arch_"):
+			GTUI.list_row(self, id, r, "#%d" % day_number(d), "Today" if d == today else _pretty_date(d), res if res != "" else "Not played", d == date, C_GREEN if res != "" else Color(0, 0, 0, 0))
+		elif id == "arch_newer" or id == "arch_older":
 			var en := not ((id == "arch_newer" and archive_page == 0) or (id == "arch_older" and archive_page >= archive_pages() - 1))
-			_round_rect(r, C_PANEL_HI if en else C_BG, 10)
-			_center_text(r.get_center().x, r.position.y + r.size.y * 0.5 + 5, String(b.label), 14, C_INK if en else C_MUTED)
+			GTUI.button(self, id, r, String(b.label), "secondary", en)
 
 
 func _draw_dev() -> void:

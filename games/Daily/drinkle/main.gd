@@ -134,6 +134,11 @@ func _ready() -> void:
 	fv.base_font = font
 	fv.variation_embolden = 0.7
 	bold = fv
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_PANEL, "surface_high": C_CARD, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_LINE, "accent": C_ACCENT, "on_accent": C_ACCENT_INK,
+		"success": C_GREEN, "danger": C_PINK, "focus": C_ACCENT, "scrim": Color(0.05, 0.03, 0.08, 0.78),
+	})
 	RenderingServer.set_default_clear_color(C_BG)
 	_add_key_action("submit", [KEY_ENTER, KEY_KP_ENTER])
 	_add_key_action("erase", [KEY_BACKSPACE])
@@ -713,8 +718,8 @@ func layout_for(vs: Vector2) -> void:
 		col = Rect2((vs.x - cw) * 0.5, 0, cw, vs.y)
 		var x := col.position.x
 		var y := 12.0
-		head_rect = Rect2(x, y, cw, 64)
-		y += 64 + 6
+		head_rect = Rect2(x, y, cw, _head_h())
+		y += _head_h() + 6
 		var hero_h := clampf(vs.y * 0.085, 96.0, 132.0)
 		hero_rect = Rect2(x, y, cw, hero_h)
 		y += hero_h + 8
@@ -724,7 +729,7 @@ func layout_for(vs: Vector2) -> void:
 		y += 58 + 8
 		msg_rect = Rect2(x, y, cw, 56)
 		y += 56 + 10
-		var key_h := clampf(vs.y * 0.046, 54.0, 74.0)
+		var key_h := maxf(GTUI.target(), clampf(vs.y * 0.046, 54.0, 74.0))
 		var kb_h := key_h * 3 + 8 * 2
 		kb_rect = Rect2(x, vs.y - 12 - kb_h, cw, kb_h)
 		input_rect = Rect2(x, kb_rect.position.y - 12 - 68, cw, 68)
@@ -745,8 +750,8 @@ func layout_for(vs: Vector2) -> void:
 		var x0 := (vs.x - total - pad) * 0.5
 		col = Rect2(x0, 0, lw, vs.y)
 		var y := 10.0
-		head_rect = Rect2(x0, y, lw, 58)
-		y += 58 + 6
+		head_rect = Rect2(x0, y, lw, _head_h())
+		y += _head_h() + 6
 		colhead_rect = Rect2(x0, y, lw, 26)
 		y += 26 + 2
 		known_rect = Rect2(x0, y, lw, 52)
@@ -757,7 +762,7 @@ func layout_for(vs: Vector2) -> void:
 		slot_h = minf(rows_rect.size.y / 6.0, 104.0)
 		rows_rect.size.y = slot_h * 6
 		var rx := x0 + lw + pad
-		var key_h := clampf(vs.y * 0.075, 46.0, 66.0)
+		var key_h := maxf(GTUI.target(), clampf(vs.y * 0.075, 46.0, 66.0))
 		var kb_h := key_h * 3 + 8 * 2
 		kb_rect = Rect2(rx, vs.y - 10 - kb_h, rw, kb_h)
 		input_rect = Rect2(rx, kb_rect.position.y - 10 - 64, rw, 64)
@@ -767,10 +772,9 @@ func layout_for(vs: Vector2) -> void:
 		panel_rect = Rect2(rx, 10, rw, input_rect.position.y - 18)
 	panel_list_rect = Rect2(panel_rect.position.x, panel_rect.position.y + PANEL_HEAD, panel_rect.size.x, panel_rect.size.y - PANEL_HEAD)
 	title_rect = Rect2(head_rect.position.x, head_rect.position.y, head_rect.size.x - 120, head_rect.size.y)
-	var mw := minf(vs.x - 24, 680.0)
-	var mh := minf(vs.y - 40, 1160.0)
-	modal_rect = Rect2((vs.x - mw) * 0.5, (vs.y - mh) * 0.5, mw, mh)
-	modal_body = Rect2(modal_rect.position.x + 24, modal_rect.position.y + 76, mw - 48, mh - 76 - 100)
+	modal_rect = GTUI.modal_rect(self, 600, minf(vs.y - GTUI.dp(GTUI.SP_L) * 2, GTUI.dp(820)))
+	var mc := GTUI.modal_content(modal_rect)
+	modal_body = Rect2(mc.position, mc.size - Vector2(0, GTUI.target() + GTUI.dp(GTUI.SP_XL)))
 	_clamp_scrolls()
 	_build_buttons()
 
@@ -812,17 +816,18 @@ func _build_buttons() -> void:
 			_dev_buttons(vs)
 		return
 	var hr := head_rect
-	_btn("help", Rect2(hr.end.x - 52, hr.position.y + 6, 52, 52), "?", "icon")
-	_btn("archive", Rect2(hr.end.x - 112, hr.position.y + 6, 52, 52), "cal", "icon")
+	var icons := GTUI.icon_row(hr.end.x, hr.position.y + (hr.size.y - GTUI.target()) / 2.0, ["archive", "help"])
+	_btn("help", icons["help"], "?", "icon")
+	_btn("archive", icons["archive"], "cal", "icon")
 	if game and game.finished:
 		var bw := (input_rect.size.x - 12) * 0.5
-		_btn("result", Rect2(input_rect.position.x, input_rect.position.y, bw, input_rect.size.y), "See result", "primary")
-		_btn("share", Rect2(input_rect.position.x + bw + 12, input_rect.position.y, bw, input_rect.size.y), "Share", "accent")
+		_btn("result", Rect2(input_rect.position.x, input_rect.position.y, bw, input_rect.size.y), "See result", "ghost")
+		_btn("share", Rect2(input_rect.position.x + bw + 12, input_rect.position.y, bw, input_rect.size.y), "Share", "primary")
 		if date != today:
 			_btn("today", Rect2(kb_rect.position.x, kb_rect.position.y, kb_rect.size.x, 60), "Play today's drink", "ghost")
 	else:
-		var gw := 128.0
-		var hw := 104.0
+		var gw := maxf(128.0, GTUI.dp(88))
+		var hw := maxf(104.0, GTUI.text_width("Hint (3)", GTUI.FS_LABEL + 2, true) + GTUI.dp(GTUI.SP_M) * 2)
 		field_rect = Rect2(input_rect.position.x, input_rect.position.y, input_rect.size.x - gw - hw - 16, input_rect.size.y)
 		_btn("hint", Rect2(field_rect.end.x + 8, input_rect.position.y, hw, input_rect.size.y),
 			"Hint", "ghost", game != null and game.can_hint())
@@ -830,7 +835,8 @@ func _build_buttons() -> void:
 			selected_id != "" or query.strip_edges() != "")
 		_keyboard_buttons()
 		if panel_open:
-			_btn("panel_close", Rect2(panel_rect.end.x - 52, panel_rect.position.y + 2, 48, 40), "x", "icon_small")
+			var t := GTUI.target()
+			_btn("panel_close", Rect2(panel_rect.end.x - t - 2, panel_rect.position.y + (PANEL_HEAD - t) / 2.0, t, t), "x", "icon_small")
 	if dev_mode and dev_open:
 		_dev_buttons(vs)
 
@@ -860,25 +866,24 @@ func _keyboard_buttons() -> void:
 
 func _modal_buttons(_vs: Vector2) -> void:
 	var m := modal_rect
-	var by := m.end.y - 24 - 60
-	var inner := m.size.x - 48
+	var row := GTUI.modal_buttons_rect(GTUI.modal_content(m))
+	_btn("close", GTUI.modal_close_rect(m), "x", "modal_x")
 	match modal:
 		"help":
-			_btn("close", Rect2(m.position.x + 24, by, inner, 60), "Let's play", "primary")
+			_btn("close", row, "Let's play", "primary")
 		"end":
-			var bw := (inner - 12) * 0.5
-			_btn("share", Rect2(m.position.x + 24, by, bw, 60), "Share", "accent")
-			_btn("copy", Rect2(m.position.x + 36 + bw, by, bw, 60), "Copy result", "ghost")
-			_btn("close", Rect2(m.end.x - 60, m.position.y + 10, 50, 50), "x", "icon_small")
+			var rr := GTUI.row(row, 2, [1.0, 1.4])
+			_btn("copy", rr[0], "Copy result", "ghost")
+			_btn("share", rr[1], "Share", "primary")
 		"archive":
-			var bw3 := (inner - 24) / 3.0
-			_btn("arch_newer", Rect2(m.position.x + 24, by, bw3, 60), "Newer", "ghost", archive_page > 0)
-			_btn("close", Rect2(m.position.x + 36 + bw3, by, bw3, 60), "Close", "primary")
-			_btn("arch_older", Rect2(m.position.x + 48 + bw3 * 2, by, bw3, 60), "Older", "ghost", archive_page < archive_pages() - 1)
+			var rr := GTUI.row(row, 2)
+			_btn("arch_newer", rr[0], "Newer", "ghost", archive_page > 0)
+			_btn("arch_older", rr[1], "Older", "ghost", archive_page < archive_pages() - 1)
 			var days := archive_page_days(archive_page)
-			var rh := minf(84.0, (by - 16 - (m.position.y + 96)) / ARCHIVE_ROWS)
+			var y0 := modal_body.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
+			var rh := GTUI.target() + GTUI.dp(GTUI.SP_S)
 			for i in days.size():
-				_btn("day_" + String(days[i]), Rect2(m.position.x + 24, m.position.y + 96 + i * rh, inner, rh - 8), "", "day")
+				_btn("day_" + String(days[i]), Rect2(modal_body.position.x, y0 + i * rh, modal_body.size.x, GTUI.target()), "", "day")
 
 
 func _dev_buttons(vs: Vector2) -> void:
@@ -892,7 +897,7 @@ func _dev_buttons(vs: Vector2) -> void:
 		["dev_reset", "Reset"], ["dev_win", "Win"], ["dev_lose", "Lose"],
 		["dev_answer", "Answer"], ["dev_tomorrow", "Rollover"], ["dev_hide", "Hide"]]
 	for i in ids.size():
-		_btn(ids[i][0], Rect2(x + (i % 3) * (bw + 6), y + (i / 3) * 38, bw, 32), ids[i][1], "dev")
+		_btn(ids[i][0], Rect2(x + (i % 3) * (bw + 6), y + (i / 3) * 38, bw, 32), ids[i][1], "dev")   # dev-only, not registered
 
 
 func _button_at(p: Vector2) -> Dictionary:
@@ -1007,6 +1012,15 @@ func _ensure_hover_visible() -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(ev)
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventMouseButton:
 		if ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			if ev.pressed:
@@ -1195,6 +1209,7 @@ func _rrect(r: Rect2, color: Color, radius := 12.0, filled := true, width := 2.0
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
+	GTUI.begin()
 	var vs := get_viewport_rect().size
 	if modal != "help" and modal != "end":
 		modal_painter = Callable()
@@ -1215,7 +1230,6 @@ func _draw() -> void:
 	if panel_open and modal == "":
 		_draw_panel()
 	if modal != "":
-		cv.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.05, 0.03, 0.08, 0.78))
 		match modal:
 			"help": _draw_help()
 			"end": _draw_end()
@@ -1229,14 +1243,17 @@ func _draw() -> void:
 
 func _draw_head() -> void:
 	var r := head_rect
-	var title_size := 34 if portrait else 30
-	cv.draw_string(bold, Vector2(r.position.x, r.position.y + 34), "Drinkle", HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, C_INK)
+	var lh_t := GTUI.line_height(GTUI.FS_HEADING)
+	var lh_m := GTUI.line_height(GTUI.FS_LABEL)
+	var ty := r.position.y + (r.size.y - lh_t - lh_m + GTUI.dp(GTUI.SP_XS)) / 2.0
+	var tw := r.size.x - GTUI.target() * 2 - GTUI.dp(GTUI.SP_L)
+	GTUI.text_in(self, Rect2(r.position.x, ty, tw, lh_t), "Drinkle", GTUI.FS_HEADING, C_INK, -1, true)
 	var sub := "#%d · %s · %s" % [number, Daily.short_date(date), TIER_NAMES[tier]]
 	if date < today:
 		sub += " · past day"
 	elif date > today:
 		sub += " · preview"
-	cv.draw_string(font, Vector2(r.position.x, r.position.y + 60), sub, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 130, 20, C_MUTED)
+	GTUI.text_in(self, Rect2(r.position.x, ty + lh_t - GTUI.dp(GTUI.SP_XS), tw, lh_m), sub, GTUI.FS_LABEL, C_MUTED, -1)
 
 
 func _draw_hero() -> void:
@@ -1276,7 +1293,7 @@ func _draw_hero() -> void:
 	var status := "Solved in %d" % game.guesses.size() if game.won else ("%d guess%s left" % [left, "" if left == 1 else "es"])
 	if game.finished and not game.won:
 		status = "Out of guesses"
-	cv.draw_string(font, Vector2(tx + Game.MAX_GUESSES * (pr * 2 + 10) + 6, py + pr + 8), status, HORIZONTAL_ALIGNMENT_LEFT, maxf(10.0, tw - Game.MAX_GUESSES * (pr * 2 + 10) - 6), 20, C_MUTED)
+	cv.draw_string(font, Vector2(tx + Game.MAX_GUESSES * (pr * 2 + 10) + 6, py + pr + 8), status, HORIZONTAL_ALIGNMENT_LEFT, maxf(10.0, tw - Game.MAX_GUESSES * (pr * 2 + 10) - 6), GTUI.fs(GTUI.FS_TITLE), C_MUTED)
 
 
 func _draw_colheads() -> void:
@@ -1307,7 +1324,7 @@ func _draw_known() -> void:
 
 func _draw_message() -> void:
 	var r := msg_rect
-	_rrect(r, C_PANEL, 12)
+	GTUI.panel(self, r)
 	var txt := message
 	var ink := C_INK
 	if txt == "":
@@ -1318,7 +1335,7 @@ func _draw_message() -> void:
 			txt = "Green = same, yellow = related, red = no. Arrows point toward the mystery drink."
 	elif message_kind == "clue":
 		ink = C_ACCENT
-	_draw_text_in(Rect2(r.position.x + 14, r.position.y, r.size.x - 28, r.size.y), txt, 21, 14, 2, ink)
+	_draw_text_in(Rect2(r.position.x + GTUI.dp(GTUI.SP_M), r.position.y, r.size.x - GTUI.dp(GTUI.SP_M) * 2, r.size.y), txt, GTUI.fs(GTUI.FS_LABEL), GTUI.fs(GTUI.FS_CAPTION), 2, ink)
 
 
 func _code_color(code: int) -> Color:
@@ -1334,7 +1351,7 @@ func _draw_slot(i: int) -> void:
 	var cells := slot_cells_rect(i)
 	var name_h := cells.position.y - r.position.y
 	if i >= game.guesses.size():
-		cv.draw_string(font, Vector2(r.position.x + 2, r.position.y + name_h - 8), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_FAINT)
+		cv.draw_string(font, Vector2(r.position.x + 2, r.position.y + name_h - 8), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_FAINT)  # gt:art
 		for j in 6:
 			_rrect(cell_rect(cells, j), Color(C_LINE, 0.55), 10, false, 1.5)
 		return
@@ -1345,7 +1362,7 @@ func _draw_slot(i: int) -> void:
 	if i == game.guesses.size() - 1 and shake_t > 0.0:
 		dx = sin(shake_t * 60.0) * 6.0 * shake_t
 	var nm := "%d  %s" % [i + 1, d.name]
-	cv.draw_string(bold, Vector2(r.position.x + 2 + dx, r.position.y + name_h - 8), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, 22, C_INK)
+	cv.draw_string(bold, Vector2(r.position.x + 2 + dx, r.position.y + name_h - 8), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, 22, C_INK)  # gt:art
 	var ids := Schema.ids()
 	for j in 6:
 		var c := cell_rect(cells, j)
@@ -1387,8 +1404,9 @@ func _draw_input_area() -> void:
 	if game.finished:
 		return
 	var r := field_rect
-	_rrect(r, C_PANEL, 14)
-	_rrect(r, C_ACCENT if panel_open or query != "" else C_LINE, 14, false, 2.0)
+	GTUI.register("field", r, can_play())
+	var active := panel_open or query != ""
+	GTUI.box(self, r, C_CARD, GTUI.R_CONTROL, C_ACCENT if active else C_LINE, GTUI.FOCUS_WIDTH if active else GTUI.BORDER)
 	var txt := query
 	var ink := C_INK
 	var f := font
@@ -1397,14 +1415,16 @@ func _draw_input_area() -> void:
 		f = bold
 	elif txt == "":
 		txt = "Type or tap to browse"
-		ink = C_FAINT
-	var ft := fit(txt, r.size.x - 28, 24, 14, 1, f)
+		ink = C_MUTED
+	var pad := GTUI.dp(GTUI.SP_M)
+	var ft := fit(txt, r.size.x - pad * 2, GTUI.fs(GTUI.FS_BODY + 2), GTUI.fs(GTUI.FS_CAPTION), 1, f)
 	var y := r.position.y + (r.size.y + f.get_ascent(ft.size) - f.get_descent(ft.size)) * 0.5
-	cv.draw_string(f, Vector2(r.position.x + 14, y), ft.lines[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 28, ft.size, ink)
+	cv.draw_string(f, Vector2(r.position.x + pad, y), ft.lines[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - pad * 2, ft.size, ink)
 	if (query != "" or panel_open) and selected_id == "" and fmod(anim_t, 1.0) < 0.6:
 		var w := f.get_string_size(query, HORIZONTAL_ALIGNMENT_LEFT, -1, ft.size).x
-		cv.draw_rect(Rect2(r.position.x + 15 + w, r.position.y + 16, 2, r.size.y - 32), C_ACCENT)
+		cv.draw_rect(Rect2(r.position.x + pad + 1 + w, r.position.y + r.size.y * 0.25, 2, r.size.y * 0.5), C_ACCENT)
 		queue_redraw()
+	GTUI.focus_ring(self, "field", r)
 
 
 func _draw_buttons_layer(modal_layer: bool) -> void:
@@ -1418,36 +1438,39 @@ func _draw_buttons_layer(modal_layer: bool) -> void:
 func _draw_button(b: Dictionary) -> void:
 	var r: Rect2 = b.rect
 	var en: bool = b.enabled
+	var id := String(b.id)
 	match String(b.style):
 		"primary":
-			_rrect(r, C_ACCENT if en else C_KEY, 14)
-			_draw_text_in(r.grow(-8), b.label, 26, 16, 1, C_ACCENT_INK if en else C_FAINT, bold)
+			GTUI.button(self, id, r, b.label, "primary", en)
 		"accent":
-			_rrect(r, C_PINK, 14)
-			_draw_text_in(r.grow(-8), b.label, 26, 16, 1, Color.WHITE, bold)
+			GTUI.button(self, id, r, b.label, "primary", en)
 		"ghost":
-			_rrect(r, C_LINE if en else Color(C_LINE, 0.4), 14, false, 2.0)
 			var lbl: String = b.label
 			if b.id == "hint" and game:
 				lbl = "Hint (%d)" % (Game.MAX_HINTS - game.hints_used) if game.can_hint() else "No hints"
-			_draw_text_in(r.grow(-8), lbl, 24, 14, 1, C_INK if en else C_FAINT, bold)
-		"key":
-			_rrect(r, C_KEY, 10)
-			_draw_text_in(r, b.label, 26, 14, 1, C_INK, bold)
-		"key_wide":
-			_rrect(r, C_KEY.darkened(0.15), 10)
+			GTUI.button(self, id, r, lbl, "secondary", en)
+		"key", "key_wide":
+			# on-screen keyboard: compact keys (width may go below 44 dp; height may not)
+			GTUI.register(id, r, en, true)
+			var fill := C_KEY if b.style == "key" else C_KEY.darkened(0.15)
+			if GTUI.is_pressed(id, r):
+				fill = fill.lightened(0.16)
+			elif GTUI.is_hover(id):
+				fill = fill.lightened(0.08)
+			GTUI.box(self, r, fill, GTUI.R_CONTROL)
 			if b.label == "del":
 				_draw_backspace(r)
+			elif b.style == "key":
+				GTUI.text_in(self, r, b.label, GTUI.FS_BODY + 2, C_INK, 0, true)
 			else:
-				_draw_text_in(r.grow(-4), b.label, 20, 12, 1, C_MUTED, bold)
+				GTUI.text_in(self, r.grow(-4), b.label, GTUI.FS_LABEL, C_MUTED, 0, true)
+			GTUI.focus_ring(self, id, r)
 		"icon":
-			_rrect(r, C_PANEL, 14)
-			if b.label == "?":
-				_draw_text_in(r, "?", 30, 20, 1, C_INK, bold)
-			else:
-				_draw_calendar(r.grow(-12))
+			GTUI.icon_button(self, id, r, "help" if b.label == "?" else "calendar")
 		"icon_small":
-			_draw_x(r.get_center(), 11.0, C_MUTED)
+			GTUI.icon_button(self, id, r, "close")
+		"modal_x":
+			pass   # drawn by GTUI.modal()
 		"day":
 			_draw_day_row(b)
 		"dev":
@@ -1469,27 +1492,14 @@ func _draw_x(c: Vector2, s: float, color: Color) -> void:
 	cv.draw_line(c + Vector2(-s, s), c + Vector2(s, -s), color, 3.0, true)
 
 
-func _draw_calendar(r: Rect2) -> void:
-	_rrect(Rect2(r.position.x, r.position.y + 4, r.size.x, r.size.y - 4), C_INK, 4, false, 2.5)
-	cv.draw_line(Vector2(r.position.x, r.position.y + 12), Vector2(r.end.x, r.position.y + 12), C_INK, 2.5)
-	cv.draw_line(Vector2(r.position.x + 7, r.position.y), Vector2(r.position.x + 7, r.position.y + 7), C_INK, 2.5)
-	cv.draw_line(Vector2(r.end.x - 7, r.position.y), Vector2(r.end.x - 7, r.position.y + 7), C_INK, 2.5)
-	for k in 3:
-		cv.draw_rect(Rect2(r.position.x + 5 + k * (r.size.x - 10) / 3.0, r.position.y + 17, 4, 4), C_INK)
-
-
 func _draw_panel() -> void:
 	var r := panel_rect
-	cv.draw_rect(Rect2(r.position.x - 2, r.position.y + 6, r.size.x + 4, r.size.y), C_SHADOW)
-	_rrect(r, C_PANEL, 16)
-	_rrect(r, C_ACCENT, 16, false, 2.0)
+	GTUI.box(self, r, C_PANEL, GTUI.R_PANEL, C_LINE)
 	var head := "All %d drinks, A to Z" % DB.size() if query.strip_edges() == "" else (
 		"%d match%s for \"%s\"" % [suggestions.size(), "" if suggestions.size() == 1 else "es", query.strip_edges()])
 	if suggestions.is_empty():
 		head = "No drink matches \"%s\"" % query.strip_edges()
-	var hf := fit(head, r.size.x - 80, 20, 14, 1)
-	cv.draw_string(font, Vector2(r.position.x + 16, r.position.y + 29), hf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 80, hf.size, C_MUTED)
-	_draw_x(Vector2(r.end.x - 28, r.position.y + 22), 9.0, C_MUTED)
+	GTUI.text_in(self, Rect2(r.position.x + GTUI.dp(GTUI.SP_L), r.position.y, r.size.x - GTUI.target() - GTUI.dp(GTUI.SP_L) * 2, PANEL_HEAD), head, GTUI.FS_LABEL, C_MUTED, -1)
 	var lr := panel_list_rect
 	# scroll bar
 	var content := suggestions.size() * SUGG_ROW_H
@@ -1553,9 +1563,9 @@ func _draw_sugg_row(row: Rect2, i: int) -> void:
 	var d := DB.get_drink(id)
 	var used: bool = game.guesses.has(id)
 	if i == sugg_hover and not used:
-		_rrect(row, C_CARD.lightened(0.08), 10)
+		_rrect(row, C_CARD.lightened(0.08), GTUI.dp(GTUI.R_CONTROL))
 	elif i % 2 == 0:
-		_rrect(row, C_CARD, 10)
+		_rrect(row, C_CARD, GTUI.dp(GTUI.R_CONTROL))
 	var widths := sugg_text_widths()
 	var lay := sugg_row_layout(d)
 	var nf: Dictionary = lay.name
@@ -1568,7 +1578,7 @@ func _draw_sugg_row(row: Rect2, i: int) -> void:
 	cv.draw_string(bold, Vector2(x, y + bold.get_ascent(nf.size)), nf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, widths[0], nf.size,
 		C_FAINT if used else C_INK)
 	if used:
-		cv.draw_string(font, Vector2(row.end.x - 84, y + bold.get_ascent(nf.size)), "tried", HORIZONTAL_ALIGNMENT_RIGHT, 70, 18, C_FAINT)
+		cv.draw_string(font, Vector2(row.end.x - 84, y + bold.get_ascent(nf.size)), "tried", HORIZONTAL_ALIGNMENT_RIGHT, 70, GTUI.fs(GTUI.FS_LABEL), C_FAINT)
 	var iy: float = y + name_h + 4 + font.get_ascent(inf.size)
 	for l in inf.lines:
 		cv.draw_string(font, Vector2(x, iy), l, HORIZONTAL_ALIGNMENT_LEFT, widths[1], inf.size, C_FAINT if used else C_MUTED)
@@ -1576,15 +1586,9 @@ func _draw_sugg_row(row: Rect2, i: int) -> void:
 
 
 func _draw_toast(vs: Vector2) -> void:
-	var w := minf(vs.x - 40, 620.0)
-	var ft := fit(toast, w - 40, 22, 15, 2)
-	var h: float = ft.lines.size() * font.get_height(ft.size) + 28
-	var y: float = head_rect.end.y + 8 if modal == "" else modal_rect.position.y - h - 6
-	y = maxf(6.0, y)
-	var r := Rect2((vs.x - w) * 0.5, y, w, h)
-	var a := clampf(toast_t / 0.3, 0.0, 1.0)
-	_rrect(r, Color(C_INK, 0.96 * a), 14)
-	_draw_lines_centered(r, ft.lines, ft.size, Color(C_BG, a))
+	var a := clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0)
+	var bottom := head_rect.end.y + GTUI.dp(GTUI.SP_S) + GTUI.target() if modal == "" else modal_rect.position.y - GTUI.dp(GTUI.SP_S)
+	GTUI.toast(self, toast, a, maxf(bottom, GTUI.target() + 6.0))
 
 
 # ------------------------------------------------------------------ glasses
@@ -1656,28 +1660,21 @@ func _vessel(kind: String) -> Dictionary:
 
 # ------------------------------------------------------------------ modals
 
+## Overlay card + title + close button; the scrolled body is painted by the clip layer.
 func _modal_frame(title: String) -> void:
-	var m := modal_rect
-	cv.draw_rect(Rect2(m.position + Vector2(0, 8), m.size), C_SHADOW)
-	_rrect(m, C_PANEL, 22)
-	_rrect(m, C_LINE, 22, false, 2.0)
-	if title != "":
-		cv.draw_string(bold, Vector2(m.position.x + 24, m.position.y + 52), title, HORIZONTAL_ALIGNMENT_LEFT, m.size.x - 100, 32, C_INK)
+	GTUI.modal(self, modal_rect, title, "close")
 
 
-## Scrolled modal content is painted by a child canvas item clipped to modal_body (a plain
-## Node2D can't clip its own drawing). This measures it and draws the scroll bar.
 func _scroll_body(painter: Callable, _top_offset: float) -> void:
 	modal_content_h = float(painter.call(0.0, false))
 	_clamp_scrolls()
 	modal_painter = painter
 	clip_layer.queue_redraw()
-	var m := modal_rect
 	if modal_content_h > modal_body.size.y:
 		var vis := modal_body.size.y
 		var bh := maxf(30.0, vis * vis / modal_content_h)
 		var t := modal_scroll / maxf(1.0, modal_content_h - vis)
-		cv.draw_rect(Rect2(m.end.x - 12, modal_body.position.y + (vis - bh) * t, 4, bh), C_FAINT)
+		cv.draw_rect(Rect2(modal_rect.end.x - GTUI.dp(GTUI.SP_M), modal_body.position.y + (vis - bh) * t, 3, bh), C_FAINT)
 
 
 func _draw_clip_layer() -> void:
@@ -1693,14 +1690,8 @@ func _draw_clip_layer() -> void:
 
 
 func _draw_help() -> void:
-	_modal_frame("")
+	_modal_frame("How to play")
 	_scroll_body(func(y0, draw): return _help_content(y0, draw), 0.0)
-	_modal_frame_title_over("How to play")
-
-
-func _modal_frame_title_over(title: String) -> void:
-	var m := modal_rect
-	cv.draw_string(bold, Vector2(m.position.x + 24, m.position.y + 52), title, HORIZONTAL_ALIGNMENT_LEFT, m.size.x - 100, 32, C_INK)
 
 
 func _help_content(y0: float, draw: bool) -> float:
@@ -1712,49 +1703,48 @@ func _help_content(y0: float, draw: bool) -> float:
 		["Each guess shows how that drink compares on six things. The cells show your guess's value, coloured by how close it is:", false],
 	]
 	for p in paras:
-		y += _draw_para(Vector2(x, y), w, p[0], 23, C_INK, bold if p[1] else font, draw) + 12
+		y += _draw_para(Vector2(x, y), w, p[0], GTUI.fs(GTUI.FS_BODY), C_INK, bold if p[1] else font, draw) + 12
 	var legend := [[C_GREEN, "", "Same as the mystery drink"], [C_YELLOW, "", "Related (same group, see below)"],
 		[C_RED, "", "Not it"], [C_ARROW, "up", "The mystery drink is higher (sweeter or stronger)"],
 		[C_ARROW, "down", "The mystery drink is lower"]]
 	for l in legend:
 		if draw:
-			var cr := Rect2(x, y, 52, 40)
+			var cr := Rect2(x, y, GTUI.dp(40), GTUI.dp(30))
 			_rrect(cr, l[0], 8)
 			if l[1] != "":
 				_draw_arrow(cr.get_center(), 16, l[1] == "up", Color.WHITE)
-		_draw_para(Vector2(x + 66, y + 6), w - 66, l[2], 21, C_INK, font, draw)
-		y += 50
+		var lh := _draw_para(Vector2(x + GTUI.dp(52), y + GTUI.dp(4)), w - GTUI.dp(52), l[2], GTUI.fs(GTUI.FS_BODY), C_INK, font, draw)
+		y += maxf(GTUI.dp(30), lh + GTUI.dp(4)) + GTUI.dp(GTUI.SP_S)
 	y += 8
-	y += _draw_para(Vector2(x, y), w, "The six columns", 25, C_ACCENT, bold, draw) + 8
+	y += _draw_para(Vector2(x, y), w, "The six columns", GTUI.fs(GTUI.FS_TITLE), C_ACCENT, bold, draw) + 8
 	for a in Schema.attrs():
 		var t := "%s: %s" % [a.label, a.help]
-		y += _draw_para(Vector2(x, y), w, t, 21, C_INK, font, draw) + 4
+		y += _draw_para(Vector2(x, y), w, t, GTUI.fs(GTUI.FS_BODY), C_INK, font, draw) + 4
 		if a.id == "family":
 			var fams: Array = []
 			for k in a.values:
 				fams.append("%s (%s)" % [a.values[k], a.describe[k]])
-			y += _draw_para(Vector2(x + 16, y), w - 16, "; ".join(fams) + ".", 19, C_MUTED, font, draw) + 4
+			y += _draw_para(Vector2(x + 16, y), w - 16, "; ".join(fams) + ".", GTUI.fs(GTUI.FS_LABEL), C_MUTED, font, draw) + 4
 		for g in a.get("groups", []):
 			var names: Array = []
 			for mbr in g.members:
 				names.append(Schema.value_label(a.id, mbr))
-			y += _draw_para(Vector2(x + 16, y), w - 16, "Yellow: %s (%s)" % [g.label, ", ".join(names)], 19, C_MUTED, font, draw) + 2
+			y += _draw_para(Vector2(x + 16, y), w - 16, "Yellow: %s (%s)" % [g.label, ", ".join(names)], GTUI.fs(GTUI.FS_LABEL), C_MUTED, font, draw) + 2
 		y += 8
 	y += 6
-	y += _draw_para(Vector2(x, y), w, "Tips", 25, C_ACCENT, bold, draw) + 8
+	y += _draw_para(Vector2(x, y), w, "Tips", GTUI.fs(GTUI.FS_TITLE), C_ACCENT, bold, draw) + 8
 	for t in ["Don't know a drink? Each one in the list shows what goes into it.",
 			"A guess you know is wrong can still be a great test. Pick a drink that checks the things you're unsure of.",
 			"The Known row sums up everything your guesses have pinned down.",
 			"Stuck? Hints point you at what to test, then reveal facts. A clue appears for free after guesses 4 and 5.",
 			"Past days are in the calendar."]:
-		y += _draw_para(Vector2(x, y), w, "• " + t, 21, C_INK, font, draw) + 6
+		y += _draw_para(Vector2(x, y), w, "• " + t, GTUI.fs(GTUI.FS_BODY), C_INK, font, draw) + 6
 	return y - y0 + 10
 
 
 func _draw_end() -> void:
-	_modal_frame("")
+	_modal_frame(_end_title())
 	_scroll_body(func(y0, draw): return _end_content(y0, draw), 0.0)
-	_modal_frame_title_over(_end_title())
 
 
 func _end_title() -> String:
@@ -1771,25 +1761,25 @@ func _end_content(y0: float, draw: bool) -> float:
 	var sub := "Drinkle #%d · %s" % [number, game.result_label()]
 	if game.hints_used > 0:
 		sub += " · %d hint%s" % [game.hints_used, "" if game.hints_used == 1 else "s"]
-	y += _draw_para(Vector2(x, y), w, sub, 21, C_MUTED, font, draw) + 14
+	y += _draw_para(Vector2(x, y), w, sub, GTUI.fs(GTUI.FS_BODY), C_MUTED, font, draw) + 14
 	var gh := 150.0
 	if draw:
 		_draw_glass(Rect2(x, y, gh * 0.8, gh), String(t.get("glass", "coupe")), Color(String(t.get("color", "#e8577a"))), false)
 	var tx := x + gh * 0.8 + 20
 	var tw := w - gh * 0.8 - 20
 	var ny := y + 6
-	ny += _draw_para(Vector2(tx, ny), tw, t.name, 34, C_INK, bold, draw) + 8
-	ny += _draw_para(Vector2(tx, ny), tw, " • ".join(t.get("profile", [])), 21, C_ACCENT, font, draw) + 10
-	ny += _draw_para(Vector2(tx, ny), tw, "Typical ingredients", 19, C_MUTED, bold, draw) + 4
+	ny += _draw_para(Vector2(tx, ny), tw, t.name, GTUI.fs(GTUI.FS_HEADING), C_INK, bold, draw) + 8
+	ny += _draw_para(Vector2(tx, ny), tw, " • ".join(t.get("profile", [])), GTUI.fs(GTUI.FS_BODY), C_ACCENT, font, draw) + 10
+	ny += _draw_para(Vector2(tx, ny), tw, "Typical ingredients", GTUI.fs(GTUI.FS_LABEL), C_MUTED, bold, draw) + 4
 	for ing in t.get("ingredients", []):
-		ny += _draw_para(Vector2(tx, ny), tw, "• " + String(ing), 20, C_INK, font, draw) + 1
+		ny += _draw_para(Vector2(tx, ny), tw, "• " + String(ing), GTUI.fs(GTUI.FS_LABEL), C_INK, font, draw) + 1
 	y = maxf(y + gh, ny) + 16
 	# the answer's six values, all green
 	var ids := Schema.ids()
 	var cw := (w - 5 * 6) / 6.0
 	if draw:
 		for j in 6:
-			cv.draw_string(bold, Vector2(x + j * (cw + 6), y + 16), COL_LABELS[j], HORIZONTAL_ALIGNMENT_CENTER, cw, 15, C_MUTED)
+			cv.draw_string(bold, Vector2(x + j * (cw + 6), y + 16), COL_LABELS[j], HORIZONTAL_ALIGNMENT_CENTER, cw, 15, C_MUTED)  # gt:art
 	y += 22
 	for j in 6:
 		var c := Rect2(x + j * (cw + 6), y, cw, 56)
@@ -1799,11 +1789,11 @@ func _end_content(y0: float, draw: bool) -> float:
 	y += 56 + 22
 	if not game.won:
 		var l := Explain.loss(t, game.history(), game.facts)
-		y += _draw_para(Vector2(x, y), w, String(l.text), 21, C_INK, font, draw) + 6
+		y += _draw_para(Vector2(x, y), w, String(l.text), GTUI.fs(GTUI.FS_BODY), C_INK, font, draw) + 6
 		if l.left.size() > 1:
-			y += _draw_para(Vector2(x, y), w, "Still possible: " + ", ".join(l.left), 20, C_MUTED, font, draw) + 6
+			y += _draw_para(Vector2(x, y), w, "Still possible: " + ", ".join(l.left), GTUI.fs(GTUI.FS_LABEL), C_MUTED, font, draw) + 6
 		y += 14
-	y += _draw_para(Vector2(x, y), w, "Your deduction path", 25, C_ACCENT, bold, draw) + 10
+	y += _draw_para(Vector2(x, y), w, "Your deduction path", GTUI.fs(GTUI.FS_TITLE), C_ACCENT, bold, draw) + 10
 	var p := Explain.path(game.history(), game.facts)
 	for i in p.size():
 		var line: Dictionary = p[i]
@@ -1811,47 +1801,36 @@ func _end_content(y0: float, draw: bool) -> float:
 		if draw:
 			for j in 6:
 				_rrect(Rect2(x + j * 16, y + 8, 13, 13), _code_color(fb[j]), 3)
-		var nh := _draw_para(Vector2(x + 110, y), w - 110, "%d. %s" % [i + 1, line.name], 22, C_INK, bold, draw)
+		var nh := _draw_para(Vector2(x + 110, y), w - 110, "%d. %s" % [i + 1, line.name], GTUI.fs(GTUI.FS_BODY), C_INK, bold, draw)
 		y += nh + 2
 		var note: String = "solved!" if line.solved else " · ".join(line.notes)
 		if not line.solved:
 			note += " · %d drink%s left" % [line.left, "" if line.left == 1 else "s"]
-		y += _draw_para(Vector2(x + 110, y), w - 110, note, 19, C_MUTED, font, draw) + 12
+		y += _draw_para(Vector2(x + 110, y), w - 110, note, GTUI.fs(GTUI.FS_LABEL), C_MUTED, font, draw) + 12
 	if not game.hint_texts.is_empty() or not game.facts.is_empty():
 		y += 6
-		y += _draw_para(Vector2(x, y), w, "Clues and hints", 21, C_MUTED, bold, draw) + 6
+		y += _draw_para(Vector2(x, y), w, "Clues and hints", GTUI.fs(GTUI.FS_BODY), C_MUTED, bold, draw) + 6
 		for f in game.facts:
-			y += _draw_para(Vector2(x, y), w, "• %s (%s)" % [f.get("text", ""), f.get("source", "")], 19, C_MUTED, font, draw) + 3
+			y += _draw_para(Vector2(x, y), w, "• %s (%s)" % [f.get("text", ""), f.get("source", "")], GTUI.fs(GTUI.FS_LABEL), C_MUTED, font, draw) + 3
 	y += 10
-	y += _draw_para(Vector2(x, y), w, "A new drink arrives tomorrow. Past days are in the calendar.", 19, C_FAINT, font, draw) + 8
+	y += _draw_para(Vector2(x, y), w, "A new drink arrives tomorrow. Past days are in the calendar.", GTUI.fs(GTUI.FS_LABEL), C_FAINT, font, draw) + 8
 	return y - y0
 
 
 func _draw_archive() -> void:
 	_modal_frame("Past drinks")
-	var m := modal_rect
-	cv.draw_string(font, Vector2(m.position.x + 24, m.position.y + 84), "Page %d of %d" % [archive_page + 1, archive_pages()],
-		HORIZONTAL_ALIGNMENT_LEFT, m.size.x - 48, 19, C_MUTED)
+	GTUI.text(self, modal_body.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 
 
 func _draw_day_row(b: Dictionary) -> void:
-	var r: Rect2 = b.rect
 	var d := String(b.id).substr(4)
 	var cur := d == date
-	_rrect(r, C_CARD.lightened(0.06) if cur else C_CARD, 12)
-	if cur:
-		_rrect(r, C_ACCENT, 12, false, 2.0)
-	var n := Daily.day_number(d)
-	var tr := Daily.tier_for(d)
-	var left := "#%d  %s" % [n, Daily.short_date(d)]
 	var res := String(archive_results.get(d, ""))
 	if res == "" and cur and game and not game.guesses.is_empty() and not game.finished:
 		res = "In progress"
-	var by := r.position.y + r.size.y * 0.5 + 8
-	cv.draw_string(bold, Vector2(r.position.x + 16, by), left, HORIZONTAL_ALIGNMENT_LEFT, r.size.x * 0.6, 23, C_INK)
-	var right: String = res if res != "" else TIER_NAMES[tr]
-	var ink := C_GREEN.lightened(0.3) if res.contains("/") and not res.begins_with("X") else (C_PINK if res.begins_with("X") else C_MUTED)
-	cv.draw_string(font, Vector2(r.end.x - 200, by), right, HORIZONTAL_ALIGNMENT_RIGHT, 184, 21, ink)
+	var right: String = res if res != "" else TIER_NAMES[Daily.tier_for(d)]
+	var ink := C_GREEN.lightened(0.3) if res.contains("/") and not res.begins_with("X") else (C_PINK if res.begins_with("X") else Color(0, 0, 0, 0))
+	GTUI.list_row(self, String(b.id), b.rect, "#%d" % Daily.day_number(d), "Today" if d == today else Daily.short_date(d), right, cur, ink)
 
 
 func _draw_dev() -> void:
@@ -1868,9 +1847,13 @@ func _draw_dev() -> void:
 	]
 	var y := r.position.y + 22
 	for l in lines:
-		cv.draw_string(font, Vector2(r.position.x + 10, y), l, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20, 16, Color("9ff0b0"))
+		cv.draw_string(font, Vector2(r.position.x + 10, y), l, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20, GTUI.fs(GTUI.FS_BODY), Color("9ff0b0"))
 		y += 22
 	for b in buttons:
 		if String(b.id).begins_with("dev_"):
 			_rrect(b.rect, Color("2f4a38"), 6)
 			_draw_text_in(b.rect, b.label, 16, 11, 1, Color("d8ffe0"))
+
+
+func _head_h() -> float:
+	return maxf(GTUI.target(), GTUI.line_height(GTUI.FS_HEADING) + GTUI.line_height(GTUI.FS_LABEL) - GTUI.dp(GTUI.SP_XS))

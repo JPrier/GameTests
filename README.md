@@ -54,6 +54,18 @@ To add a game, put a Godot project with a `Web` export preset in `games/<Categor
 
 The game's folder name is its URL (`https://jprier.github.io/GameTests/<name>/`), whatever category it's in, so folder names must be unique across categories, and moving a game between categories never breaks their links or saved results. The build fails if two games share a folder name or a game sits directly in `games/`.
 
+## Shared UI
+
+Every game draws its product UI (header, buttons, dialogs, help, results, "Past puzzles", toasts,
+focus) with the shared GameTests UI, `GTUI`, and keeps its own art direction and colours.
+Start with [`ui/VISUAL_GUIDE.md`](ui/VISUAL_GUIDE.md) (a five-minute read); notes on what changed are
+in [`ui/CHANGES.md`](ui/CHANGES.md).
+
+- The source lives in `ui/`; `.github/scripts/sync-ui.py` copies it into each game's
+  `addons/gametests_ui/` (plus `tests/test_gtui.gd`). Edit `ui/`, never a game's copy.
+- The build fails if a copy drifts (`sync-ui.py --check`) or product UI breaks the rules
+  (`ui-lint.py`); every game's tests include touch-target and keyboard-focus checks.
+
 ## Home page
 
 The home page (`.github/scripts/make-index.py`) has a section for each top-level category folder: Daily first, Other last, the rest alphabetically. Inside a section, games directly in the folder come first, then a group for each subfolder (e.g. Airplanes under Daily). Every game under `games/Daily/` is a daily game and shows today's puzzle number. A game can add details with a `homepage/` folder:

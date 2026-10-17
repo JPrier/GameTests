@@ -122,6 +122,11 @@ func _ready() -> void:
 	fv.base_font = font
 	fv.variation_embolden = 0.6
 	bold = fv
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_PAPER, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_FAINT, "accent": C_ROSE, "on_accent": Color.WHITE,
+		"success": C_OK, "danger": C_BAD, "focus": C_ROSE, "scrim": Color(0.17, 0.12, 0.16, 0.5),
+	})
 	RenderingServer.set_default_clear_color(C_BG)
 	_add_key_action("undo", [KEY_Z, KEY_BACKSPACE, KEY_U])
 	_add_key_action("hint", [KEY_H])
@@ -666,13 +671,13 @@ func _notification(what: int) -> void:
 func _layout() -> void:
 	var vs := get_viewport_rect().size
 	portrait = vs.y >= vs.x * 1.05
-	var pad := 16.0
+	var pad := GTUI.dp(GTUI.SP_L)
 	var col_w: float = minf(vs.x - pad * 2, 720.0 - pad * 2) if portrait else minf(vs.x * 0.56, 720.0) - pad * 2
 	var left_x := (vs.x - col_w) / 2.0 if portrait else pad
-	var y := 10.0
-	head_rect = Rect2(left_x, y, col_w, 84)
-	title_rect = Rect2(left_x, y, col_w * 0.55, 84)
-	y += 88
+	var y := GTUI.dp(GTUI.SP_M)
+	head_rect = Rect2(left_x, y, col_w, _head_h())
+	title_rect = Rect2(left_x, y, col_w * 0.55, _head_h())
+	y += _head_h() + GTUI.dp(GTUI.SP_XS)
 	# two tables side by side; the seat cards must fit in half the column each
 	var half := col_w / 2.0
 	chip = Vector2(clampf(half * 0.29, 76, 104), 46)
@@ -696,8 +701,9 @@ func _layout() -> void:
 	var cw := (col_w - gap * 4) / 5.0
 	desc_font = 15 if cw >= 118 else 13
 	var ch := _card_height(cw)
+	var bar_h := GTUI.target()
 	# short screens: drop the flavour lines so the clue list keeps room for several clues
-	compact = portrait and (vs.y - 76 - 12 - (y + ch * 2 + gap + 14)) < 300
+	compact = portrait and (vs.y - bar_h - 24 - (y + ch * 2 + gap + 14)) < 300
 	if compact:
 		ch = 46.0
 	tray_rect = Rect2(left_x, y, col_w, ch * 2 + gap)
@@ -705,14 +711,13 @@ func _layout() -> void:
 	for g in 10:
 		slot_rects.append(Rect2(left_x + (g % 5) * (cw + gap), y + (g / 5) * (ch + gap), cw, ch))
 	y += tray_rect.size.y + 14
-	var bar_h := 64.0
 	if portrait:
-		bar_rect = Rect2(left_x, vs.y - bar_h - 12, col_w, bar_h)
-		clues_rect = Rect2(left_x, y, col_w, maxf(bar_rect.position.y - 12 - y, 120))
+		bar_rect = Rect2(left_x, vs.y - bar_h - pad, col_w, bar_h)
+		clues_rect = Rect2(left_x, y, col_w, maxf(bar_rect.position.y - GTUI.dp(GTUI.SP_M) - y, 120))
 	else:
 		var rx := left_x + col_w + pad * 2
 		var rw := vs.x - rx - pad
-		bar_rect = Rect2(rx, vs.y - bar_h - 12, rw, bar_h)
+		bar_rect = Rect2(rx, vs.y - bar_h - pad, rw, bar_h)
 		clues_rect = Rect2(rx, 14, rw, bar_rect.position.y - 26)
 	_layout_clues()
 	_build_buttons()
@@ -732,12 +737,12 @@ func _layout_clues() -> void:
 	clue_rows = []
 	if model == null:
 		return
-	clue_font = 20 if clues_rect.size.x >= 420 else 18
+	clue_font = maxi(20 if clues_rect.size.x >= 420 else 18, GTUI.fs(GTUI.FS_LABEL))
 	var y := 38.0
-	var text_w := clues_rect.size.x - 44 - 44
+	var text_w := clues_rect.size.x - (16 + clue_font * 1.4) - 44
 	for i in model.clues.size():
 		var lines := _wrap(C.text(model.clues[i], model), clue_font, text_w, font)
-		var h := maxf(44.0, lines.size() * (clue_font + 5) + 18)
+		var h := maxf(GTUI.target(), lines.size() * (clue_font + 5) + 18)
 		clue_rows.append({"i": i, "y": y, "h": h, "lines": lines})
 		y += h + 6
 	clue_content_h = y
@@ -750,20 +755,17 @@ func _clue_rect(row: Dictionary) -> Rect2:
 
 func _build_buttons() -> void:
 	buttons = []
-	var vs := get_viewport_rect().size
 	if loading or model == null:
 		return
+	var th := GTUI.target()
 	if modal == "" and finished:
+		var rr := GTUI.row(bar_rect, 3, [1.0, 1.0, 1.4])
 		var done_labels := [["end_archive", "Past days"], ["results", "Results"], ["share", "Share"]]
-		var gap2 := 10.0
-		var bw4 := (bar_rect.size.x - gap2 * 2) / 3.0
 		for k in 3:
-			buttons.append({"id": done_labels[k][0], "label": done_labels[k][1], "enabled": true, "primary": k == 2,
-				"rect": Rect2(bar_rect.position.x + k * (bw4 + gap2), bar_rect.position.y, bw4, bar_rect.size.y)})
+			buttons.append({"id": done_labels[k][0], "label": done_labels[k][1], "enabled": true, "primary": k == 2, "rect": rr[k]})
 	if modal == "":
 		var labels := [["undo", "Undo"], ["reset", "Reset"], ["hint", "Hint"], ["check", "Check"]]
-		var gap := 10.0
-		var bw := (bar_rect.size.x - gap * 3) / 4.0
+		var rr := GTUI.row(bar_rect, 4)
 		for k in (0 if finished else 4):
 			var id: String = labels[k][0]
 			var en := _can_play()
@@ -771,47 +773,42 @@ func _build_buttons() -> void:
 				en = en and not board.history.is_empty()
 			if id == "reset":
 				en = en and board.seated_count() > 0
-			buttons.append({"id": id, "label": labels[k][1], "enabled": en, "primary": id == "hint",
-				"rect": Rect2(bar_rect.position.x + k * (bw + gap), bar_rect.position.y, bw, bar_rect.size.y)})
-		var r := head_rect
-		buttons.append({"id": "help", "label": "?", "enabled": true, "icon": true,
-			"rect": Rect2(r.end.x - 52, r.position.y + 6, 52, 52)})
-		buttons.append({"id": "archive", "label": "", "enabled": true, "icon": true,
-			"rect": Rect2(r.end.x - 112, r.position.y + 6, 52, 52)})
+			buttons.append({"id": id, "label": labels[k][1], "enabled": en, "primary": id == "hint", "rect": rr[k]})
+		var icons := GTUI.icon_row(head_rect.end.x, head_rect.position.y + (head_rect.size.y - th) / 2.0, ["archive", "help"])
+		buttons.append({"id": "help", "label": "?", "enabled": true, "icon": true, "rect": icons["help"]})
+		buttons.append({"id": "archive", "label": "", "enabled": true, "icon": true, "rect": icons["archive"]})
 		if hint_open:
 			_layout_hint()
-			buttons.append({"id": "hint_close", "label": "Close", "enabled": true, "hintcard": true,
-				"rect": Rect2(hint_rect.end.x - 252, hint_rect.end.y - 60, 112, 46)})
+			var hr := Rect2(hint_rect.position.x + GTUI.dp(GTUI.SP_L), hint_rect.end.y - GTUI.dp(GTUI.SP_L) - th, hint_rect.size.x - GTUI.dp(GTUI.SP_L) * 2, th)
+			var hb := GTUI.row(Rect2(hr.end.x - minf(hr.size.x, GTUI.dp(260)), hr.position.y, minf(hr.size.x, GTUI.dp(260)), th), 2)
+			buttons.append({"id": "hint_close", "label": "Close", "enabled": true, "hintcard": true, "rect": hb[0]})
 			buttons.append({"id": "hint_more", "label": "Seat them" if hint_level == 2 else "More help", "enabled": true,
-				"primary": true, "hintcard": true, "rect": Rect2(hint_rect.end.x - 132, hint_rect.end.y - 60, 118, 46)})
+				"primary": true, "hintcard": true, "rect": hb[1]})
 	elif modal == "help":
-		var c := _modal_card(_help_height())
+		var card := _modal_card(_help_height())
 		buttons.append({"id": "help_close", "label": "Let's seat them", "enabled": true, "primary": true,
-			"rect": Rect2(c.position.x + 24, c.end.y - 82, c.size.x - 48, 60)})
+			"rect": GTUI.modal_buttons_rect(GTUI.modal_content(card))})
+		buttons.append({"id": "help_x", "label": "", "enabled": true, "kind": "modal", "rect": GTUI.modal_close_rect(card)})
 	elif modal == "end":
-		var c2 := _modal_card(470)
-		var bw2 := (c2.size.x - 48 - 12) / 2.0
-		buttons.append({"id": "share", "label": "Share", "enabled": true, "primary": true,
-			"rect": Rect2(c2.position.x + 24, c2.end.y - 146, c2.size.x - 48, 60)})
-		buttons.append({"id": "end_archive", "label": "Past days", "enabled": true,
-			"rect": Rect2(c2.position.x + 24, c2.end.y - 76, bw2, 54)})
-		buttons.append({"id": "end_close", "label": "View tables", "enabled": true,
-			"rect": Rect2(c2.position.x + 36 + bw2, c2.end.y - 76, bw2, 54)})
+		var card := _modal_card(_end_height())
+		var rr := GTUI.row(GTUI.modal_buttons_rect(GTUI.modal_content(card)), 3, [1.0, 1.0, 1.4])
+		buttons.append({"id": "end_archive", "label": "Past days", "enabled": true, "rect": rr[0]})
+		buttons.append({"id": "end_close", "label": "View tables", "enabled": true, "rect": rr[1]})
+		buttons.append({"id": "share", "label": "Share", "enabled": true, "primary": true, "rect": rr[2]})
+		buttons.append({"id": "end_x", "label": "", "enabled": true, "kind": "modal", "rect": GTUI.modal_close_rect(card)})
 	elif modal == "archive":
-		var c3 := _archive_card()
+		var card := _archive_card()
+		var c := GTUI.modal_content(card)
 		var rh := _archive_row_h()
+		var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 		var days := archive_page_days(archive_page)
 		for i in days.size():
 			buttons.append({"id": "day_" + String(days[i]), "label": "", "enabled": true, "kind": "row",
-				"rect": Rect2(c3.position.x + 20, c3.position.y + 82 + i * rh, c3.size.x - 40, rh - 10)})
-		var bw3 := (c3.size.x - 40 - 24) / 3.0
-		var by := c3.end.y - 80
-		buttons.append({"id": "arch_newer", "label": "Newer", "enabled": archive_page > 0,
-			"rect": Rect2(c3.position.x + 20, by, bw3, 60)})
-		buttons.append({"id": "arch_close", "label": "Close", "enabled": true, "primary": true,
-			"rect": Rect2(c3.position.x + 32 + bw3, by, bw3, 60)})
-		buttons.append({"id": "arch_older", "label": "Older", "enabled": archive_page < archive_pages() - 1,
-			"rect": Rect2(c3.position.x + 44 + bw3 * 2, by, bw3, 60)})
+				"rect": Rect2(c.position.x, y0 + i * rh, c.size.x, th)})
+		var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+		buttons.append({"id": "arch_newer", "label": "Newer", "enabled": archive_page > 0, "rect": pr[0]})
+		buttons.append({"id": "arch_older", "label": "Older", "enabled": archive_page < archive_pages() - 1, "rect": pr[1]})
+		buttons.append({"id": "arch_close", "label": "", "enabled": true, "kind": "modal", "rect": GTUI.modal_close_rect(card)})
 	if dev_mode and dev_open:
 		var ids := [["dev_prev", "< Day"], ["dev_next", "Day >"], ["dev_m7", "-7"], ["dev_p7", "+7"],
 			["dev_today", "Today"], ["dev_rand", "Random"], ["dev_reset", "Reset"], ["dev_reveal", "Reveal"],
@@ -828,57 +825,27 @@ func _dev_rect() -> Rect2:
 
 
 func _modal_card(h: float) -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 32, 560)
-	h = minf(h, vs.y - 32)
-	return Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
+	return GTUI.modal_rect(self, 520, h)
 
 
 func _archive_row_h() -> float:
-	var vs := get_viewport_rect().size
-	return clampf((vs.y - 40.0 - 180.0) / ARCHIVE_ROWS, 60.0, 80.0)
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 32, 600)
-	var h := 82.0 + ARCHIVE_ROWS * _archive_row_h() + 96.0
-	return Rect2((vs.x - w) / 2.0, maxf(16.0, (vs.y - h) / 2.0), w, h)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h() - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 480, GTUI.modal_height(content_h))
 
 
 func _layout_hint() -> void:
 	var w := clues_rect.size.x
-	var lines := _hint_lines(w - 32)
-	var h := 46.0 + lines.size() * 24.0 + 72.0
-	hint_rect = Rect2(clues_rect.position.x, bar_rect.position.y - 10 - h, w, h)
+	var lines := _hint_lines(w - GTUI.dp(GTUI.SP_L) * 2)
+	var h := GTUI.dp(GTUI.SP_L) + GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_XS) + lines.size() * GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_M) + GTUI.target() + GTUI.dp(GTUI.SP_L)
+	hint_rect = Rect2(clues_rect.position.x, bar_rect.position.y - GTUI.dp(GTUI.SP_M) - h, w, h)
 
 
 func _hint_lines(w: float) -> Array:
-	if hint.is_empty():
-		return []
-	var txt := ""
-	if hint_level <= 1:
-		txt = String(hint.get("nudge", ""))
-		var cl: Array = hint.get("clues", [])
-		if String(hint.kind) == "deduce" and not cl.is_empty():
-			var nums: Array = []
-			for i in cl:
-				nums.append(str(int(i) + 1))
-			if nums.size() == 1:
-				txt = "Look closely at clue %s." % nums[0]
-			else:
-				txt = "Look at clues %s and %s together." % [", ".join(nums.slice(0, nums.size() - 1)), nums[-1]]
-			if hint.get("uses_board", false):
-				txt += " Use the guests already seated, too."
-	else:
-		var parts: Array = []
-		if String(hint.kind) == "deduce":
-			for s in hint.get("chain", []):
-				if String(s) != String(hint.text):
-					parts.append(String(s))
-		parts.append(String(hint.text))
-		txt = " ".join(parts)
-	return Array(_wrap(txt, 18, w, font))
+	return Array(GTUI.wrap_lines(_hint_text(), GTUI.FS_BODY, w)) if not hint.is_empty() else []
 
 
 const HELP_TIPS := [
@@ -892,17 +859,29 @@ const HELP_TIPS := [
 
 
 func _help_height() -> float:
-	var c := _modal_card(2000)
-	var h := 86.0
+	var h := 0.0
 	for t in HELP_TIPS:
-		h += _wrap(t, 19, c.size.x - 74, font).size() * 24 + 12
-	return h + 100.0
+		h = GTUI.paragraph(self, 0, h, _help_width() - GTUI.dp(GTUI.SP_L), t, GTUI.FS_BODY, C_INK, false, false) + GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_height(h)
 
 
 # ------------------------------------------------------------------ input
 
 func _input(ev: InputEvent) -> void:
 	if loading:
+		return
+	var gt := GTUI.handle_input(ev)
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		return
+	if gt.has("cancel"):
+		if modal == "help":
+			_on_button("help_close")
+		elif modal != "":
+			_on_button("end_close" if modal == "end" else "arch_close")
+		elif hint_open:
+			_on_button("hint_close")
 		return
 	if ev is InputEventMouseButton:
 		var mb := ev as InputEventMouseButton
@@ -984,7 +963,7 @@ func _release(p: Vector2) -> void:
 		return
 	if modal != "":
 		if modal == "end" or modal == "archive":
-			var card := _modal_card(470) if modal == "end" else _archive_card()
+			var card := _modal_card(_end_height()) if modal == "end" else _archive_card()
 			if not card.has_point(p) and not card.has_point(press_pos):
 				modal = ""
 				_build_buttons()
@@ -1064,7 +1043,7 @@ func _on_button(id: String) -> void:
 			hint_open = false
 		"help":
 			modal = "help"
-		"help_close":
+		"help_close", "help_x":
 			modal = ""
 			_mark_tutorial()
 		"archive", "end_archive":
@@ -1073,7 +1052,7 @@ func _on_button(id: String) -> void:
 		"share": share()
 		"results":
 			modal = "end"
-		"end_close":
+		"end_close", "end_x":
 			modal = ""
 		"arch_newer":
 			archive_page = maxi(0, archive_page - 1)
@@ -1218,6 +1197,7 @@ func _dashed_box(r: Rect2, col: Color) -> void:
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
+	GTUI.begin()
 	var vs := get_viewport_rect().size
 	draw_rect(Rect2(Vector2.ZERO, vs), C_BG)
 	if loading or model == null:
@@ -1260,13 +1240,18 @@ func _draw_loading() -> void:
 
 func _draw_header() -> void:
 	var r := head_rect
-	_text(r.position + Vector2(2, 38), "Seating Chart", 34, C_INK, bold)
+	var lh_t := GTUI.line_height(GTUI.FS_HEADING)
+	var lh_m := GTUI.line_height(GTUI.FS_LABEL)
+	var ty := r.position.y + (r.size.y - lh_t - lh_m + GTUI.dp(GTUI.SP_XS)) / 2.0
+	var tw := r.size.x - GTUI.target() * 2 - GTUI.dp(GTUI.SP_S) * 2
+	GTUI.text_in(self, Rect2(r.position.x, ty, tw, lh_t), "Seating Chart", GTUI.FS_HEADING, C_INK, -1, true)
 	var sub := "#%d · %s · %s" % [model.number, Daily.short_date(date), D.tier_name(model.tier)]
-	_text(r.position + Vector2(2, 70), sub, 19, C_MUTED)
+	GTUI.text_in(self, Rect2(r.position.x, ty + lh_t - GTUI.dp(GTUI.SP_XS), tw, lh_m), sub, GTUI.FS_LABEL, C_MUTED, -1)
 	var secs := final_seconds if finished else int(elapsed)
 	var clock := Share.clock(secs)
-	var tx := r.end.x - 124 - _tw(clock, 26, bold)
-	_text(Vector2(tx, r.position.y + 42), clock, 26, C_OK if finished else C_INK, bold)
+	var cw := GTUI.text_width("00:00", GTUI.FS_TITLE, true)
+	var cx := r.end.x - GTUI.target() * 2 - GTUI.dp(GTUI.SP_S) - GTUI.dp(GTUI.SP_L) - cw
+	GTUI.text_in(self, Rect2(cx, r.position.y, cw, r.size.y), clock, GTUI.FS_TITLE, C_OK if finished else C_INK, 1, true)
 
 
 func _draw_tables() -> void:
@@ -1421,15 +1406,18 @@ func _draw_clues() -> void:
 				bg = Color("fff6df")
 		var dim := selected >= 0 and not involved
 		_box(cr, bg, 10, border, 3)
-		var nc := Vector2(cr.position.x + 22, cr.position.y + 22)
-		draw_circle(nc, 14, C_GOLD_SOFT if st[i] != C.FALSE else C_ROSE_SOFT)
-		_text_center(Rect2(nc - Vector2(14, 14), Vector2(28, 28)), str(i + 1), 15, C_INK, bold)
 		var lines: PackedStringArray = row.lines
+		var lh := clue_font + 5.0
+		var ty := cr.position.y + (cr.size.y - lines.size() * lh) / 2.0
+		var nr := clue_font * 0.7
+		var nc := Vector2(cr.position.x + 8 + nr, ty + lh / 2.0)
+		draw_circle(nc, nr, C_GOLD_SOFT if st[i] != C.FALSE else C_ROSE_SOFT)
+		_text_center(Rect2(nc - Vector2(nr, nr), Vector2(nr, nr) * 2), str(i + 1), int(clue_font * 0.75), C_INK, bold)
 		var tc := C_INK if not dim else Color(C_INK, 0.45)
 		if st[i] == C.TRUE and not finished:
 			tc = Color(C_INK, 0.55) if not dim else Color(C_INK, 0.35)
 		for k in lines.size():
-			_text(Vector2(cr.position.x + 44, cr.position.y + 15 + clue_font * 0.85 + k * (clue_font + 5)), lines[k], clue_font, tc)
+			_text(Vector2(cr.position.x + 16 + nr * 2, ty + k * lh + (lh + font.get_ascent(clue_font) - font.get_descent(clue_font)) / 2.0), lines[k], clue_font, tc)
 		var sc := Vector2(cr.end.x - 22, cr.position.y + cr.size.y / 2.0)
 		if st[i] == C.TRUE:
 			_draw_check(sc, C_OK)
@@ -1475,85 +1463,55 @@ func _draw_bar() -> void:
 
 
 func _draw_button(b: Dictionary) -> void:
-	var r: Rect2 = b.rect
-	var en: bool = b.enabled
-	var primary: bool = b.get("primary", false)
-	var bg := C_ROSE if primary else C_BTN
-	if not en:
-		bg = Color(bg, 0.45)
-	_box(Rect2(r.position + Vector2(0, 3), r.size), C_SHADOW, 14)
-	_box(r, bg, 14)
 	var label := String(b.label)
 	if String(b.id) == "hint" and hint_open and hint_level > 0 and hint_level < 3:
 		label = "Hint %d/3" % (hint_level + 1)
-	var tc := Color.WHITE if primary else C_INK
-	if not en:
-		tc = Color(tc, 0.5)
-	_text_center(r, label, 21, tc, bold)
+	GTUI.button(self, String(b.id), b.rect, label, "primary" if b.get("primary", false) else "secondary", b.enabled)
 
 
 func _draw_icon_button(b: Dictionary) -> void:
-	var r: Rect2 = b.rect
-	var c := r.get_center()
-	draw_circle(c, 24, C_BTN)
-	if String(b.id) == "help":
-		_text_center(r, "?", 26, C_INK, bold)
-	else:
-		var cr := Rect2(c.x - 11, c.y - 9, 22, 20)
-		draw_rect(cr, C_INK, false, 2.2)
-		draw_rect(Rect2(cr.position, Vector2(cr.size.x, 5.5)), C_INK)
-		draw_line(Vector2(c.x - 5, c.y - 13), Vector2(c.x - 5, c.y - 6), C_INK, 2.2)
-		draw_line(Vector2(c.x + 5, c.y - 13), Vector2(c.x + 5, c.y - 6), C_INK, 2.2)
-		for i in 3:
-			draw_rect(Rect2(c.x - 8 + i * 6, c.y + 1, 4, 4), C_INK)
+	GTUI.icon_button(self, String(b.id), b.rect, "help" if String(b.id) == "help" else "calendar")
 
 
 func _draw_hint() -> void:
 	var r := hint_rect
-	_box(Rect2(r.position + Vector2(0, 4), r.size), C_SHADOW, 16)
-	_box(r, C_PAPER, 16, C_GOLD, 2)
-	_text(r.position + Vector2(16, 30), "Hint %d of 3" % hint_level, 18, C_GOLD.darkened(0.25), bold)
-	var lines := _hint_lines(r.size.x - 32)
-	for k in lines.size():
-		_text(r.position + Vector2(16, 58 + k * 24), lines[k], 18, C_INK)
+	GTUI.box(self, r, C_PAPER, GTUI.R_PANEL, C_GOLD)
+	var pad := GTUI.dp(GTUI.SP_L)
+	GTUI.text(self, r.position + Vector2(pad, pad), "Hint %d of 3" % hint_level, GTUI.FS_LABEL, C_GOLD.darkened(0.3), true)
+	var y := r.position.y + pad + GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_XS)
+	GTUI.paragraph(self, r.position.x + pad, y, r.size.x - pad * 2, _hint_text(), GTUI.FS_BODY, C_INK)
 	for b in buttons:
 		if b.get("hintcard", false):
 			_draw_button(b)
 
 
 func _dim() -> void:
-	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(0.17, 0.12, 0.16, 0.55))
+	pass
 
 
 func _draw_modal_buttons() -> void:
 	for b in buttons:
-		if not b.get("dev", false) and b.get("kind", "") != "row":
+		if not b.get("dev", false) and b.get("kind", "") == "":
 			_draw_button(b)
 
 
 func _draw_help() -> void:
-	_dim()
-	var c := _modal_card(_help_height())
-	_box(c, C_PAPER, 20, C_GOLD, 2)
-	_text_center(Rect2(c.position.x, c.position.y + 18, c.size.x, 44), "How to play", 30, C_INK, bold)
-	var y := c.position.y + 92
+	var c := GTUI.modal(self, _modal_card(_help_height()), "How to play", "help_x")
+	var y := c.position.y
 	for t in HELP_TIPS:
-		var lines := _wrap(t, 19, c.size.x - 74, font)
-		draw_circle(Vector2(c.position.x + 32, y - 6), 5, C_ROSE)
-		for k in lines.size():
-			_text(Vector2(c.position.x + 48, y + k * 24), lines[k], 19, C_INK)
-		y += lines.size() * 24 + 12
+		draw_circle(Vector2(c.position.x + GTUI.dp(4), y + GTUI.line_height(GTUI.FS_BODY) / 2.0), GTUI.dp(3), C_ROSE)
+		y = GTUI.paragraph(self, c.position.x + GTUI.dp(GTUI.SP_L), y, c.size.x - GTUI.dp(GTUI.SP_L), t, GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
 	_draw_modal_buttons()
 
 
 func _draw_end() -> void:
-	_dim()
-	var c := _modal_card(470)
-	_box(c, C_PAPER, 20, C_GOLD, 2)
 	var title := "Everyone's seated!" if not revealed else "Answer revealed"
-	_text_center(Rect2(c.position.x, c.position.y + 20, c.size.x, 44), title, 32, C_INK, bold)
-	_text_center(Rect2(c.position.x, c.position.y + 64, c.size.x, 30), "#%d · %s · %s" % [model.number, Daily.short_date(date), D.tier_name(model.tier)], 19, C_MUTED)
-	_text_center(Rect2(c.position.x, c.position.y + 98, c.size.x, 70), Share.clock(final_seconds), 54, C_ROSE, bold)
+	var c := GTUI.modal(self, _modal_card(_end_height()), title, "end_x")
+	var y := c.position.y
+	GTUI.text(self, Vector2(c.position.x, y), "#%d · %s · %s" % [model.number, Daily.short_date(date), D.tier_name(model.tier)], GTUI.FS_LABEL, C_MUTED)
+	y += GTUI.line_height(GTUI.FS_LABEL)
+	GTUI.text_in(self, Rect2(c.position.x, y, c.size.x, GTUI.line_height(GTUI.FS_DISPLAY)), Share.clock(final_seconds), GTUI.FS_DISPLAY, C_ROSE, -1, true)
+	y += GTUI.line_height(GTUI.FS_DISPLAY) + GTUI.dp(GTUI.SP_S)
 	var summary := ""
 	if revealed:
 		summary = "Better luck tomorrow"
@@ -1561,9 +1519,10 @@ func _draw_end() -> void:
 		summary = "Flawless: no hints, no wrong checks"
 	else:
 		summary = "%d hint%s · %d wrong check%s" % [hints_used, "" if hints_used == 1 else "s", mistakes, "" if mistakes == 1 else "s"]
-	_text_center(Rect2(c.position.x, c.position.y + 172, c.size.x, 30), summary, 20, C_INK)
+	GTUI.text(self, Vector2(c.position.x, y), summary, GTUI.FS_BODY, C_INK)
+	y += GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_L)
 	var sq := 22.0
-	var gx := c.get_center().x - (5 * sq + 4 * 6) / 2.0
+	var gx := c.position.x
 	var at: PackedInt32Array = board.guest_at()
 	for t in 2:
 		for p in 5:
@@ -1573,44 +1532,29 @@ func _draw_end() -> void:
 				col = C_FAINT
 			elif board.hinted.has(g):
 				col = C_GOLD
-			_box(Rect2(gx + p * (sq + 6), c.position.y + 214 + t * (sq + 6), sq, sq), col, 5)
+			_box(Rect2(gx + p * (sq + 6), y + t * (sq + 6), sq, sq), col, 5)
 	_draw_modal_buttons()
 
 
 func _draw_archive() -> void:
-	_dim()
-	var c := _archive_card()
-	_box(c, C_PAPER, 20, C_GOLD, 2)
-	_text(c.position + Vector2(24, 50), "Past days", 30, C_INK, bold)
-	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
-	_text(Vector2(c.end.x - 24 - _tw(pg, 18), c.position.y + 48), pg, 18, C_MUTED)
+	var c := GTUI.modal(self, _archive_card(), "Past days", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		if b.get("kind", "") != "row":
 			continue
 		var d := String(b.id).substr(4)
-		var r: Rect2 = b.rect
-		_box(r, C_CARD, 12, C_ROSE if d == date else C_FAINT, 2)
-		var mid := r.get_center().y + 8
-		_text(Vector2(r.position.x + 16, mid), "#%d" % Daily.day_number(d), 22, C_ROSE, bold)
-		_text(Vector2(r.position.x + 84, mid), "Today" if d == today else Daily.short_date(d), 22, C_INK)
 		var res := String(archive_results.get(d, ""))
 		var txt := res if res != "" else D.tier_name(Daily.tier_for(d))
-		_text(Vector2(r.end.x - 16 - _tw(txt, 19), mid), txt, 19, C_OK if res != "" and res != "In progress" else C_MUTED)
+		GTUI.list_row(self, String(b.id), b.rect, "#%d" % Daily.day_number(d), "Today" if d == today else Daily.short_date(d),
+			txt, d == date, C_OK if res != "" and res != "In progress" else Color(0, 0, 0, 0))
 	_draw_modal_buttons()
 
 
 func _draw_toast() -> void:
-	var vs := get_viewport_rect().size
-	var w := minf(_tw(toast, 20) + 40, vs.x - 32)
-	var lines := _wrap(toast, 20, w - 40, font)
-	var h := 22.0 + lines.size() * 26
-	var y := bar_rect.position.y - h - 14
+	var y := bar_rect.position.y - GTUI.dp(GTUI.SP_M)
 	if hint_open:
-		y = hint_rect.position.y - h - 10
-	var r := Rect2((vs.x - w) / 2.0, y, w, h)
-	_box(r, Color(C_INK, 0.92), 14)
-	for k in lines.size():
-		_text_center(Rect2(r.position.x, r.position.y + 10 + k * 26, r.size.x, 26), lines[k], 20, Color.WHITE)
+		y = hint_rect.position.y - GTUI.dp(GTUI.SP_S)
+	GTUI.toast(self, toast, 1.0 if toast_t > 0.3 else toast_t / 0.3, y)
 
 
 func _draw_dev() -> void:
@@ -1671,3 +1615,44 @@ func _draw_confetti() -> void:
 	for q in confetti:
 		var dd := Vector2(cos(q.r), sin(q.r)) * 6
 		draw_line(q.p - dd, q.p + dd, Color(q.c, clampf(q.life, 0, 1)), 5)
+
+
+func _head_h() -> float:
+	return maxf(GTUI.target(), GTUI.line_height(GTUI.FS_HEADING) + GTUI.line_height(GTUI.FS_LABEL) - GTUI.dp(GTUI.SP_XS))
+
+
+func _hint_text() -> String:
+	if hint.is_empty():
+		return ""
+	var txt := ""
+	if hint_level <= 1:
+		txt = String(hint.get("nudge", ""))
+		var cl: Array = hint.get("clues", [])
+		if String(hint.kind) == "deduce" and not cl.is_empty():
+			var nums: Array = []
+			for i in cl:
+				nums.append(str(int(i) + 1))
+			if nums.size() == 1:
+				txt = "Look closely at clue %s." % nums[0]
+			else:
+				txt = "Look at clues %s and %s together." % [", ".join(nums.slice(0, nums.size() - 1)), nums[-1]]
+			if hint.get("uses_board", false):
+				txt += " Use the guests already seated, too."
+	else:
+		var parts: Array = []
+		if String(hint.kind) == "deduce":
+			for s in hint.get("chain", []):
+				if String(s) != String(hint.text):
+					parts.append(String(s))
+		parts.append(String(hint.text))
+		txt = " ".join(parts)
+	return txt
+
+
+func _help_width() -> float:
+	return minf(GTUI.dp(520), get_viewport_rect().size.x - GTUI.dp(GTUI.SP_L) * 2) - GTUI.dp(GTUI.SP_XL) * 2
+
+
+func _end_height() -> float:
+	var h := GTUI.line_height(GTUI.FS_LABEL) + GTUI.line_height(GTUI.FS_DISPLAY) + GTUI.dp(GTUI.SP_S) + GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_L) + 2 * 22.0 + 6 + GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_height(h)
