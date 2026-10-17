@@ -60,6 +60,8 @@ func _a_wrong_drink(main, n := 0) -> String:
 func test_loads_into_todays_game():
 	var main = await load_scene("res://main.tscn")
 	await wait_frames(2)
+	assert_eq(main.date, Daily.today_local(), "opens today")
+	main.dev_reset()          # earlier runs may have left dev progress for today
 	var st: Dictionary = main.get_agent_state()
 	assert_eq(st.state, "playing", "playing")
 	assert_eq(st.day, Daily.today_local(), "opens today")
@@ -194,6 +196,7 @@ func test_date_rollover():
 	main.dev_set_today(Daily.add_days(tomorrow, 1))
 	assert_eq(main.date, tomorrow, "a game in progress stays put")
 	assert_true(String(main.toast).contains("new mystery drink"), "and a toast says a new one is ready")
+	main.dev_reset()          # don't leave dev progress behind for tomorrow's run
 	main.today_override = ""
 
 
@@ -223,22 +226,55 @@ func test_help_and_first_run():
 
 func test_every_label_fits_its_cell():
 	# no truncation, no overlap: every value label fits a cell in two lines at the smallest
-	# cell width any layout produces (landscape left column 520 wide).
+	# cell width any layout produces (landscape left column 470 wide).
 	var main = await _fresh()
-	var cell_w := (520.0 - 6 * 5) / 6.0 - 10.0
+	var cell_w := (470.0 - 6 * 5) / 6.0 - 10.0
 	for id in Schema.ids():
 		for v in Schema.values(id):
 			var label := Schema.value_label(id, v)
 			assert_true(main.text_fits(label, cell_w, 20, 12, 2, main.bold), "%s fits a cell" % label)
 	for d in DB.all():
-		assert_true(main.text_fits(d.name, 520.0 - 40, 22, 14, 1, main.bold), d.name + " fits a guess row")
+		assert_true(main.text_fits(d.name, 470.0 - 40, 22, 14, 1, main.bold), d.name + " fits a guess row")
 	for l in main.COL_LABELS:
 		assert_true(main.text_fits(l, cell_w + 10, 18, 13, 1, main.bold), l + " header fits")
 
 
+func test_picker_shows_ingredients_that_fit():
+	# every drink's name fits one line and its ingredients two lines, at every layout, with
+	# room for the "tried" label: no truncation, no overlap
+	var main = await _fresh()
+	for size in [Vector2(720, 1560), Vector2(720, 1100), Vector2(828, 720), Vector2(978, 720), Vector2(1600, 900)]:
+		main.layout_for(size)
+		var w: Array = main.sugg_text_widths()
+		assert_gt(w[0], 150.0, "name room at " + str(size))
+		var three := 0
+		for d in DB.all():
+			var lay: Dictionary = main.sugg_row_layout(d)
+			assert_true(main.text_fits(d.name, w[0], lay.name.size, lay.name.size, 1, main.bold), "%s name fits at %s" % [d.name, str(size)])
+			var n: int = lay.ingredients.lines.size()
+			assert_true(main.text_fits(lay.text, w[1], lay.ingredients.size, lay.ingredients.size, n, main.font),
+				"%s ingredients fit at %s: %s" % [d.name, str(size), lay.text])
+			assert_true(n <= 3, "at most three lines")
+			assert_lt(lay.height, main.SUGG_ROW_H - 12, "%s fits its row at %s" % [d.name, str(size)])
+			if n == 3:
+				three += 1
+		if size.x <= 720 or size.x >= 978:
+			assert_eq(three, 0, "phones and normal desktop windows always get two lines at " + str(size))
+	main.layout_for(main.get_viewport_rect().size)
+	main.type_text("marg")
+	await wait_frames(2)
+	assert_true(main.panel_open, "picker open")
+	assert_eq(main.ingredients_text(DB.get_drink(main.suggestions[0])).replace("\u00a0", " "),
+		"Tequila · Lime juice · Orange liqueur · Salt rim", "the margarita's ingredients")
+	var lines: Array = main.fit(main.ingredients_text(DB.get_drink("bloody_mary")), 300.0, 21, 14, 3).lines
+	for l in lines:
+		assert_false(String(l).ends_with("Celery") or String(l).begins_with("salt"), "ingredients never split mid-name")
+		assert_false(String(l).begins_with("·"), "a line never starts with a separator")
+
+
 func test_layouts_do_not_overlap():
 	var main = await _fresh()
-	for size in [Vector2(720, 1560), Vector2(720, 1280), Vector2(720, 1100), Vector2(1280, 720), Vector2(978, 720)]:
+	for size in [Vector2(720, 1560), Vector2(720, 1280), Vector2(720, 1100), Vector2(1280, 720), Vector2(978, 720), Vector2(828, 720)]:
 		main.layout_for(size)
 		var parts := [main.head_rect, main.known_rect, main.msg_rect, main.rows_rect, main.input_rect, main.kb_rect]
 		for i in parts.size():

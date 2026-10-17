@@ -35,8 +35,10 @@ func test_schema_has_the_six_dimensions():
 
 func test_database_is_valid():
 	assert_eq(DB.validate(), [], "no schema errors")
-	assert_true(DB.size() >= 50, "about fifty drinks")
-	assert_true(DB.targets().size() >= 40, "plenty of possible answers")
+	assert_true(DB.size() >= 90, "about ninety drinks")
+	assert_true(DB.targets().size() >= 70, "plenty of possible answers")
+	for d in DB.all():
+		assert_true(d.ingredients.size() >= 2, d.id + " lists its ingredients")
 
 
 func test_ordinals_are_ints():
@@ -147,6 +149,12 @@ func test_search_examples():
 	assert_eq(Search.search("cosmo")[0], "cosmopolitan", "alias prefix")
 	assert_eq(Search.search("dark n")[0], "dark_n_stormy", "apostrophes ignored")
 	assert_eq(Search.search("russian white")[0], "white_russian", "any word order")
+	assert_eq(Search.search("boba")[0], "bubble_tea", "boba")
+	assert_ne(Search.search("sour")[0], "apple_martini", "names beat aliases")
+	assert_eq(Search.search("appletini")[0], "apple_martini", "appletini")
+	assert_eq(Search.resolve("LIIT"), "long_island", "liit")
+	assert_eq(Search.resolve("Pimms"), "pimms_cup", "pimms without the apostrophe")
+	assert_eq(Search.search("virgin").size(), 3, "three virgin drinks")
 	assert_eq(Search.search(""), [], "empty query")
 	assert_eq(Search.search("zzzz"), [], "no match")
 

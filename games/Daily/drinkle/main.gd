@@ -83,6 +83,7 @@ var title_tap_t := -10.0
 # --- layout
 var cv: CanvasItem                  # where the draw helpers paint (self, or the clipped modal layer)
 var clip_layer: Node2D
+var list_layer: Node2D              # the picker's rows, clipped to panel_list_rect
 var modal_painter := Callable()
 var font: Font
 var bold: Font
@@ -106,7 +107,7 @@ var modal_rect := Rect2()
 var modal_body := Rect2()
 var dev_rect := Rect2()
 var buttons: Array = []
-const SUGG_ROW_H := 64.0
+const SUGG_ROW_H := 118.0          # name line + up to two lines of ingredients
 const PANEL_HEAD := 44.0
 
 # --- pointer
@@ -124,6 +125,10 @@ func _ready() -> void:
 	clip_layer.name = "ModalClip"
 	add_child(clip_layer)
 	clip_layer.draw.connect(_draw_clip_layer)
+	list_layer = Node2D.new()
+	list_layer.name = "PickerList"
+	add_child(list_layer)
+	list_layer.draw.connect(_draw_list_layer)
 	font = ThemeDB.fallback_font
 	var fv := FontVariation.new()
 	fv.base_font = font
@@ -735,7 +740,7 @@ func layout_for(vs: Vector2) -> void:
 		glass_rect = Rect2(hero_rect.position.x + 4, hero_rect.position.y, hero_rect.size.y * 0.8, hero_rect.size.y)
 	else:
 		var total := minf(vs.x - pad * 3, 1320.0)
-		var lw := clampf(total * 0.6, 520.0, 800.0)
+		var lw := clampf(total * 0.56, 470.0, 800.0)
 		var rw := total - lw
 		var x0 := (vs.x - total - pad) * 0.5
 		col = Rect2(x0, 0, lw, vs.y)
@@ -1194,6 +1199,7 @@ func _draw() -> void:
 	if modal != "help" and modal != "end":
 		modal_painter = Callable()
 		clip_layer.queue_redraw()
+	list_layer.queue_redraw()
 	cv.draw_rect(Rect2(Vector2.ZERO, vs), C_BG)
 	if game == null:
 		return
@@ -1485,37 +1491,88 @@ func _draw_panel() -> void:
 	cv.draw_string(font, Vector2(r.position.x + 16, r.position.y + 29), hf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 80, hf.size, C_MUTED)
 	_draw_x(Vector2(r.end.x - 28, r.position.y + 22), 9.0, C_MUTED)
 	var lr := panel_list_rect
-	var first := int(sugg_scroll / SUGG_ROW_H)
-	var last := mini(suggestions.size(), first + int(lr.size.y / SUGG_ROW_H) + 2)
-	for i in range(first, last):
-		var y := lr.position.y + i * SUGG_ROW_H - sugg_scroll
-		if y + SUGG_ROW_H < lr.position.y or y > lr.end.y:
-			continue
-		var row := Rect2(lr.position.x + 8, y + 3, lr.size.x - 16, SUGG_ROW_H - 6)
-		var clipped := row.intersection(lr)
-		if clipped.size.y < SUGG_ROW_H * 0.5:
-			continue
-		var id: String = suggestions[i]
-		var used: bool = game.guesses.has(id)
-		if i == sugg_hover and not used:
-			_rrect(row, C_CARD.lightened(0.08), 10)
-		elif i % 2 == 0:
-			_rrect(row, C_CARD, 10)
-		var nm := DB.name_of(id)
-		var ink := C_FAINT if used else C_INK
-		var right := "tried" if used else ""
-		var nw := row.size.x - 28 - (70 if used else 0)
-		var nf := fit(nm, nw, 25, 15, 1, bold)
-		var by := row.position.y + (row.size.y + bold.get_ascent(nf.size) - bold.get_descent(nf.size)) * 0.5
-		cv.draw_string(bold, Vector2(row.position.x + 14, by), nf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, nw, nf.size, ink)
-		if used:
-			cv.draw_string(font, Vector2(row.end.x - 80, by), right, HORIZONTAL_ALIGNMENT_RIGHT, 66, 18, C_FAINT)
 	# scroll bar
 	var content := suggestions.size() * SUGG_ROW_H
 	if content > lr.size.y:
 		var bh := maxf(30.0, lr.size.y * lr.size.y / content)
 		var by2 := lr.position.y + (lr.size.y - bh) * (sugg_scroll / (content - lr.size.y))
 		cv.draw_rect(Rect2(lr.end.x - 6, by2, 3, bh), C_FAINT)
+
+
+## Picker rows: drink name, and underneath it what goes into the drink. Drawn on a child canvas
+## clipped to the list, so rows scroll cleanly under the header and above the input.
+func _draw_list_layer() -> void:
+	var ci := list_layer.get_canvas_item()
+	var on := panel_open and modal == "" and game != null
+	RenderingServer.canvas_item_set_custom_rect(ci, true, panel_list_rect)
+	RenderingServer.canvas_item_set_clip(ci, on)
+	if not on:
+		return
+	cv = list_layer
+	var lr := panel_list_rect
+	var first := int(sugg_scroll / SUGG_ROW_H)
+	var last := mini(suggestions.size(), first + int(lr.size.y / SUGG_ROW_H) + 2)
+	for i in range(first, last):
+		var row := Rect2(lr.position.x + 8, lr.position.y + i * SUGG_ROW_H - sugg_scroll + 3, lr.size.x - 16, SUGG_ROW_H - 6)
+		_draw_sugg_row(row, i)
+	cv = self
+
+
+## Text widths inside a picker row: [name width (room left for "tried"), ingredients width].
+func sugg_text_widths() -> Array:
+	var w := panel_list_rect.size.x - 16 - 28
+	return [w - 76, w]
+
+
+## Ingredients joined with dots; each ingredient's own spaces are non-breaking so a line never
+## splits "Celery / salt".
+static func ingredients_text(d: Dictionary) -> String:
+	var parts: Array = []
+	for ing in d.get("ingredients", []):
+		parts.append(String(ing).replace(" ", "\u00a0"))
+	return "\u00a0· ".join(parts)     # the dot stays with the ingredient before it
+
+
+## Text sizes for one picker row: {name, ingredients, height}. Ingredients take up to two lines;
+## only when a list can't fit two lines (the narrowest desktop window) does it drop to three
+## smaller lines, with a smaller name so the row height never changes.
+func sugg_row_layout(d: Dictionary) -> Dictionary:
+	var widths := sugg_text_widths()
+	var text := ingredients_text(d)
+	var nf := fit(d.name, widths[0], 27, 16, 1, bold)
+	var inf := fit(text, widths[1], 21, 14, 2, font)
+	if not text_fits(text, widths[1], 21, 14, 2, font):
+		nf = fit(d.name, widths[0], 21, 15, 1, bold)
+		inf = fit(text, widths[1], 15, 13, 3, font)
+	var h: float = bold.get_height(nf.size) + 4 + font.get_height(inf.size) * inf.lines.size()
+	return {"name": nf, "ingredients": inf, "height": h, "text": text}
+
+
+func _draw_sugg_row(row: Rect2, i: int) -> void:
+	var id: String = suggestions[i]
+	var d := DB.get_drink(id)
+	var used: bool = game.guesses.has(id)
+	if i == sugg_hover and not used:
+		_rrect(row, C_CARD.lightened(0.08), 10)
+	elif i % 2 == 0:
+		_rrect(row, C_CARD, 10)
+	var widths := sugg_text_widths()
+	var lay := sugg_row_layout(d)
+	var nf: Dictionary = lay.name
+	var inf: Dictionary = lay.ingredients
+	var name_h := bold.get_height(nf.size)
+	var lh := font.get_height(inf.size)
+	var block: float = name_h + 4 + lh * inf.lines.size()
+	var y: float = row.position.y + (row.size.y - block) * 0.5
+	var x := row.position.x + 14
+	cv.draw_string(bold, Vector2(x, y + bold.get_ascent(nf.size)), nf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, widths[0], nf.size,
+		C_FAINT if used else C_INK)
+	if used:
+		cv.draw_string(font, Vector2(row.end.x - 84, y + bold.get_ascent(nf.size)), "tried", HORIZONTAL_ALIGNMENT_RIGHT, 70, 18, C_FAINT)
+	var iy: float = y + name_h + 4 + font.get_ascent(inf.size)
+	for l in inf.lines:
+		cv.draw_string(font, Vector2(x, iy), l, HORIZONTAL_ALIGNMENT_LEFT, widths[1], inf.size, C_FAINT if used else C_MUTED)
+		iy += lh
 
 
 func _draw_toast(vs: Vector2) -> void:
@@ -1685,7 +1742,8 @@ func _help_content(y0: float, draw: bool) -> float:
 		y += 8
 	y += 6
 	y += _draw_para(Vector2(x, y), w, "Tips", 25, C_ACCENT, bold, draw) + 8
-	for t in ["A guess you know is wrong can still be a great test. Pick a drink that checks the things you're unsure of.",
+	for t in ["Don't know a drink? Each one in the list shows what goes into it.",
+			"A guess you know is wrong can still be a great test. Pick a drink that checks the things you're unsure of.",
 			"The Known row sums up everything your guesses have pinned down.",
 			"Stuck? Hints point you at what to test, then reveal facts. A clue appears for free after guesses 4 and 5.",
 			"Past days are in the calendar."]:

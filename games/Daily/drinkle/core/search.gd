@@ -141,7 +141,7 @@ static func _key_score(qt: PackedStringArray, qcompact: String, k: Dictionary) -
 	if k.text == " ".join(qt):
 		total += 100
 	if not k.alias:
-		total += 5
+		total += 20         # a drink's own name beats an alias ("sour": Whiskey Sour before "sour apple martini")
 	return total
 
 
