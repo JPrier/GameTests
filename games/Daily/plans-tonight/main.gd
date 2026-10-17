@@ -81,6 +81,11 @@ func _ready() -> void:
 	font_bold = FontVariation.new()
 	font_bold.base_font = ThemeDB.fallback_font
 	font_bold.variation_embolden = 0.7
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_PANEL, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_LINE, "accent": C_ACCENT, "on_accent": C_BG,
+		"success": C_GOOD, "danger": C_BAD, "focus": C_ACCENT, "scrim": Color(0.03, 0.02, 0.06, 0.72),
+	})
 	theme = _make_theme()
 	_add_key_action("lock_in", [KEY_ENTER, KEY_KP_ENTER])
 	_add_key_action("hint", [KEY_H])
@@ -471,8 +476,8 @@ func check_rollover(now := "") -> void:
 ## all behave the same.
 func _handle_actions() -> void:
 	var focus := get_viewport().gui_get_focus_owner()
-	if focus is LineEdit:
-		return
+	if focus is LineEdit or focus is BaseButton:
+		return   # typing / keyboard focus on a control: let it take the keys
 	if Input.is_action_just_pressed("dev_toggle") and dev_mode:
 		_toggle_dev()
 		return
@@ -496,48 +501,23 @@ func _handle_actions() -> void:
 # ================================================================ UI construction
 
 func _make_theme() -> Theme:
-	var t := Theme.new()
-	t.default_font = ThemeDB.fallback_font
-	t.default_font_size = 15
-	t.set_color("font_color", "Label", C_INK)
-	t.set_color("default_color", "RichTextLabel", C_INK)
-	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
-		var sb := StyleBoxFlat.new()
-		sb.set_corner_radius_all(12)
-		sb.content_margin_left = 14
-		sb.content_margin_right = 14
-		sb.content_margin_top = 10
-		sb.content_margin_bottom = 10
-		match state:
-			"normal": sb.bg_color = C_BTN
-			"hover": sb.bg_color = C_BTN_HI
-			"pressed": sb.bg_color = C_BTN_HI.lightened(0.1)
-			"disabled": sb.bg_color = Color(C_BTN, 0.45)
-			"focus":
-				sb.draw_center = false
-				sb.border_color = Color(C_ACCENT, 0.0)
-		t.set_stylebox(state, "Button", sb)
-	t.set_color("font_color", "Button", C_INK)
-	t.set_color("font_hover_color", "Button", C_INK)
-	t.set_color("font_pressed_color", "Button", C_INK)
-	t.set_color("font_disabled_color", "Button", C_DIM)
-	t.set_color("font_focus_color", "Button", C_INK)
-	t.set_font_size("font_size", "Button", 16)
-	var le := StyleBoxFlat.new()
-	le.bg_color = C_CARD
-	le.set_corner_radius_all(8)
-	le.content_margin_left = 8
-	le.content_margin_right = 8
-	t.set_stylebox("normal", "LineEdit", le)
-	t.set_stylebox("focus", "LineEdit", le)
-	t.set_color("font_color", "LineEdit", C_INK)
-	return t
+	# Buttons, panels, inputs, focus and type sizes come from the shared GameTests theme.
+	return GTUI.make_theme(GTUI.S)
 
 
 func _style(bg: Color, radius := 14, border := Color(0, 0, 0, 0), bw := 0, pad := 12) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
-	sb.set_corner_radius_all(radius)
+	# product surfaces use the shared radii; round avatars and tiny marks keep their own
+	var rad := float(radius)
+	if radius >= 9 and radius <= 12:
+		rad = GTUI.R_CONTROL
+	elif radius == 14:
+		rad = GTUI.R_PANEL
+	elif radius == 18:
+		rad = GTUI.R_OVERLAY
+	sb.set_corner_radius_all(int(rad * GTUI.S))
+	sb.anti_aliasing = true
 	sb.border_color = border
 	sb.set_border_width_all(bw)
 	sb.content_margin_left = pad
@@ -624,13 +604,17 @@ func _build_ui() -> void:
 	tv.mouse_filter = Control.MOUSE_FILTER_STOP
 	tv.gui_input.connect(_on_title_input)
 	hrow.add_child(tv)
-	title_label = _label("Plans Tonight?", 26, C_ACCENT, true)
+	title_label = _label("Plans Tonight?", GTUI.fs(GTUI.FS_HEADING), C_ACCENT, true)
 	tv.add_child(title_label)
-	sub_label = _label("", 13, C_MUTED)
+	sub_label = _label("", GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	tv.add_child(sub_label)
-	hrow.add_child(_icon_button("2753", "How to play", func(): _show_help()))
-	hrow.add_child(_icon_button("1f4c5", "Past days", func(): _show_archive()))
-	goal_label = _label("Pick the one plan that works for everyone.", 16, C_INK)
+	var cal := GTUI.make_icon_button("calendar", "Past days")
+	cal.pressed.connect(func(): _show_archive())
+	hrow.add_child(cal)
+	var hb := GTUI.make_icon_button("help", "How to play")
+	hb.pressed.connect(func(): _show_help())
+	hrow.add_child(hb)
+	goal_label = _label("Pick the one plan that works for everyone.", GTUI.fs(GTUI.FS_BODY), C_INK)
 	hv.add_child(goal_label)
 	frame.add_child(head)
 
@@ -659,7 +643,7 @@ func _build_ui() -> void:
 	sp.custom_minimum_size = Vector2(0, 6)
 	content.add_child(sp)
 	content.add_child(_section("TONIGHT'S OPTIONS"))
-	var help := _label("Tap a plan to pick it. Tap × to cross it off for yourself.", 13, C_MUTED)
+	var help := _label("Tap a plan to pick it. Tap × to cross it off for yourself.", GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	content.add_child(help)
 	plans_box = VBoxContainer.new()
 	plans_box.add_theme_constant_override("separation", 8)
@@ -679,7 +663,7 @@ func _build_ui() -> void:
 	var bv := VBoxContainer.new()
 	bv.add_theme_constant_override("separation", 8)
 	bm.add_child(bv)
-	status_label = _label("", 13, C_MUTED)
+	status_label = _label("", GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bv.add_child(status_label)
 	var brow := HBoxContainer.new()
@@ -690,25 +674,25 @@ func _build_ui() -> void:
 	hint_btn.icon = icon("1f4a1")
 	hint_btn.expand_icon = false
 	hint_btn.add_theme_constant_override("icon_max_width", 20)
-	hint_btn.custom_minimum_size = Vector2(108, 52)
-	hint_btn.focus_mode = Control.FOCUS_NONE
+	hint_btn.custom_minimum_size = Vector2(108, GTUI.target())
+	hint_btn.focus_mode = Control.FOCUS_ALL
 	hint_btn.pressed.connect(_ask_hint)
 	brow.add_child(hint_btn)
 	lock_btn = Button.new()
 	lock_btn.text = "Lock it in"
 	lock_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lock_btn.custom_minimum_size = Vector2(0, 52)
-	lock_btn.focus_mode = Control.FOCUS_NONE
-	lock_btn.add_theme_font_override("font", font_bold)
-	lock_btn.add_theme_font_size_override("font_size", 17)
+	lock_btn.custom_minimum_size = Vector2(0, GTUI.target())
+	lock_btn.theme_type_variation = "GTPrimary"
+	lock_btn.focus_mode = Control.FOCUS_ALL
 	lock_btn.pressed.connect(_on_lock_pressed)
 	brow.add_child(lock_btn)
 	frame.add_child(bar)
 
 	# --- toast
-	toast_label = _label("", 15, C_BG, true, false)
+	toast_label = _label("", GTUI.fs(GTUI.FS_LABEL + 1), C_BG, true, true)
 	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	toast_label.add_theme_stylebox_override("normal", _style(C_ACCENT, 20, Color(0, 0, 0, 0), 0, 10))
+	var tsb := GTUI._sb(GTUI.S, Color(C_INK, 0.96), GTUI.R_CONTROL, Color(0, 0, 0, 0), GTUI.SP_L, GTUI.SP_M)
+	toast_label.add_theme_stylebox_override("normal", tsb)
 	toast_label.visible = false
 	toast_label.z_index = 20
 	add_child(toast_label)
@@ -720,37 +704,23 @@ func _build_ui() -> void:
 	modal_layer.z_index = 10
 	add_child(modal_layer)
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.02, 0.06, 0.72)
+	dim.color = GTUI.c("scrim")
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	modal_layer.add_child(dim)
 	modal_panel = PanelContainer.new()
-	modal_panel.add_theme_stylebox_override("panel", _style(C_PANEL, 18, C_LINE, 1, 18))
+	modal_panel.theme_type_variation = "GTOverlay"
+	GTUI.mark_overlay(modal_layer)
 	modal_layer.add_child(modal_panel)
 	modal_box = VBoxContainer.new()
-	modal_box.add_theme_constant_override("separation", 12)
+	modal_box.add_theme_constant_override("separation", int(GTUI.dp(GTUI.SP_M)))
 	modal_panel.add_child(modal_box)
 
 	_build_dev_panel()
 
 
-func _icon_button(code: String, tip: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.icon = icon(code)
-	b.expand_icon = true
-	b.tooltip_text = tip
-	b.custom_minimum_size = Vector2(44, 44)
-	b.focus_mode = Control.FOCUS_NONE
-	var sb := _style(C_CARD, 12, Color(0, 0, 0, 0), 0, 10)
-	b.add_theme_stylebox_override("normal", sb)
-	b.add_theme_stylebox_override("hover", _style(C_BTN, 12, Color(0, 0, 0, 0), 0, 10))
-	b.add_theme_stylebox_override("pressed", _style(C_BTN_HI, 12, Color(0, 0, 0, 0), 0, 10))
-	b.pressed.connect(cb)
-	return b
-
-
 func _section(text: String) -> Label:
-	var l := _label(text, 12, C_MUTED, true)
+	var l := _label(text, GTUI.fs(GTUI.FS_CAPTION), C_MUTED, true)
 	return l
 
 
@@ -770,7 +740,8 @@ func _layout() -> void:
 	toast_label.size = Vector2(minf(w - 40, 340), 0)
 	toast_label.reset_size()
 	toast_label.size.x = minf(w - 40, 340)
-	toast_label.position = Vector2((vs.x - toast_label.size.x) * 0.5, 86)
+	# toasts sit just above the bottom action bar
+	toast_label.position = Vector2((vs.x - toast_label.size.x) * 0.5, vs.y - 128 - toast_label.size.y - GTUI.dp(GTUI.SP_M))
 	_layout_modal()
 	if dev_panel:
 		dev_panel.position = Vector2(8, 8)
@@ -826,23 +797,23 @@ func _friend_card(fi: int) -> Dictionary:
 	var nrow := HBoxContainer.new()
 	nrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(nrow)
-	var name := _label(f.name, 17, C_INK, true)
+	var name := _label(f.name, GTUI.fs(GTUI.FS_BODY), C_INK, true)
 	nrow.add_child(name)
 	if f.get("birthday", false):
 		nrow.add_child(_icon_rect("1f382", 20))
-	var tag := _label("", 12, C_HINT, true, false)
+	var tag := _label("", GTUI.fs(GTUI.FS_CAPTION), C_HINT, true, false)
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tag.size_flags_horizontal = Control.SIZE_SHRINK_END
 	tag.visible = false
 	nrow.add_child(tag)
-	col.add_child(_label(f.flavor, 13, C_MUTED))
+	col.add_child(_label(f.flavor, GTUI.fs(GTUI.FS_LABEL), C_MUTED))
 	var rules := VBoxContainer.new()
 	rules.add_theme_constant_override("separation", 2)
 	rules.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(rules)
 	var rule_rows: Array = []
 	for r in f.rules:
-		var rt := _rich(15)
+		var rt := _rich(GTUI.fs(GTUI.FS_BODY))
 		rules.add_child(rt)
 		rule_rows.append(rt)
 	return {"panel": panel, "style": sb, "tag": tag, "rules": rule_rows}
@@ -864,7 +835,7 @@ func _plan_card(plan: Dictionary) -> Dictionary:
 	top.add_theme_constant_override("separation", 10)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(top)
-	var num := _label(str(id + 1), 12, C_DIM, true, false)
+	var num := _label(str(id + 1), GTUI.fs(GTUI.FS_CAPTION), C_DIM, true, false)
 	num.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	num.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	num.custom_minimum_size.x = 10
@@ -875,10 +846,10 @@ func _plan_card(plan: Dictionary) -> Dictionary:
 	nv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(nv)
-	var name := _label(plan.name, 17, C_INK, true)
+	var name := _label(plan.name, GTUI.fs(GTUI.FS_BODY), C_INK, true)
 	nv.add_child(name)
 	if String(plan.activity).to_lower() != String(plan.name).to_lower():
-		nv.add_child(_label(plan.activity, 13, C_MUTED))
+		nv.add_child(_label(plan.activity, GTUI.fs(GTUI.FS_LABEL), C_MUTED))
 	var price := _label("$%d" % int(plan.price), 19, C_ACCENT, true, false)
 	price.size_flags_horizontal = Control.SIZE_SHRINK_END
 	price.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -908,7 +879,7 @@ func _plan_card(plan: Dictionary) -> Dictionary:
 		chips.add_child(_chip("1f6ab", "No food"))
 	var ncode := {"quiet": "1f508", "lively": "1f509", "loud": "1f50a"}
 	chips.add_child(_chip(ncode.get(plan.noise, "1f509"), PTRules.noise_label(plan.noise)))
-	var status := _rich(14)
+	var status := _rich(GTUI.fs(GTUI.FS_LABEL))
 	status.visible = false
 	col.add_child(status)
 	return {"panel": panel, "style": sb, "name": name, "x": x, "xsb": xsb, "xl": xl, "status": status, "col": col}
@@ -928,7 +899,7 @@ func _chip(code: String, text: String) -> PanelContainer:
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(h)
 	h.add_child(_icon_rect(code, 16))
-	var l := _label(text, 14, C_INK, false, false)
+	var l := _label(text, GTUI.fs(GTUI.FS_LABEL), C_INK, false, false)
 	l.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	h.add_child(l)
 	return p
@@ -1182,33 +1153,31 @@ func close_modal() -> void:
 	_close_modal()
 
 
-func _modal_title(text: String, code := "", color := C_INK) -> void:
+func _modal_title(text: String, _code := "", color := C_INK) -> void:
+	# standard overlay header: title left, close (x) right
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 10)
-	if code != "":
-		h.add_child(_icon_rect(code, 28))
-	h.add_child(_label(text, 20, color, true))
+	h.add_theme_constant_override("separation", int(GTUI.dp(GTUI.SP_S)))
+	var t := _label(text, GTUI.fs(GTUI.FS_TITLE), color, true)
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(t)
+	var x := GTUI.make_icon_button("close", "Close")
+	x.pressed.connect(_close_modal)
+	h.add_child(x)
 	modal_box.add_child(h)
 
 
 func _modal_buttons(specs: Array) -> void:
 	## specs: [[text, callable, primary?], ...] — always a full row, so buttons never move.
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", int(GTUI.dp(GTUI.SP_S)))
 	for s in specs:
 		var b := Button.new()
 		b.text = s[0]
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 50)
-		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(0, GTUI.target())
+		b.focus_mode = Control.FOCUS_ALL
 		if s.size() > 2 and s[2]:
-			b.add_theme_stylebox_override("normal", _style(C_ACCENT, 12, Color(0, 0, 0, 0), 0, 10))
-			b.add_theme_stylebox_override("hover", _style(C_ACCENT.lightened(0.1), 12, Color(0, 0, 0, 0), 0, 10))
-			b.add_theme_stylebox_override("pressed", _style(C_ACCENT.darkened(0.1), 12, Color(0, 0, 0, 0), 0, 10))
-			b.add_theme_color_override("font_color", C_BG)
-			b.add_theme_color_override("font_hover_color", C_BG)
-			b.add_theme_color_override("font_pressed_color", C_BG)
-			b.add_theme_font_override("font", font_bold)
+			b.theme_type_variation = "GTPrimary"
 		b.pressed.connect(s[1])
 		row.add_child(b)
 	modal_box.add_child(row)
@@ -1227,7 +1196,7 @@ func _show_wrong(id: int) -> void:
 		row.add_child(_icon_rect(f.avatar, 26))
 		var ok := PTRules.friend_ok(plan, f)
 		row.add_child(_icon_rect("2705" if ok else "274c", 18))
-		var t := _rich(15)
+		var t := _rich(GTUI.fs(GTUI.FS_BODY))
 		t.push_font(font_bold)
 		t.add_text(f.name)
 		t.pop()
@@ -1253,8 +1222,8 @@ func _ask_hint() -> void:
 	modal_hint_used = false
 	var n := int(st.hints) + 1
 	_modal_title("Use hint %d of %d?" % [n, PTHints.MAX], "1f4a1", C_HINT)
-	modal_box.add_child(_label(hint_preview(n), 16))
-	modal_box.add_child(_label("Your shared result will show how many hints you used.", 13, C_MUTED))
+	modal_box.add_child(_label(hint_preview(n), GTUI.fs(GTUI.FS_BODY)))
+	modal_box.add_child(_label("Your shared result will show how many hints you used.", GTUI.fs(GTUI.FS_LABEL), C_MUTED))
 	_modal_buttons([["Not yet", _close_modal], ["Use hint", _confirm_hint, true]])
 
 
@@ -1265,7 +1234,7 @@ func _confirm_hint() -> void:
 	var n := int(st.hints)
 	_open_modal(Modal.HINT)
 	_modal_title("Hint %d" % n, "1f4a1", C_HINT)
-	modal_box.add_child(_label(hint_text(n), 17))
+	modal_box.add_child(_label(hint_text(n), GTUI.fs(GTUI.FS_BODY)))
 	_modal_buttons([["Got it", _close_modal, true]])
 	if n == 1:
 		scroll.scroll_vertical = 0
@@ -1283,10 +1252,10 @@ func _show_win(_fresh: bool) -> void:
 	var hv := VBoxContainer.new()
 	hv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hv.add_theme_constant_override("separation", 0)
-	hv.add_child(_label("Everyone's in for %s." % plan.name, 17, C_INK, true))
+	hv.add_child(_label("Everyone's in for %s." % plan.name, GTUI.fs(GTUI.FS_BODY), C_INK, true))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = PTDaily.seed_for(date)
-	hv.add_child(_label(WIN_LINES[rng.randi_range(0, WIN_LINES.size() - 1)], 14, C_MUTED))
+	hv.add_child(_label(WIN_LINES[rng.randi_range(0, WIN_LINES.size() - 1)], GTUI.fs(GTUI.FS_LABEL), C_MUTED))
 	h.add_child(hv)
 	modal_box.add_child(h)
 	# Stats + the same squares the share text uses, drawn as boxes (no emoji font needed).
@@ -1310,7 +1279,7 @@ func _show_win(_fresh: bool) -> void:
 			row.add_child(sq)
 		grid.add_child(row)
 	modal_box.add_child(grid)
-	var nxt := _label("", 13, C_MUTED)
+	var nxt := _label("", GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	nxt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if date != today:
 		nxt.text = "Past day #%d" % puzzle_no
@@ -1334,14 +1303,14 @@ func _play_today() -> void:
 func _stat(big: String, small: String) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	p.add_theme_stylebox_override("panel", _style(C_CARD, 12, Color(0, 0, 0, 0), 0, 8))
+	p.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	p.add_child(v)
-	var a := _label(big, 20, C_ACCENT, true)
+	var a := _label(big, GTUI.fs(GTUI.FS_TITLE), C_ACCENT, true)
 	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(a)
-	var b := _label(small, 12, C_MUTED)
+	var b := _label(small.to_upper(), GTUI.fs(GTUI.FS_CAPTION), C_MUTED, true)
 	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(b)
 	return p
@@ -1361,10 +1330,10 @@ func _show_help() -> void:
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		h.add_child(_icon_rect(l[0], 22))
-		var t := _label(String(l[1]), 15)
+		var t := _label(String(l[1]), GTUI.fs(GTUI.FS_BODY))
 		h.add_child(t)
 		modal_box.add_child(h)
-	modal_box.add_child(_label("Every clue matters, and nothing needs outside knowledge. New plans every day at midnight UTC.", 13, C_MUTED))
+	modal_box.add_child(_label("Every clue matters, and nothing needs outside knowledge. New plans every day at midnight UTC.", GTUI.fs(GTUI.FS_LABEL), C_MUTED))
 	_modal_buttons([["Let's go", _close_modal, true]])
 
 
@@ -1399,8 +1368,8 @@ func _show_archive(page := -1) -> void:
 			var d: String = days[i]
 			var b := Button.new()
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-			b.custom_minimum_size = Vector2(0, 44)
-			b.focus_mode = Control.FOCUS_NONE
+			b.custom_minimum_size = Vector2(0, GTUI.target())
+			b.focus_mode = Control.FOCUS_ALL
 			var res := String(results.get(d, ""))
 			var cfg := PTDaily.config(d)
 			b.text = "#%d  %s  ·  %s%s" % [PTDaily.day_number(d), PTDaily.pretty(d), cfg.label,
@@ -1413,14 +1382,13 @@ func _show_archive(page := -1) -> void:
 			var sp := Control.new()
 			sp.custom_minimum_size = Vector2(0, 44)
 			modal_box.add_child(sp)
-	var pg := _label("Page %d of %d" % [archive_page + 1, archive_pages()], 13, C_MUTED)
+	var pg := _label("Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 	pg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	modal_box.add_child(pg)
 	_modal_buttons([["Newer", func(): _show_archive(archive_page - 1)], ["Older", func(): _show_archive(archive_page + 1)]])
 	var nav: HBoxContainer = modal_box.get_child(modal_box.get_child_count() - 1)
 	nav.get_child(0).disabled = archive_page == 0
 	nav.get_child(1).disabled = archive_page >= archive_pages() - 1
-	_modal_buttons([["Close", _close_modal]])
 
 
 ## Opens a past (or today's) puzzle from the picker.
@@ -1444,8 +1412,8 @@ func _build_dev_panel() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
 	dev_panel.add_child(v)
-	v.add_child(_label("DEV", 12, C_ACCENT, true))
-	dev_info = _label("", 12, C_MUTED)
+	v.add_child(_label("DEV", GTUI.fs(GTUI.FS_CAPTION), C_ACCENT, true))
+	dev_info = _label("", GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 	v.add_child(dev_info)
 	dev_date_edit = LineEdit.new()
 	dev_date_edit.placeholder_text = "YYYY-MM-DD"
@@ -1465,7 +1433,7 @@ func _build_dev_panel() -> void:
 			b.text = spec[0]
 			b.add_theme_font_size_override("font_size", 13)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			b.focus_mode = Control.FOCUS_NONE
+			b.focus_mode = Control.FOCUS_ALL
 			b.pressed.connect(spec[1])
 			h.add_child(b)
 		v.add_child(h)
@@ -1550,3 +1518,9 @@ func get_agent_state() -> Dictionary:
 ## Fingerprint of any day's puzzle (agents use it to check web and native builds agree).
 func puzzle_signature(d: String) -> String:
 	return PTSave.signature(PTGen.generate(d))
+
+
+func _input(ev: InputEvent) -> void:
+	# Tab / Shift+Tab move focus through the visible controls (inside the open overlay only)
+	if GTUI.handle_input(ev).has("consumed"):
+		get_viewport().set_input_as_handled()

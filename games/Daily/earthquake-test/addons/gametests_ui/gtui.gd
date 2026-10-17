@@ -66,6 +66,7 @@ static var _down := false
 static var _hover := ""
 static var _focus := ""
 static var _keyboard := false            # show focus rings only after keyboard use
+static var _controls: Control            # Control-node game: its root (see "Control-node games" below)
 
 
 ## Call once in _ready(). `palette` keys: see PALETTE_KEYS (missing ones are derived).
@@ -83,6 +84,7 @@ static func setup(owner: CanvasItem, palette: Dictionary, scale := 0.0) -> void:
 	_last = []
 	_focus = ""
 	_hover = ""
+	_controls = owner if owner is Control else null
 	refresh_scale(owner)
 	var vp := owner.get_viewport()
 	if vp and not vp.size_changed.is_connected(_on_resize):
@@ -208,6 +210,9 @@ static func is_focused(id: String) -> bool:
 
 
 static func focused_id() -> String:
+	if _controls:
+		var f := _controls.get_viewport().gui_get_focus_owner()
+		return String(_controls.get_path_to(f)) if f and _controls.is_ancestor_of(f) else ""
 	return _focus if _keyboard else ""
 
 
@@ -218,6 +223,8 @@ static func focused_id() -> String:
 static func handle_input(ev: InputEvent) -> Dictionary:
 	if ev.has_meta("gt_synth"):
 		return {}
+	if _controls:
+		return _handle_control_input(ev)
 	if ev is InputEventMouseMotion or ev is InputEventScreenDrag:
 		_pointer = ev.position
 		if _keyboard:
@@ -311,7 +318,7 @@ static func _redraw() -> void:
 static func undersized() -> Array:
 	var out: Array = []
 	var min_h := TARGET * S - 0.5
-	for t in _last:
+	for t in targets():
 		var r: Rect2 = t.rect
 		var min_w := (TARGET_COMPACT if t.compact else TARGET) * S - 0.5
 		if r.size.y < min_h or r.size.x < min_w:
@@ -320,7 +327,7 @@ static func undersized() -> Array:
 
 
 static func targets() -> Array:
-	return _last
+	return _scan_controls() if _controls else _last
 
 
 # ------------------------------------------------------------------ text
@@ -791,6 +798,79 @@ static func glyph(ci: CanvasItem, icon: String, ctr: Vector2, size: float, col: 
 
 
 # ------------------------------------------------------------------ Control-node games
+#
+# Games built from Control nodes use real Buttons with the Theme below (type variations instead of
+# draw calls) and Godot's own focus: Tab/Shift+Tab move focus, Enter/Space press, and the focus ring
+# only shows for keyboard use (gui/common/show_focus_state_on_pointer_event). Give buttons
+# focus_mode = FOCUS_ALL. Mark a modal's root with GTUI.mark_overlay(node) so Tab stays inside it.
+
+static func mark_overlay(node: Control) -> void:
+	node.set_meta("gt_overlay", true)
+
+
+## Visible, enabled buttons/inputs of a Control-node game (top-most visible overlay only).
+static func _scan_controls() -> Array:
+	var root: Control = _controls
+	var all: Array = []
+	_collect(root, all)
+	for n in all:
+		if n.has_meta("gt_overlay") and n.is_visible_in_tree():
+			root = n
+	var out: Array = []
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is CanvasItem and not n.is_visible_in_tree():
+			continue
+		if n is BaseButton and not n.disabled or n is LineEdit:
+			var c: Control = n
+			out.append({"id": String(_controls.get_path_to(c)), "rect": c.get_global_rect(), "layer": 0, "enabled": true,
+				"compact": c.has_meta("gt_compact"), "node": c})
+		var kids := n.get_children()
+		for i in range(kids.size() - 1, -1, -1):
+			stack.append(kids[i])
+	return out
+
+
+static func _collect(n: Node, out: Array) -> void:
+	for k in n.get_children():
+		if k is Control:
+			out.append(k)
+		_collect(k, out)
+
+
+static func _handle_control_input(ev: InputEvent) -> Dictionary:
+	if ev is InputEventKey and ev.pressed and not ev.echo:
+		if ev.keycode == KEY_TAB:
+			var ts := _scan_controls().filter(func(t): return not t.compact and t.node.focus_mode != Control.FOCUS_NONE)
+			if ts.is_empty():
+				return {"consumed": true}
+			var cur := _controls.get_viewport().gui_get_focus_owner()
+			var idx := -1
+			for i in ts.size():
+				if ts[i].node == cur:
+					idx = i
+			var step := -1 if ev.shift_pressed else 1
+			idx = posmod(idx + step, ts.size()) if idx >= 0 else (0 if step > 0 else ts.size() - 1)
+			ts[idx].node.grab_focus()
+			return {"consumed": true}
+		if ev.keycode == KEY_ESCAPE:
+			return {"cancel": true}
+	return {}
+
+
+## Icon button (help, calendar, close...) for Control-node games, drawn with the shared glyphs.
+static func make_icon_button(icon: String, tooltip := "") -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "GTIcon"
+	b.tooltip_text = tooltip
+	b.custom_minimum_size = Vector2(TARGET, TARGET) * S
+	b.focus_mode = Control.FOCUS_ALL
+	b.draw.connect(func():
+		var ink := c("text") if not b.disabled else Color(c("text"), 0.45)
+		glyph(b, icon, b.size / 2.0, minf(b.size.x, b.size.y) * 0.5, ink))
+	return b
+
 
 ## A Theme for games built from Control nodes. Type variations: "GTPrimary", "GTQuiet", "GTIcon",
 ## "GTChip", "GTPanel" (PanelContainer), "GTOverlay" (PanelContainer), "GTCaption"/"GTTitle" (Label).
