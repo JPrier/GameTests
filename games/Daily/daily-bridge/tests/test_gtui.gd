@@ -4,7 +4,13 @@ extends GameTest
 
 func _main() -> Node:
 	var main = await load_scene(ProjectSettings.get_setting("application/run/main_scene"))
-	await wait_frames(3)
+	# wait for the first real screen (some games show a loading frame first)
+	for i in 60:
+		await wait_frames(1)
+		if main is CanvasItem:
+			main.queue_redraw()
+		if i >= 2 and not GTUI.targets().is_empty():
+			break
 	return main
 
 
