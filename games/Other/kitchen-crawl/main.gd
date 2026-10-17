@@ -1113,7 +1113,7 @@ func _draw_hud() -> void:
 
 
 func _dim(a := 0.72) -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.06, 0.04, 0.04, a))
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(GTUI.c("scrim"), a))
 
 
 func _draw_banner() -> void:

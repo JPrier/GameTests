@@ -220,7 +220,7 @@ h2{{margin:0 0 var(--s2);font-size:.75rem;font-weight:700;letter-spacing:.12em;t
   .game{{gap:var(--s3);padding:var(--s3) var(--s2)}}
   .art{{flex-basis:104px}}
   .fallback{{font-size:.75rem;padding:var(--s1) var(--s2)}}
-  .tag{{font-size:.875rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+  .tag{{font-size:.875rem}}
 }}
 @media (prefers-reduced-motion:reduce){{.game{{transition:none}}}}
 </style></head>

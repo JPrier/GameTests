@@ -11,6 +11,10 @@ SITE="${SITE_DIR:-$ROOT/_site}"
 mkdir -p "$SITE"
 fail=0
 
+# Shared UI: every game carries the current ui/ copy, and product UI follows ui/VISUAL_GUIDE.md.
+python3 "$ROOT/.github/scripts/sync-ui.py" --check || fail=1
+python3 "$ROOT/.github/scripts/ui-lint.py" || fail=1
+
 # Game folders, one per line; fails on duplicate slugs or games outside a category folder.
 game_list="$(python3 "$ROOT/.github/scripts/gamelist.py" "$ROOT/games")"
 mapfile -t games <<< "$game_list"

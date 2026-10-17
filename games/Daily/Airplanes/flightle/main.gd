@@ -1320,8 +1320,8 @@ func _layout_dropdown(vs: Vector2) -> void:
 		var tw := _dd_text_w()
 		var y := 0.0
 		for code in sug:
-			var h1 := _wrap_h(place_label(code), 15, tw)
-			var h2 := _wrap_h(String(airport(code).get("n", "")), 12, tw)
+			var h1 := _wrap_h(place_label(code), GTUI.fs(GTUI.FS_LABEL), tw)
+			var h2 := _wrap_h(String(airport(code).get("n", "")), GTUI.fs(GTUI.FS_CAPTION), tw)
 			var h := maxf(DD_PAD * 2 + h1 + 3 + h2, 52.0)
 			dd_rows.append({"code": code, "y": y, "h": h})
 			y += h
@@ -1906,13 +1906,13 @@ func _draw_dropdown_rows() -> void:
 		if i > 0:
 			dd_clip.draw_line(Vector2(DD_PAD, y), Vector2(w - DD_PAD, y), C_LINE, 1.0)
 		var tx := DD_PAD + DD_CODE_W + 8
-		var h1 := _wrap_h(place_label(code), 15, tw)
-		var asc1 := font.get_ascent(15)
+		var h1 := _wrap_h(place_label(code), GTUI.fs(GTUI.FS_LABEL), tw)
+		var asc1 := font.get_ascent(GTUI.fs(GTUI.FS_LABEL))
 		dd_clip.draw_multiline_string(font, Vector2(tx, y + DD_PAD + asc1), place_label(code),
-			HORIZONTAL_ALIGNMENT_LEFT, tw, 15, -1, C_INK, flags)
-		dd_clip.draw_multiline_string(font, Vector2(tx, y + DD_PAD + h1 + 3 + font.get_ascent(12)),
-			String(airport(code).get("n", "")), HORIZONTAL_ALIGNMENT_LEFT, tw, 12, -1, C_MUTED, flags)
-		dd_clip.draw_string(font, Vector2(DD_PAD, y + h * 0.5 + 6), code, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, C_ACCENT)
+			HORIZONTAL_ALIGNMENT_LEFT, tw, GTUI.fs(GTUI.FS_LABEL), -1, C_INK, flags)
+		dd_clip.draw_multiline_string(font, Vector2(tx, y + DD_PAD + h1 + 3 + font.get_ascent(GTUI.fs(GTUI.FS_CAPTION))),
+			String(airport(code).get("n", "")), HORIZONTAL_ALIGNMENT_LEFT, tw, GTUI.fs(GTUI.FS_CAPTION), -1, C_MUTED, flags)
+		dd_clip.draw_string(font, Vector2(DD_PAD, y + h * 0.5 + 6), code, HORIZONTAL_ALIGNMENT_LEFT, -1, GTUI.fs(GTUI.FS_BODY), C_ACCENT)
 	if dd_content_h > view_h:
 		var bar_h := maxf(24.0, view_h * view_h / dd_content_h)
 		var t := dd_scroll / maxf(1.0, dd_content_h - view_h)

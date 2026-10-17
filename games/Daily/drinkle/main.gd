@@ -1293,7 +1293,7 @@ func _draw_hero() -> void:
 	var status := "Solved in %d" % game.guesses.size() if game.won else ("%d guess%s left" % [left, "" if left == 1 else "es"])
 	if game.finished and not game.won:
 		status = "Out of guesses"
-	cv.draw_string(font, Vector2(tx + Game.MAX_GUESSES * (pr * 2 + 10) + 6, py + pr + 8), status, HORIZONTAL_ALIGNMENT_LEFT, maxf(10.0, tw - Game.MAX_GUESSES * (pr * 2 + 10) - 6), 20, C_MUTED)
+	cv.draw_string(font, Vector2(tx + Game.MAX_GUESSES * (pr * 2 + 10) + 6, py + pr + 8), status, HORIZONTAL_ALIGNMENT_LEFT, maxf(10.0, tw - Game.MAX_GUESSES * (pr * 2 + 10) - 6), GTUI.fs(GTUI.FS_TITLE), C_MUTED)
 
 
 func _draw_colheads() -> void:
@@ -1351,7 +1351,7 @@ func _draw_slot(i: int) -> void:
 	var cells := slot_cells_rect(i)
 	var name_h := cells.position.y - r.position.y
 	if i >= game.guesses.size():
-		cv.draw_string(font, Vector2(r.position.x + 2, r.position.y + name_h - 8), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_FAINT)
+		cv.draw_string(font, Vector2(r.position.x + 2, r.position.y + name_h - 8), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_FAINT)  # gt:art
 		for j in 6:
 			_rrect(cell_rect(cells, j), Color(C_LINE, 0.55), 10, false, 1.5)
 		return
@@ -1362,7 +1362,7 @@ func _draw_slot(i: int) -> void:
 	if i == game.guesses.size() - 1 and shake_t > 0.0:
 		dx = sin(shake_t * 60.0) * 6.0 * shake_t
 	var nm := "%d  %s" % [i + 1, d.name]
-	cv.draw_string(bold, Vector2(r.position.x + 2 + dx, r.position.y + name_h - 8), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, 22, C_INK)
+	cv.draw_string(bold, Vector2(r.position.x + 2 + dx, r.position.y + name_h - 8), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, 22, C_INK)  # gt:art
 	var ids := Schema.ids()
 	for j in 6:
 		var c := cell_rect(cells, j)
@@ -1779,7 +1779,7 @@ func _end_content(y0: float, draw: bool) -> float:
 	var cw := (w - 5 * 6) / 6.0
 	if draw:
 		for j in 6:
-			cv.draw_string(bold, Vector2(x + j * (cw + 6), y + 16), COL_LABELS[j], HORIZONTAL_ALIGNMENT_CENTER, cw, 15, C_MUTED)
+			cv.draw_string(bold, Vector2(x + j * (cw + 6), y + 16), COL_LABELS[j], HORIZONTAL_ALIGNMENT_CENTER, cw, 15, C_MUTED)  # gt:art
 	y += 22
 	for j in 6:
 		var c := Rect2(x + j * (cw + 6), y, cw, 56)
@@ -1847,7 +1847,7 @@ func _draw_dev() -> void:
 	]
 	var y := r.position.y + 22
 	for l in lines:
-		cv.draw_string(font, Vector2(r.position.x + 10, y), l, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20, 16, Color("9ff0b0"))
+		cv.draw_string(font, Vector2(r.position.x + 10, y), l, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20, GTUI.fs(GTUI.FS_BODY), Color("9ff0b0"))
 		y += 22
 	for b in buttons:
 		if String(b.id).begins_with("dev_"):

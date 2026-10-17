@@ -1686,7 +1686,7 @@ func _draw_board() -> void:
 	if target_score > 0:
 		var y := world_to_screen(Vector2(0, target_score / 100.0)).y
 		_dashed(Vector2(r.position.x + 6, y), Vector2(r.end.x - 6, y), Color(C_ACCENT, 0.55))
-		draw_string(font, Vector2(r.position.x + 12, y - 8), "to beat %s" % fmt_m(target_score), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(C_ACCENT, 0.85))
+		draw_string(font, Vector2(r.position.x + 12, y - 8), "to beat %s" % fmt_m(target_score), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(C_ACCENT, 0.85))  # gt:art
 	for f in flashes:
 		var s := world_to_screen(f.pos)
 		var a: float = f.t / 0.5
