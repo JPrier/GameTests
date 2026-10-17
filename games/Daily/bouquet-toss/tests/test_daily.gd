@@ -8,7 +8,8 @@ const Rng = preload("res://core/rng.gd")
 func test_seed_is_stable_per_date():
 	assert_eq(Daily.seed_for("2026-10-20"), Daily.seed_for("2026-10-20"), "same date, same seed")
 	assert_ne(Daily.seed_for("2026-10-20"), Daily.seed_for("2026-10-21"), "next day differs")
-	assert_ne(Daily.seed_for("2026-10-20", 0), Daily.seed_for("2026-10-20", 1), "attempts differ")
+	assert_ne(Daily.seed_for("2026-10-20", 0, 0), Daily.seed_for("2026-10-20", 0, 1), "attempts differ")
+	assert_ne(Daily.seed_for("2026-10-20", 0, 0), Daily.seed_for("2026-10-20", 1, 0), "throws differ")
 	# Pinned so an engine update (or someone switching to String.hash()) can't silently
 	# change every past puzzle.
 	assert_eq(Rng.hash_str(""), 0x811C9DC5, "FNV-1a offset basis")
@@ -19,9 +20,10 @@ func test_seeds_unique_over_years():
 	var seen := {}
 	var d := Daily.EPOCH
 	for i in 1500:
-		var s := Daily.seed_for(d)
-		assert_false(seen.has(s), "seed collision on " + d)
-		seen[s] = true
+		for h in Daily.HOLES:
+			var s := Daily.seed_for(d, h)
+			assert_false(seen.has(s), "seed collision on %s throw %d" % [d, h + 1])
+			seen[s] = true
 		d = Daily.add_days(d, 1)
 
 
@@ -75,9 +77,23 @@ func test_time_zones_decide_today():
 func test_weekdays_and_archetypes():
 	assert_eq(Daily.weekday("2026-10-16"), 5, "Friday")
 	assert_eq(Daily.weekday("2026-10-18"), 0, "Sunday")
-	assert_eq(Daily.archetype_for("2026-10-19"), "open", "Monday is the gentle one")
-	assert_eq(Daily.archetype_for("2026-10-18"), "bank", "Sunday is the tricky one")
 	assert_eq(Daily.short_date("2026-10-16"), "Fri Oct 16", "short date")
+	var d := "2026-10-16"
+	var seen_types := {}
+	for i in 60:
+		var arches := Daily.archetypes_for(d)
+		assert_eq(arches.size(), Daily.HOLES, "five throws a day")
+		var uniq := {}
+		for j in arches.size():
+			uniq[arches[j]] = true
+			seen_types[arches[j]] = true
+			if j > 0:
+				assert_true(Daily.ARCHETYPES.find(arches[j]) > Daily.ARCHETYPES.find(arches[j - 1]), "gentlest first on " + d)
+		assert_eq(uniq.size(), Daily.HOLES, "five different venues on " + d)
+		assert_eq(Daily.archetypes_for(d), arches, "stable")
+		assert_eq(Daily.archetype_for(d, 2), arches[2], "per throw")
+		d = Daily.add_days(d, 1)
+	assert_eq(seen_types.size(), Daily.ARCHETYPES.size(), "every venue type shows up")
 
 
 func test_valid_date():

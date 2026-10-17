@@ -6,9 +6,10 @@ extends SceneTree
 ##       validates each and prints acceptance and solve-rate statistics per archetype, plus
 ##       counts of geometry-rule failures. Use it to tune generator.gd / validator.gd.
 ##   godot --headless --path . -s tools/sweep.gd -- days 365 [start]
-##       Builds the accepted level for N consecutive days and checks every invariant:
-##       geometry rules, the validator accepts it, its stored solution catches, it is
-##       deterministic (rebuilt identically), and the search never needed the fallback.
+##       Builds all five throws for N consecutive days and checks every invariant: five
+##       different venue types, geometry rules, the validator accepts each level, its stored
+##       solution catches, it is deterministic (rebuilt identically), and the search never
+##       needed the fallback. Dates in core/attempts.json are checked through the table.
 ## Exits with code 1 if any invariant fails.
 
 const Gen = preload("res://core/generator.gd")
@@ -37,7 +38,7 @@ func _attempts(n: int) -> void:
 	for i in n:
 		var arche: String = Daily.ARCHETYPES[i % 7]
 		var d := Daily.add_days(Daily.EPOCH, i / 7)
-		var lv := Gen.make(d, 1, Daily.seed_for(d, 500 + i), i, arche)
+		var lv := Gen.make(d, 1, Daily.seed_for(d, 0, 500 + i), i, arche)
 		var st := V.evaluate(lv)
 		if not by.has(arche):
 			by[arche] = {"n": 0, "ok": 0, "geom": 0, "unsolvable": 0, "fragile": 0, "hard": 0, "easy": 0, "rates": [], "routes": 0}
@@ -78,28 +79,39 @@ func _days(n: int, start: String) -> int:
 	var d := start
 	var attempts_total := 0
 	var worst := 0
+	var levels := 0
 	for i in n:
-		var lv := Levels.search(d)
-		var problems: Array = []
-		if int(lv.get("attempt", 0)) >= 1000:
-			problems.append("needed the fallback")
-		problems.append_array(L.geometry_errors(lv))
-		var st := V.evaluate(lv)
-		if not st.ok and int(lv.get("attempt", 0)) < 1000:
-			problems.append("validator rejects it: " + ", ".join(st.reasons))
-		var sol: Dictionary = lv.get("solution", {})
-		if sol.is_empty() or P.throw(lv, int(sol.a), int(sol.p)).outcome != "catch":
-			problems.append("stored solution does not catch")
-		var again := Levels.make_attempt(d, int(lv.attempt))
-		again.solution = lv.solution
-		again.stats = lv.stats
-		if JSON.stringify(again) != JSON.stringify(lv):
-			problems.append("not deterministic")
-		attempts_total += int(lv.attempt) + 1
-		worst = maxi(worst, int(lv.attempt))
-		if not problems.is_empty():
+		var arches := Daily.archetypes_for(d)
+		var distinct := {}
+		for a in arches:
+			distinct[a] = true
+		if distinct.size() != Daily.HOLES:
 			bad += 1
-			print("FAIL %s %s: %s" % [d, lv.archetype, "; ".join(problems)])
+			print("FAIL %s: repeated venue types %s" % [d, str(arches)])
+		for hole in Daily.HOLES:
+			# Uses the precomputed table when it covers the date (verifying it), else searches.
+			var lv := Levels.for_date(d, hole)
+			levels += 1
+			var problems: Array = []
+			if int(lv.get("attempt", 0)) >= 1000:
+				problems.append("needed the fallback")
+			problems.append_array(L.geometry_errors(lv))
+			var st := V.evaluate(lv)
+			if not st.ok and int(lv.get("attempt", 0)) < 1000:
+				problems.append("validator rejects it: " + ", ".join(st.reasons))
+			var sol: Dictionary = lv.get("solution", {})
+			if sol.is_empty() or P.throw(lv, int(sol.a), int(sol.p)).outcome != "catch":
+				problems.append("stored solution does not catch")
+			var again := Levels.make_attempt(d, hole, int(lv.attempt))
+			again.solution = lv.solution
+			again.stats = lv.stats
+			if JSON.stringify(again) != JSON.stringify(lv):
+				problems.append("not deterministic")
+			attempts_total += int(lv.attempt) + 1
+			worst = maxi(worst, int(lv.attempt))
+			if not problems.is_empty():
+				bad += 1
+				print("FAIL %s throw %d %s: %s" % [d, hole + 1, lv.archetype, "; ".join(problems)])
 		d = Daily.add_days(d, 1)
-	print("%d days, %d bad, avg attempts %.2f, worst attempt %d" % [n, bad, float(attempts_total) / n, worst])
+	print("%d days (%d levels), %d bad, avg attempts %.2f, worst attempt %d" % [n, levels, bad, float(attempts_total) / maxi(1, levels), worst])
 	return 1 if bad > 0 else 0

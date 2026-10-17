@@ -79,22 +79,39 @@ func test_drag_aims_and_release_throws():
 	assert_eq([main.aim_a, main.aim_p], [60, 50], "the drag maps to exact whole-number aim")
 
 
-func test_win_with_real_input_then_share():
+func test_five_throws_with_real_input_then_share():
 	var main = await _fresh()
-	var sol: Dictionary = main.level.solution
-	await _drag_throw(main, int(sol.a), int(sol.p))
-	assert_eq(main.phase, "flight", "thrown")
-	for i in 400:
-		if main.phase != "flight":
-			break
-		await wait_frames(1)
-	assert_eq(main.phase, "won", "caught")
+	assert_eq(main.hole, 0, "starts on throw 1")
+	for h in main.Daily.HOLES:
+		assert_eq(main.hole, h, "on throw %d" % (h + 1))
+		if h == 1:
+			# one miss on throw 2, so its counter differs from the others
+			assert_true(main.throw(270, 5), "miss")
+			main.skip_flight()
+			main.phase = "aim"
+		var sol: Dictionary = main.level.solution
+		await _drag_throw(main, int(sol.a), int(sol.p))
+		assert_eq(main.phase, "flight", "thrown")
+		for i in 400:
+			if main.phase != "flight":
+				break
+			await wait_frames(1)
+		assert_eq(main.phase, "won", "caught throw %d" % (h + 1))
+		if h < main.Daily.HOLES - 1:
+			assert_false(main.done, "day not over yet")
+			var tap: Vector2 = main.to_screen(Vector2(400, 300))
+			await _mouse(main, "down", tap)
+			await _mouse(main, "up", tap)
+			for i in 10:
+				await wait_frames(1)
+	assert_eq(main.get_agent_state().tries, [1, 2, 1, 1, 1], "attempt counter per throw")
 	assert_true(main.done, "day finished")
-	assert_eq(int(main.result.throws), 1, "one throw")
+	assert_eq(int(main.result.throws), 6, "six tries in all")
 	assert_gt(int(main.result.accuracy), 59, "accuracy recorded")
 	var share: String = main.share_text()
 	assert_true(share.begins_with("Bouquet Toss #%d" % int(main.level.number)), "share title")
-	assert_true(share.contains("🎯 1 throw · Perfect"), "share result")
+	assert_true(share.contains("🎯 6 tries for 5 throws · Great"), "share result")
+	assert_true(share.contains("2️⃣ ⬇️ 💐"), "per-throw row")
 	assert_true(share.ends_with(main.DEFAULT_URL), "plain game URL")
 	assert_false(share.contains("dev"), "no dev flag in the link")
 	for i in 40:
@@ -102,6 +119,18 @@ func test_win_with_real_input_then_share():
 			break
 		await wait_seconds(0.1)
 	assert_eq(main.modal, "end", "end screen opens")
+
+
+func test_switching_throws_keeps_each_counter():
+	var main = await _fresh()
+	assert_true(main.throw(270, 5), "miss on throw 1")
+	main.skip_flight()
+	main.pick_hole(3)
+	assert_eq(main.hole, 3, "jumped to throw 4")
+	assert_eq(main.throws.size(), 0, "its own counter")
+	assert_eq(main.level.hole, 3, "its own venue")
+	main.pick_hole(0)
+	assert_eq(main.throws.size(), 1, "throw 1 still has its miss")
 
 
 func test_misses_count_and_persist():
@@ -120,8 +149,9 @@ func test_misses_count_and_persist():
 	main.queue_free()
 	await wait_frames(2)
 	var again = await _fresh(DAY, false)
-	assert_eq(again.throws.size(), 1, "throws survive a reload")
+	assert_eq(again.throws.size(), 1, "tries survive a reload")
 	assert_eq(again.get_agent_state().aim, [270, 5], "last aim restored")
+	assert_eq(again.get_agent_state().tries, [1, 0, 0, 0, 0], "per-throw counters restored")
 
 
 func test_keyboard_aim_and_throw():
@@ -141,16 +171,17 @@ func test_keyboard_aim_and_throw():
 
 func test_practice_after_winning_keeps_the_result():
 	var main = await _fresh()
-	main.dev_win()
+	main.dev_win_day()
 	assert_true(main.done, "won")
 	var res: Dictionary = main.result.duplicate(true)
 	main.modal = ""
-	main.phase = "aim"
+	main.pick_hole(2)
+	assert_eq(main.phase, "aim", "can replay a finished throw")
 	assert_true(main.throw(270, 5), "practice throw allowed")
 	main.skip_flight()
 	assert_eq(main.practice_throws, 1, "counted as practice")
 	assert_eq(main.result, res, "result unchanged")
-	assert_eq(main.throws.size(), 1, "official throws unchanged")
+	assert_eq(main.throws.size(), 1, "official tries unchanged")
 
 
 func test_dev_controls_stay_out_of_real_saves():
@@ -160,7 +191,9 @@ func test_dev_controls_stay_out_of_real_saves():
 	main.dev_shift(1)
 	assert_eq(main.date, "2026-10-20", "next day")
 	main.dev_win()
-	assert_true(main.done, "instant win")
+	assert_eq(main.holes_done(), 1, "instant win of one throw")
+	main.dev_win_day()
+	assert_true(main.done, "instant win of the day")
 	assert_eq(real.load_results(), before, "player's results untouched")
 	main.dev_reset()
 	assert_false(main.done, "reset clears the day")
@@ -181,3 +214,15 @@ func test_archive_lists_past_days_only():
 	assert_eq(main.archive_count(), maxi(1, main.Daily.day_number(main.today)), "one row per day so far")
 	main.pick_day("2026-10-16")
 	assert_eq(main.modal, "", "closes")
+
+
+func test_old_one_throw_saves_start_fresh():
+	var dev := Save.new(true)
+	var d := "2026-10-22"
+	dev.save_day(d, {"throws": [{"a": 45, "p": 60, "o": "catch", "acc": 80}], "done": true,
+		"result": {"throws": 1, "accuracy": 80}, "seconds": 9.0})
+	dev.record_result(d, "1 throw · 80%")
+	var main = await _fresh(d, false)
+	assert_false(main.done, "not counted as finished")
+	assert_eq(main.get_agent_state().tries, [0, 0, 0, 0, 0], "fresh counters")
+	assert_false(dev.load_results().has(d), "old result dropped from past days")

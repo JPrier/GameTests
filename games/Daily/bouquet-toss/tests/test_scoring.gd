@@ -41,8 +41,8 @@ func test_ordering_throws_then_accuracy_then_time():
 
 
 func test_labels_and_clock():
-	assert_eq(Scoring.label({"throws": 1, "accuracy": 94}), "1 throw · 94%", "singular")
-	assert_eq(Scoring.label({"throws": 3, "accuracy": 70}), "3 throws · 70%", "plural")
+	assert_eq(Scoring.label({"throws": 1, "accuracy": 94}), "1 try · 94%", "singular")
+	assert_eq(Scoring.label({"throws": 9, "accuracy": 70}), "9 tries · 70%", "plural")
 	assert_eq(Scoring.clock(65), "1:05", "clock")
 	assert_eq(Scoring.clock(3725), "1:02:05", "hours")
 	for o in ["catch", "splat", "fumble", "floor", "rest", "out", "timeout"]:
@@ -50,19 +50,22 @@ func test_labels_and_clock():
 
 
 func test_share_text_is_spoiler_free():
-	var res := {"throws": 3, "accuracy": 94, "seconds": 41.5, "outcomes": ["splat", "floor", "catch"]}
+	var res := {"throws": 8, "accuracy": 91, "seconds": 141.5, "holes": [
+		["catch"], ["splat", "catch"], ["floor", "fumble", "catch"], ["catch"], ["rest", "catch"]]}
 	var t := Share.text(127, res, URL)
 	var lines := t.split("\n")
 	assert_eq(lines[0], "Bouquet Toss #127 💐", "title")
-	assert_eq(lines[1], "🎯 3 throws · Good", "throws + rating")
-	assert_eq(lines[2], "✨ 94%", "accuracy")
-	assert_eq(lines[3], "💥 ⬇️ 💐", "outcome per throw")
-	assert_eq(lines[4], URL, "plain link, no day, no dev flag")
+	assert_eq(lines[1], "🎯 8 tries for 5 throws · Good", "tries + rating")
+	assert_eq(lines[2], "✨ 91%", "accuracy")
+	assert_eq(lines[3], "1️⃣ 💐", "throw 1")
+	assert_eq(lines[5], "3️⃣ ⬇️ 💨 💐", "throw 3, one emoji per try")
+	assert_eq(lines[7], "5️⃣ 🪑 💐", "throw 5")
+	assert_eq(lines[8], URL, "plain link, no day, no dev flag")
 	assert_false(t.contains("°"), "no angles")
 	assert_false(t.contains("dev"), "no dev flag")
 	assert_false(t.contains("?"), "no query string")
-	var one := Share.text(1, {"throws": 1, "accuracy": 100, "outcomes": ["catch"]}, URL)
-	assert_true(one.contains("🎯 1 throw · Perfect"), "singular")
+	var perfect := Share.text(1, {"throws": 5, "accuracy": 100, "holes": [["catch"], ["catch"], ["catch"], ["catch"], ["catch"]]}, URL)
+	assert_true(perfect.contains("🎯 5 tries for 5 throws · Perfect"), "par")
 
 
 func test_share_text_stays_short_for_long_runs():
@@ -70,10 +73,18 @@ func test_share_text_stays_short_for_long_runs():
 	for i in 30:
 		outs.append("floor")
 	outs.append("catch")
-	var t := Share.text(5, {"throws": 31, "accuracy": 60, "outcomes": outs}, URL)
+	var t := Share.text(5, {"throws": 35, "accuracy": 60, "holes": [outs, ["catch"], ["catch"], ["catch"], ["catch"]]}, URL)
 	var marks := t.split("\n")[3]
-	assert_lt(marks.length(), 60, "compressed")
+	assert_lt(marks.length(), 40, "compressed")
 	assert_true(marks.ends_with("💐"), "still ends with the catch")
+
+
+func test_day_rating_against_par():
+	assert_eq(Scoring.rating_total(5, 5), "Perfect", "par")
+	assert_eq(Scoring.rating_total(7, 5), "Great", "+2")
+	assert_eq(Scoring.rating_total(10, 5), "Good", "+5")
+	assert_eq(Scoring.rating_total(14, 5), "Nice", "+9")
+	assert_eq(Scoring.rating_total(20, 5), "Caught", "lots")
 
 
 func test_save_round_trip_and_dev_separation():
@@ -82,7 +93,7 @@ func test_save_round_trip_and_dev_separation():
 	var d := "2099-01-01"
 	real.wipe_day(d)
 	dev.wipe_day(d)
-	var state := {"throws": [{"a": 45, "p": 60, "o": "floor", "acc": 0}], "done": false, "result": {}, "seconds": 12.5, "practice": 0, "aim": [45, 60]}
+	var state := {"v": 2, "throws": [{"a": 45, "p": 60, "o": "floor", "acc": 0}], "done": false, "result": {}, "seconds": 12.5, "practice": 0, "aim": [45, 60]}
 	dev.save_day(d, state)
 	assert_true(real.load_day(d).is_empty(), "dev saves never touch the player's file")
 	var back := dev.load_day(d)

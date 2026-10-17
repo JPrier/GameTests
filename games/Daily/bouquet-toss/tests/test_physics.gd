@@ -30,7 +30,7 @@ func test_unit_table():
 
 
 func test_identical_inputs_identical_flights():
-	var lv := Levels.for_date("2026-10-21")
+	var lv := Levels.for_date("2026-10-21", 2)
 	var c := P.compile(lv)
 	for pair in [[40, 60], [75, 90], [12, 100], [150, 40], [-20, 70]]:
 		var a := P.simulate(c, pair[0], pair[1], 1)
@@ -196,8 +196,8 @@ func test_preview_stops_early_and_matches_full_flight():
 
 const GOLDEN := ["splat:51:f3b8375f", "floor:200:f7f8f068", "rest:284:c7b80c0b", "floor:285:9dc7dca5",
 	"floor:219:08df096f", "floor:227:e90f63d2", "floor:198:ad6834ff", "floor:101:9845433b",
-	"floor:139:a8298a04", "floor:197:90b03bac", "floor:205:be9c187f", "out:226:1fc573a0",
-	"floor:229:c30f73fb", "out:56:e983d11c", "out:24:2b11a1dd", "out:49:d87361fa"]
+	"floor:138:b4171c0b", "floor:193:34a5f39f", "floor:201:df10d292", "out:172:4c81cb21",
+	"floor:247:88325214", "out:84:6c908fdb", "out:36:d7b350b8", "floor:104:1ba44a61"]
 
 
 func test_same_flights_on_every_platform():

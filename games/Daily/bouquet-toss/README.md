@@ -1,33 +1,35 @@
 # Bouquet Toss
 
-A daily wedding bouquet trick shot. Everyone gets the same venue each day: drag back, aim, let go, and land the bouquet in the glowing hands of today's guest, around tables, chandeliers, curtain walls, balconies, balloons and (carefully) the cake. Fewest throws wins. 30–90 seconds a day.
+A daily wedding bouquet trick shot. Every day has five throws, each in a different venue and to a different guest, the same for everyone: drag back, aim, let go, and land the bouquet in the glowing hands, around tables, chandeliers, curtain walls, balconies, balloons and (carefully) the cake. Fewest total tries wins. A few minutes a day.
 
 **Play:** https://jprier.github.io/GameTests/bouquet-toss/
 
 ## Playing
 
+- The thrower stands well in from the walls, so neither the bouquet nor your drag sits at the edge of a phone screen.
 - **Drag back from anywhere** on the screen and let go to throw (pull-back like a slingshot). The arrow shows direction and power and a short dotted preview shows the first moment of the flight, never the whole path. Pull back to where you started to cancel. Keyboard: arrows aim (up/down angle, left/right power), Space throws.
 - The aim readout shows whole-number angle (0° straight ahead, 90° straight up) and power, so a near miss is easy to adjust. Your last throw's path stays as a faint ghost.
 - Bounce off walls, the ceiling, tables, balloons (very bouncy) and anything else. The cake ends the throw (splat). Throw too hard and the guest fumbles it ("too fast").
-- **Score:** the day ends at your first catch. Ranked by throws, then accuracy (how close the bouquet's line of flight passes to the centre of the hands: 100% dead centre, 60% at the edge), then time. Par-style ratings: 1 Perfect, 2 Great, 3 Good, 4–5 Nice.
-- After catching, keep throwing for fun (practice never changes the result). **Share** / **Copy result** give a spoiler-free result (outcomes only, never where you threw) and the plain game link; past days are played from the calendar button.
+- **Five throws a day.** The strip under the title shows each throw with its own try counter; catching one moves on to the next (tap to skip the celebration), and tapping a number switches throws at any time. Throws are ordered gentlest first.
+- **Score:** each throw counts its tries up to its first catch. The day ranks by total tries, then average accuracy (how close the bouquet's line of flight passes to the centre of the hands: 100% dead centre, 60% at the edge), then time. Par is 5: Perfect at par, Great within 2 over, Good within 5, Nice within 9.
+- Finished throws can be replayed for fun (practice never changes the result). **Share** / **Copy result** give a spoiler-free result, one row per throw with an emoji per try (never where you threw), and the plain game link; past days are played from the calendar button.
 - Progress is saved per day in browser storage. Sound toggle and a one-time coach mark for first-time players.
 
 ## Each day
 
-Seeded from the local date (`core/daily.gd`, puzzle #1 is 2026-10-16). The weekday picks the venue, introducing one idea at a time:
+Seeded from the local date (`core/daily.gd`, puzzle #1 is 2026-10-16). The date picks five different venue types for its five throws, played gentlest first:
 
-| Day | Venue | Idea |
-|---|---|---|
-| Mon | open | tables and guests between you, lots of headroom |
-| Tue | chandelier | a low ceiling with hanging chandeliers |
-| Wed | cake | the cake table guards the target |
-| Thu | arch | a curtain wall: throw through the floral arch |
-| Fri | balcony | the target waves from a balcony |
-| Sat | garden | outdoors, no ceiling, a steady breeze (watch the windsock) |
-| Sun | bank | a tall divider: lob through the gap or bank off the ceiling |
+| Venue | Idea |
+|---|---|
+| open | tables and guests between you, lots of headroom |
+| chandelier | a low ceiling with hanging chandeliers |
+| cake | the cake table guards the target |
+| garden | outdoors, no ceiling, a steady breeze (watch the windsock) |
+| balcony | the target waves from a balcony |
+| arch | a curtain wall: throw through the floral arch |
+| bank | a tall divider: lob through the gap or bank off the ceiling |
 
-About a third of days are mirrored (you throw right to left).
+About a third of venues are mirrored (you throw right to left). Each throw has its own seed (date, throw number, attempt).
 
 ## How it works (`core/`)
 
@@ -41,7 +43,7 @@ Everything in `core/` is plain logic with no rendering, testable headless:
 | `level.gd` | Levels are plain JSON-friendly dictionaries of whole numbers: room, people, solids, decor. Geometry rules (no overlaps, nothing floating, crowding the hand or the catch zone, poking through walls, too thin to collide reliably), mirroring, JSON round trip. |
 | `generator.gd` | Builds the day's venue from the seed with weekday archetypes and random clutter. |
 | `validator.gd` | Plays the level: a grid of throws (every 4°, every 5% power, including backward wall shots) must contain catches, at least one of them forgiving (every throw within ±2° and ±2 power also catches), and a solve rate inside the archetype's range (easy days generous, Sunday tight). Also counts routes (direct, off the ceiling, off a balloon, ...). |
-| `levels.gd` | Attempt 0, 1, 2... until the validator accepts. `attempts.json` lists the accepted attempt and a reference throw for each date through late 2027, so phones build one attempt and check one throw instead of searching (identical result; later dates search and cache locally). |
+| `levels.gd` | Attempt 0, 1, 2... until the validator accepts. `attempts.json` lists the accepted attempt and a reference throw for each of each date's five throws through late 2027, so phones build one attempt and check one throw instead of searching (identical result; later dates search and cache locally). |
 | `scoring.gd`, `share.gd`, `save.gd` | Accuracy, ratings, ordering, outcome text; spoiler-free share text; local saving (dev mode uses separate `dev_` files). |
 
 `main.gd` is the shell (layout, input, flight playback with a little slow motion into the catch, UI, saving, sharing, dev mode); `art.gd` draws everything with shapes (no image assets) and `audio.gd` synthesizes the sounds at start-up (no audio files).
@@ -51,6 +53,8 @@ After changing the physics, generator or validator: bump `GEN_VERSION` in `gener
 ```
 godot --headless --path . -s tools/checksums.gd            # paste into tests/test_physics.gd GOLDEN
 godot --headless --path . -s tools/precompute.gd -- 400
+# or in parallel shards, then merge the files' "days":
+godot --headless --path . -s tools/precompute.gd -- 100 2026-10-16 /tmp/shard0.json
 ```
 
 ## Testing

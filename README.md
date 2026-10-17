@@ -22,7 +22,7 @@ games/
 |---|---|
 | **Daily** | |
 | Bloom: a daily Game of Life puzzle | [`games/Daily/bloom`](games/Daily/bloom) |
-| Bouquet Toss: a daily wedding bouquet trick shot; drag, aim, let go, fewest throws wins | [`games/Daily/bouquet-toss`](games/Daily/bouquet-toss) |
+| Bouquet Toss: five daily wedding bouquet trick shots; drag, aim, let go, fewest tries wins | [`games/Daily/bouquet-toss`](games/Daily/bouquet-toss) |
 | Daily Bridge: a daily bridge-building physics puzzle | [`games/Daily/daily-bridge`](games/Daily/daily-bridge) |
 | Earthquake Test: build a structure, then the same daily quake hits everyone | [`games/Daily/earthquake-test`](games/Daily/earthquake-test) |
 | Drinkle: Cocktail Wordle meets Mastermind; every guess shows how close you are, deduce the drink in six | [`games/Daily/drinkle`](games/Daily/drinkle) |

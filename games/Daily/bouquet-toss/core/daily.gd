@@ -1,16 +1,17 @@
 extends RefCounted
-## Daily-seed logic: which level a date gets, its number and its venue for the weekday.
+## Daily-seed logic: a date's number, its five throws ("holes") and their seeds.
 ## Uses the player's local calendar date, like the other GameTests daily games, so the puzzle
-## changes at local midnight. All date maths goes through unix days at UTC noon-free midnight,
-## which has no daylight-saving gaps.
+## changes at local midnight. Date maths works on whole unix days at UTC midnight, which has
+## no daylight-saving gaps.
 
 const Rng = preload("res://core/rng.gd")
 
 const EPOCH := "2026-10-16"          # puzzle #1
 const GAME := "bouquet-toss"
+const HOLES := 5                     # throws to land each day
 
-## Weekday -> venue archetype. Easy at the start of the week, trickiest on Sunday.
-const ARCHETYPES := ["bank", "open", "chandelier", "cake", "arch", "balcony", "garden"]
+## Venue archetypes, gentlest first.
+const ARCHETYPES := ["open", "chandelier", "cake", "garden", "balcony", "arch", "bank"]
 
 
 static func valid_date(d: String) -> bool:
@@ -59,13 +60,25 @@ static func weekday(d: String) -> int:
 	return posmod(int(unix_of(d) / 86400) + 4, 7)
 
 
-static func archetype_for(d: String) -> String:
-	return ARCHETYPES[weekday(d)]
+## The day's five venues: five different archetypes picked by the date seed, played from the
+## gentlest to the trickiest.
+static func archetypes_for(d: String) -> Array:
+	var rng := Rng.new(Rng.hash_str("%s:%s:holes" % [GAME, d]))
+	var pool: Array = ARCHETYPES.duplicate()
+	var picked: Array = []
+	for i in HOLES:
+		picked.append(pool.pop_at(rng.next_u32() % pool.size()))
+	picked.sort_custom(func(a, b): return ARCHETYPES.find(a) < ARCHETYPES.find(b))
+	return picked
 
 
-## Seed for a date's level (attempt > 0 re-rolls deterministically).
-static func seed_for(d: String, attempt: int = 0) -> int:
-	return Rng.hash_str("%s:%s:%d" % [GAME, d, attempt])
+static func archetype_for(d: String, hole: int) -> String:
+	return archetypes_for(d)[clampi(hole, 0, HOLES - 1)]
+
+
+## Seed for one of a date's throws (attempt > 0 re-rolls deterministically).
+static func seed_for(d: String, hole: int = 0, attempt: int = 0) -> int:
+	return Rng.hash_str("%s:%s:%d:%d" % [GAME, d, hole, attempt])
 
 
 static func short_date(d: String) -> String:
