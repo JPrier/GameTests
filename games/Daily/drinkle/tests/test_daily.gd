@@ -57,7 +57,8 @@ func test_upcoming_days_are_valid_answers():
 		assert_false(t.is_empty(), "a drink for " + d)
 		assert_true(t.target, "%s: %s is allowed as an answer" % [d, t.id])
 		assert_true(int(t.fame) <= Analysis.MAX_FAME, "not obscure")
-		assert_eq(int(Daily.difficulty_of(t.id).tier), Daily.tier_for(d), "%s gets a %s from its weekday tier" % [d, t.id])
+		if d >= Daily.pinned_before():
+			assert_eq(int(Daily.difficulty_of(t.id).tier), Daily.tier_for(d), "%s gets a %s from its weekday tier" % [d, t.id])
 
 
 func test_weekday_tiers():
@@ -82,9 +83,20 @@ func test_schedule_agrees_with_the_rule():
 	var n := 0
 	for d in doc.days:
 		n += 1
-		if n % 7 != 0:
+		if n % 7 != 0 or String(d) < String(doc.pinned_before):
 			continue
 		assert_eq(Daily.computed_target(String(d)), String(doc.days[d]), "pinned = computed for " + String(d))
+
+
+func test_already_played_days_never_change():
+	# answers published before the database grew to 90 drinks
+	var doc := _schedule_doc()
+	assert_true(String(doc.pinned_before) >= "2026-10-19", "the first days stay pinned")
+	assert_eq(String(doc.days["2026-10-16"]), "mint_julep", "puzzle #1")
+	assert_eq(String(doc.days["2026-10-17"]), "tom_collins", "puzzle #2")
+	assert_eq(String(doc.days["2026-10-18"]), "margarita", "puzzle #3")
+	Daily.reset_cache()
+	assert_eq(Daily.target_id("2026-10-17"), "tom_collins", "the game reads the pinned answer")
 
 
 func test_pinned_pools_are_the_analysers_pools():
@@ -99,7 +111,7 @@ func test_no_indistinguishable_drinks():
 
 func test_eligibility_rules():
 	assert_false(Analysis.eligibility(DB.get_drink("gin_tonic")).ok, "disputed drinks are never answers")
-	assert_false(Analysis.eligibility(DB.get_drink("latte")).ok, "trivially identifiable drinks are never answers")
+	assert_false(Analysis.eligibility(DB.get_drink("french_75")).ok, "trivially identifiable drinks are never answers")
 	assert_true(Analysis.eligibility(DB.get_drink("margarita")).ok, "the margarita is fine")
 	var n := 0
 	for d in DB.all():

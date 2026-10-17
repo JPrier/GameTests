@@ -24,9 +24,9 @@ func _init() -> void:
 	var near := Analysis.near_pairs(1)
 	print("Pairs differing in one attribute: %d" % near.size())
 	for p in near:
-		print("  %-18s / %-18s  only %s" % [DB.name_of(p.a), DB.name_of(p.b), ", ".join(p.diff)])
+		print("  %-22s / %-22s  only %s" % [DB.name_of(p.a), DB.name_of(p.b), ", ".join(p.diff)])
 	print("\nOpening guess a perfect player would make: %s" % Analysis.best_guess(DB.all()).name)
-	print("\n%-18s %5s %5s %6s %6s %5s  %s" % ["Drink", "score", "steps", "avg1", "single", "crowd", "verdict"])
+	print("\n%-22s %5s %5s %6s %6s %5s  %s" % ["Drink", "score", "steps", "avg1", "single", "crowd", "verdict"])
 	var rows: Array = []
 	for d in DB.all():
 		var df := Analysis.difficulty(d)
@@ -41,7 +41,7 @@ func _init() -> void:
 		var verdict: String = Analysis.TIERS[df.tier] if el.ok else "not an answer: " + "; ".join(el.reasons)
 		if el.ok:
 			counts[df.tier] += 1
-		print("%-18s %5d %5d %6.1f %6.2f %5d  %s" % [d.name, df.score, df.steps, df.avg_left, df.single, df.crowd, verdict])
+		print("%-22s %5d %5d %6.1f %6.2f %5d  %s" % [d.name, df.score, df.steps, df.avg_left, df.single, df.crowd, verdict])
 	print("\nAnswer pools: Easy %d, Medium %d, Hard %d" % counts)
 	print("Done in %d ms" % (Time.get_ticks_msec() - t0))
 	quit(1 if bad else 0)

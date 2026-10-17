@@ -70,6 +70,19 @@ static func seed_for(text: String) -> int:
 	return ("%s:%s" % [GAME, text]).hash()
 
 
+## Extra salt for the rotation shuffles, recorded in schedule.json. tools/schedule.gd picks the
+## first salt whose rotation doesn't repeat an already-played answer within two weeks.
+static func rule_salt() -> int:
+	_load_file()
+	return int(_file.get("salt", 0))
+
+
+## Dates before this keep the answers they were first published with (see tools/schedule.gd).
+static func pinned_before() -> String:
+	_load_file()
+	return String(_file.get("pinned_before", EPOCH))
+
+
 static var _file: Dictionary = {}
 
 
@@ -148,7 +161,8 @@ static func _tier_days_per_week(t: int) -> int:
 static func shuffled_pool(tier: int, cycle: int) -> Array:
 	var pool: Array = pools()[tier].duplicate()
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_for("tier%d:cycle%d" % [tier, cycle])
+	var salt := rule_salt()
+	rng.seed = seed_for(("tier%d:cycle%d" % [tier, cycle]) + ((":s%d" % salt) if salt > 0 else ""))
 	for i in range(pool.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = pool[i]
