@@ -101,16 +101,24 @@ static func owner() -> CanvasItem:
 
 ## dp per CSS px is 1, so S = canvas units per CSS px (never below 1).
 static func refresh_scale(ci: CanvasItem) -> void:
-	if _fixed_scale > 0.0:
-		S = _fixed_scale
-		return
+	S = _fixed_scale if _fixed_scale > 0.0 else css_scale(ci)
+
+
+## Canvas units per CSS px for `ci`'s viewport (1.0 headless / when unknown; clamped to 1..3).
+## A game that draws its UI on a layer pre-scaled by this value can call setup(layer, palette, 1.0).
+## Viewport size in `ci`'s local units (differs from get_viewport_rect() on a scaled UI layer).
+static func view_size(ci: CanvasItem) -> Vector2:
+	var sc := ci.get_global_transform().get_scale()
+	return ci.get_viewport_rect().size / Vector2(maxf(sc.x, 0.001), maxf(sc.y, 0.001))
+
+
+static func css_scale(ci: CanvasItem) -> float:
 	var logical := ci.get_viewport_rect().size
 	var win := Vector2(DisplayServer.window_get_size())
 	if DisplayServer.get_name() == "headless" or win.x <= 0.0 or logical.x <= 0.0:
-		S = 1.0
-		return
+		return 1.0
 	var css_w := win.x / maxf(DisplayServer.screen_get_scale(), 1.0)
-	S = clampf(logical.x / css_w, 1.0, 3.0)
+	return clampf(logical.x / css_w, 1.0, 3.0)
 
 
 static func _complete(p: Dictionary) -> Dictionary:
@@ -403,7 +411,7 @@ static func panel(ci: CanvasItem, r: Rect2, level := 0) -> void:
 ## Returns the padded content rect below the title row.
 static func modal(ci: CanvasItem, card: Rect2, title := "", close_id := "", alpha := 1.0) -> Rect2:
 	_layer += 1
-	var vs := ci.get_viewport_rect().size
+	var vs := view_size(ci)
 	ci.draw_rect(Rect2(Vector2.ZERO, vs), Color(c("scrim"), c("scrim").a * alpha))
 	box(ci, card, Color(c("surface"), alpha), R_OVERLAY, Color(c("border"), c("border").a * alpha))
 	var pad := dp(SP_XL)
@@ -442,7 +450,7 @@ static func modal_content(card: Rect2, has_head := true) -> Rect2:
 
 ## Standard overlay card rect: centred, `w_dp` wide at most, `h` tall (canvas units), 16 dp from the edges.
 static func modal_rect(ci: CanvasItem, w_dp: float, h: float) -> Rect2:
-	var vs := ci.get_viewport_rect().size
+	var vs := view_size(ci)
 	var m := dp(SP_L)
 	var w := minf(dp(w_dp), vs.x - m * 2.0)
 	h = minf(h, vs.y - m * 2.0)
@@ -632,7 +640,7 @@ static func focus_ring(ci: CanvasItem, id: String, r: Rect2, radius_dp := R_CONT
 static func toast(ci: CanvasItem, msg: String, alpha: float, bottom_y: float) -> void:
 	if msg == "" or alpha <= 0.0:
 		return
-	var vs := ci.get_viewport_rect().size
+	var vs := view_size(ci)
 	var pad := dp(SP_L)
 	var max_w := minf(vs.x - dp(SP_L) * 2.0, dp(420))
 	var lines := wrap_lines(msg, FS_LABEL + 1, max_w - pad * 2.0, true)
@@ -656,7 +664,7 @@ static func toast_alpha(time_left: float, duration := 2.0) -> float:
 
 ## Small explanatory bubble above (or below, if no room) `anchor`.
 static func tooltip(ci: CanvasItem, anchor: Rect2, msg: String) -> void:
-	var vs := ci.get_viewport_rect().size
+	var vs := view_size(ci)
 	var max_w := minf(dp(280), vs.x - dp(SP_L) * 2.0)
 	var pad := dp(SP_M)
 	var lines := wrap_lines(msg, FS_LABEL, max_w - pad * 2.0)

@@ -141,6 +141,12 @@ func _ready() -> void:
 	venue_layer.draw.connect(_draw_venue)
 	actor_layer.draw.connect(_draw_actors)
 	ui_layer.draw.connect(_draw_ui)
+	# The UI layer is pre-scaled to CSS px (see ui_scale()), so GTUI works 1:1 in dp inside it.
+	GTUI.setup(ui_layer, {
+		"bg": C_BG, "surface": C_PANEL, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_FAINT, "accent": C_ACCENT, "on_accent": Color.WHITE,
+		"success": C_TEAL, "danger": C_ACCENT_DARK, "focus": C_ACCENT_DARK, "scrim": Color(0.12, 0.08, 0.16, 0.45),
+	}, 1.0)
 	audio = Audio.new()
 	add_child(audio)
 	_add_key_action("aim_up", [KEY_UP, KEY_W])
@@ -211,15 +217,10 @@ func _layout() -> void:
 	_redraw_all()
 
 
-## How many logical px one CSS px is; on a phone the 720-wide logical screen is only ~400 CSS
-## px wide, so the UI is drawn larger to keep text and buttons a comfortable physical size.
+## How many logical px one CSS px is (GTUI's physical scale). The UI layer is drawn in dp at this scale,
+## so text and buttons keep a comfortable physical size on any screen.
 func ui_scale() -> float:
-	var win := Vector2(DisplayServer.window_get_size())
-	if win.x <= 0.0 or vs.x <= 0.0:
-		return 1.0
-	var dpr := maxf(1.0, DisplayServer.screen_get_scale()) if OS.has_feature("web") else 1.0
-	var css_per_logical := (win.x / dpr) / vs.x
-	return clampf(0.82 / css_per_logical, 1.0, 1.7)
+	return GTUI.css_scale(self)
 
 
 func _redraw_all() -> void:
@@ -622,7 +623,7 @@ func _keyboard(delta: float) -> void:
 		var face := -1 if bool(level.mirror) else 1
 		aim_to(aim_a + da * face, aim_p + dp)
 		audio.play("tick")
-	if Input.is_action_just_pressed("throw"):
+	if Input.is_action_just_pressed("throw") and GTUI.focused_id() == "":   # Enter/Space press the focused control instead
 		throw(aim_a, aim_p)
 
 
@@ -651,6 +652,16 @@ func _update_preview() -> void:
 # ------------------------------------------------------------------ input
 
 func _input(event: InputEvent) -> void:
+	var gt := GTUI.handle_input(ui_layer.make_input_local(event))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos * k):
+			_input(e)
+		return
+	if gt.has("cancel"):
+		if modal != "":
+			modal = ""
+			_redraw_all()
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_pointer_down(event.position)
@@ -738,7 +749,7 @@ func _press(id: String) -> void:
 		"results":
 			if done:
 				modal = "end"
-		"close": modal = ""
+		"close", "got_it", "close_end": modal = ""
 		"share": share()
 		"copy": copy_result()
 		"title": _title_tap()
@@ -1248,30 +1259,19 @@ func _wrap(s: String, size: int, max_w: float, max_lines: int, b := false) -> Ar
 	return [9, [s]]
 
 
-func _button(ci: CanvasItem, id: String, r: Rect2, label: String, primary := false, enabled := true, size := 20) -> void:
+func _button(ci: CanvasItem, id: String, r: Rect2, label: String, primary := false, enabled := true, size := GTUI.FS_LABEL + 2) -> void:
 	buttons.append({"id": id, "rect": r, "enabled": enabled})
-	var down := pressing and press_button == id and r.grow(4).has_point(cur_pos / k)
-	var fill := C_ACCENT if primary else C_BTN
-	if not enabled:
-		fill = Color(C_BTN, 0.55)
-	if down:
-		fill = fill.darkened(0.12)
-	Art.rrect(ci, Rect2(r.position + Vector2(0, 3), r.size), Color(0.18, 0.14, 0.25, 0.12), 12)
-	Art.rrect(ci, r, fill, 12)
-	var tc := Color("ffffff") if primary else C_INK
-	if not enabled:
-		tc = Color(C_INK, 0.35)
-	if label != "":
-		_text(ci, Vector2(r.get_center().x, r.get_center().y + size * 0.36), label, size, tc, 1, r.size.x - 16, true)
+	GTUI.button(ci, id, r, label, "primary" if primary else "secondary", enabled, size)
 
 
 func _draw_ui() -> void:
 	buttons = []
+	GTUI.begin()
 	var ci := ui_layer
 	if phase == "loading" or level.is_empty():
 		ci.draw_rect(Rect2(Vector2.ZERO, uvs), C_BG)
 		Art.bouquet(ci, uvs * 0.5 + Vector2(0, -30), sin(anim_t * 4.0) * 0.4, 2.4)
-		_text(ci, uvs * 0.5 + Vector2(0, 40), "Setting up the reception...", 22, C_MUTED, 1, uvs.x - 40)
+		GTUI.text_in(ci, Rect2(0, uvs.y * 0.5 + 24, uvs.x, GTUI.line_height(GTUI.FS_BODY)), "Setting up the reception...", GTUI.FS_BODY, C_MUTED)
 		return
 	# drag feedback (screen space): from where you pressed to your finger
 	if aiming and has_aim and phase == "aim" and modal == "":
@@ -1299,53 +1299,48 @@ func _draw_ui() -> void:
 		"end": _draw_end(ci)
 		"archive": _draw_archive(ci)
 	if toast_t > 0.0 and toast != "":
-		var a := clampf(toast_t / 0.3, 0.0, 1.0)
-		var tw := minf(uvs.x - 40, 420.0)
-		var tr := Rect2((uvs.x - tw) / 2, footer_rect.position.y - 64, tw, 48)
-		Art.rrect(ci, tr, Color(C_INK, 0.92 * a), 24)
-		_text(ci, Vector2(tr.get_center().x, tr.get_center().y + 7), toast, 19, Color(1, 1, 1, a), 1, tw - 24, true)
+		GTUI.toast(ci, toast, clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0), footer_rect.position.y - GTUI.SP_M)
 
 
 func _draw_header(ci: CanvasItem) -> void:
 	var r := Rect2(0, 0, uvs.x, HEADER_H)
 	ci.draw_rect(r, C_PANEL)
-	ci.draw_rect(Rect2(0, HEADER_H - 2, uvs.x, 2), C_FAINT)
-	var bw := 48.0
-	var gap := 8.0
-	var right := uvs.x - 12.0
-	var by := (HEADER_H - bw) / 2.0
-	var rs := Rect2(right - bw, by, bw, bw)
-	var ra := Rect2(right - bw * 2 - gap, by, bw, bw)
-	var rh := Rect2(right - bw * 3 - gap * 2, by, bw, bw)
-	_button(ci, "sound", rs, "")
-	_icon_sound(ci, rs.get_center(), sound_on)
-	_button(ci, "archive", ra, "")
-	_icon_calendar(ci, ra.get_center())
-	_button(ci, "help", rh, "?", false, true, 24)
-	var title_w := rh.position.x - 20.0
-	var tr := Rect2(12, 4, title_w, HEADER_H - 8)
+	ci.draw_rect(Rect2(0, HEADER_H - GTUI.BORDER, uvs.x, GTUI.BORDER), C_FAINT)
+	var icons := GTUI.icon_row(uvs.x - GTUI.SP_M, (HEADER_H - GTUI.TARGET) / 2.0, ["sound", "archive", "help"])
+	for id in ["sound", "archive", "help"]:
+		buttons.append({"id": id, "rect": icons[id], "enabled": true})
+	GTUI.icon_button(ci, "sound", icons["sound"], "sound_on" if sound_on else "sound_off")
+	GTUI.icon_button(ci, "archive", icons["archive"], "calendar")
+	GTUI.icon_button(ci, "help", icons["help"], "help")
+	var rh: Rect2 = icons["sound"]
+	var title_w := rh.position.x - GTUI.SP_L
+	var tr := Rect2(GTUI.SP_M, 4, title_w, HEADER_H - 8)
 	buttons.append({"id": "title", "rect": tr, "enabled": true})
-	Art.bouquet(ci, Vector2(30, 30), -0.3, 1.25)
-	_text(ci, Vector2(54, 30), "Bouquet Toss", 24, C_INK, 0, title_w - 50, true)
+	# the bouquet mark is the game's own logo art
+	Art.bouquet(ci, Vector2(GTUI.SP_M + 18, HEADER_H / 2.0 - 4), -0.3, 1.25)
+	var tx := GTUI.SP_M + 42
+	var lh_t := GTUI.line_height(GTUI.FS_TITLE)
+	var lh_m := GTUI.line_height(GTUI.FS_CAPTION)
+	var ty := (HEADER_H - lh_t - lh_m + GTUI.SP_XS) / 2.0
+	GTUI.text_in(ci, Rect2(tx, ty, title_w - 42, lh_t), "Bouquet Toss", GTUI.FS_TITLE, C_INK, -1, true)
 	var sub := "#%d · %s" % [int(level.number), Daily.short_date(date)]
 	if date < today:
 		sub += " · past day"
 	elif date > today:
 		sub += " · future (dev)"
-	_text(ci, Vector2(54, 54), sub, 16, C_MUTED, 0, title_w - 50)
+	GTUI.text_in(ci, Rect2(tx, ty + lh_t - GTUI.SP_XS, title_w - 42, lh_m), sub, GTUI.FS_CAPTION, C_MUTED, -1)
 	_draw_holes(ci)
 
 
-## The day's five throws, each with its attempt counter. Fixed size; tap to switch throws.
 func _draw_holes(ci: CanvasItem) -> void:
 	var y0 := HEADER_H
 	ci.draw_rect(Rect2(0, y0, uvs.x, HOLES_H), C_PANEL)
-	ci.draw_rect(Rect2(0, y0 + HOLES_H - 2, uvs.x, 2), C_FAINT)
-	var pad := 10.0
-	var gap := 6.0
+	ci.draw_rect(Rect2(0, y0 + HOLES_H - GTUI.BORDER, uvs.x, GTUI.BORDER), C_FAINT)
+	var pad := GTUI.SP_M
+	var gap := GTUI.SP_XS
 	var cw := (uvs.x - pad * 2 - gap * (Daily.HOLES - 1)) / Daily.HOLES
 	for i in Daily.HOLES:
-		var r := Rect2(pad + i * (cw + gap), y0 + 6, cw, HOLES_H - 14)
+		var r := Rect2(pad + i * (cw + gap), y0 + GTUI.SP_S, cw, HOLES_H - GTUI.SP_S * 2)
 		var h: Dictionary = holes[i] if i < holes.size() else {"throws": [], "done": false}
 		var n := (h.throws as Array).size()
 		var cur := i == hole
@@ -1354,60 +1349,48 @@ func _draw_holes(ci: CanvasItem) -> void:
 			fill = Color("d7efe9")
 		if cur:
 			fill = C_ACCENT
-		buttons.append({"id": "hole:%d" % i, "rect": r, "enabled": true})
-		Art.rrect(ci, r, fill, 10)
+		var id := "hole:%d" % i
+		buttons.append({"id": id, "rect": r, "enabled": true})
+		GTUI.register(id, r)
+		if not cur and GTUI.is_pressed(id, r):
+			fill = fill.darkened(0.08)
+		elif not cur and GTUI.is_hover(id):
+			fill = fill.darkened(0.04)
+		GTUI.box(ci, r, fill, GTUI.R_CONTROL)
 		var tc := Color("ffffff") if cur else C_INK
-		var cx := r.get_center().x
-		_text(ci, Vector2(cx, r.position.y + 17), "Throw %d" % (i + 1), 13, Color(tc, 0.8), 1, r.size.x - 8)
+		var lh := GTUI.line_height(GTUI.FS_CAPTION)
+		var top := r.position.y + (r.size.y - lh - GTUI.line_height(GTUI.FS_BODY) + GTUI.SP_XS) / 2.0
+		GTUI.text_in(ci, Rect2(r.position.x, top, r.size.x, lh), "Throw %d" % (i + 1), GTUI.FS_CAPTION, Color(tc, 0.8))
 		var count := "%d" % n if n > 0 else "–"
+		var vr := Rect2(r.position.x, top + lh - GTUI.SP_XS, r.size.x, GTUI.line_height(GTUI.FS_BODY))
 		if bool(h.done):
-			var tw := _text(ci, Vector2(cx + 9, r.end.y - 7), count, 21, tc, 1, r.size.x - 30, true)
-			Art.bouquet(ci, Vector2(cx - tw / 2.0 - 4, r.end.y - 14), -0.2, 0.75)
+			var tw := GTUI.text_width(count, GTUI.FS_BODY, true)
+			GTUI.text_in(ci, Rect2(vr.position + Vector2(9, 0), vr.size), count, GTUI.FS_BODY, tc, 0, true)
+			Art.bouquet(ci, Vector2(vr.get_center().x + 9 - tw / 2.0 - 10, vr.get_center().y - 4), -0.2, 0.75)
 		else:
-			_text(ci, Vector2(cx, r.end.y - 7), count, 21, tc, 1, r.size.x - 8, true)
-
-
-func _icon_sound(ci: CanvasItem, c: Vector2, on: bool) -> void:
-	var col := C_INK
-	ci.draw_rect(Rect2(c.x - 11, c.y - 5, 7, 10), col)
-	ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-5, -5), c + Vector2(3, -11), c + Vector2(3, 11), c + Vector2(-5, 5)]), col)
-	if on:
-		ci.draw_arc(c + Vector2(4, 0), 6, -0.9, 0.9, 8, col, 2)
-		ci.draw_arc(c + Vector2(4, 0), 11, -0.9, 0.9, 10, col, 2)
-	else:
-		ci.draw_line(c + Vector2(6, -6), c + Vector2(14, 6), C_ACCENT, 3)
-		ci.draw_line(c + Vector2(14, -6), c + Vector2(6, 6), C_ACCENT, 3)
-
-
-func _icon_calendar(ci: CanvasItem, c: Vector2) -> void:
-	Art.rrect_outline(ci, Rect2(c.x - 13, c.y - 11, 26, 24), Color(0, 0, 0, 0), C_INK, 4, 2)
-	ci.draw_rect(Rect2(c.x - 13, c.y - 11, 26, 7), C_ACCENT)
-	ci.draw_line(c + Vector2(-7, -15), c + Vector2(-7, -8), C_INK, 3)
-	ci.draw_line(c + Vector2(7, -15), c + Vector2(7, -8), C_INK, 3)
-	for i in 3:
-		for j in 2:
-			ci.draw_rect(Rect2(c.x - 9 + i * 7, c.y - 1 + j * 6, 4, 4), C_INK)
+			GTUI.text_in(ci, vr, count, GTUI.FS_BODY, tc, 0, true)
+		GTUI.focus_ring(ci, id, r)
 
 
 func _draw_footer(ci: CanvasItem) -> void:
 	var r := footer_rect
 	ci.draw_rect(r, C_PANEL)
-	ci.draw_rect(Rect2(0, r.position.y, uvs.x, 2), C_FAINT)
-	var pad := 14.0
+	ci.draw_rect(Rect2(0, r.position.y, uvs.x, GTUI.BORDER), C_FAINT)
+	var pad := GTUI.SP_L
 	# right: aim readout (fixed width) and Results button (always there, enabled once done)
-	var rw := clampf(uvs.x * 0.36, 150.0, 230.0)
-	var aim_r := Rect2(uvs.x - pad - rw, r.position.y + 12, rw, 40)
-	Art.rrect(ci, aim_r, C_BTN, 10)
+	var rw := clampf(uvs.x * 0.36, 140.0, 220.0)
+	var aim_r := Rect2(uvs.x - pad - rw, r.position.y + GTUI.SP_M, rw, 36)
+	GTUI.box(ci, aim_r, C_BTN, GTUI.R_CONTROL)
 	var show_aim := has_aim or last_aim.x >= 0
 	var aa := aim_a if has_aim else last_aim.x
 	var ap := aim_p if has_aim else last_aim.y
 	var fa := _forward_angle(aa)
 	var aim_txt := "%d°  ·  %d%%" % [fa, ap] if show_aim else "Drag to aim"
-	_text(ci, Vector2(aim_r.get_center().x, aim_r.position.y + 27), aim_txt, 19, C_INK if show_aim else C_MUTED, 1, rw - 16, true)
+	GTUI.text_in(ci, aim_r, aim_txt, GTUI.FS_LABEL, C_INK if show_aim else C_MUTED, 0, true)
 	if show_aim:
-		ci.draw_rect(Rect2(aim_r.position.x + 8, aim_r.end.y - 6, (rw - 16) * ap / 100.0, 3), C_ACCENT)
-	var res_r := Rect2(uvs.x - pad - rw, r.position.y + 60, rw, 42)
-	_button(ci, "results", res_r, "Results", done, done, 19)
+		ci.draw_rect(Rect2(aim_r.position.x + GTUI.SP_S, aim_r.end.y - 5, (rw - GTUI.SP_S * 2) * ap / 100.0, 3), C_ACCENT)
+	var res_r := Rect2(uvs.x - pad - rw, aim_r.end.y + GTUI.SP_S, rw, GTUI.TARGET)
+	_button(ci, "results", res_r, "Results", done, done)
 	# left: counter + status (two fixed lines)
 	var lw := uvs.x - pad * 3 - rw
 	var line1 := ""
@@ -1420,18 +1403,18 @@ func _draw_footer(ci: CanvasItem) -> void:
 		line1 = "Throw %d/5 · try %d" % [hole + 1, maxi(1, n)]
 		if started:
 			line1 += " · " + Scoring.clock(elapsed)
-	_text(ci, Vector2(pad, r.position.y + 38), line1, 24, C_INK, 0, lw, true)
+	GTUI.text_in(ci, Rect2(pad, r.position.y + GTUI.SP_M, lw, GTUI.line_height(GTUI.FS_TITLE)), line1, GTUI.FS_TITLE, C_INK, -1, true)
 	var msg := status
 	if msg == "":
 		if bool(holes[hole].done):
 			msg = "Already caught: practice away, it won't change your result."
 		else:
 			msg = GOAL
-	var wr := _wrap(msg, 18, lw, 2)
-	var y := r.position.y + 66
-	for l in wr[1]:
-		_text(ci, Vector2(pad, y), l, wr[0], C_TEAL.darkened(0.2) if status_good else C_MUTED, 0, lw)
-		y += wr[0] + 5
+	var y := r.position.y + GTUI.SP_M + GTUI.line_height(GTUI.FS_TITLE)
+	var lines := GTUI.wrap_lines(msg, GTUI.FS_LABEL, lw)
+	for i in mini(lines.size(), 2):
+		GTUI.text_in(ci, Rect2(pad, y, lw, GTUI.line_height(GTUI.FS_LABEL)), lines[i], GTUI.FS_LABEL, C_TEAL.darkened(0.2) if status_good else C_MUTED, -1)
+		y += GTUI.line_height(GTUI.FS_LABEL)
 
 
 ## Angle as the player sees it: 0 = straight ahead, 90 = straight up, whichever way you face.
@@ -1453,118 +1436,102 @@ func _draw_tutorial(ci: CanvasItem) -> void:
 		ci.draw_circle(start, 8, Color(C_INK, 0.3))
 		ci.draw_circle(hand, 18, Color(C_ACCENT, 0.3))
 		ci.draw_circle(hand, 9, C_ACCENT)
-	var bw := minf(uvs.x - 32, 460.0)
-	var box := Rect2((uvs.x - bw) / 2, HEADER_H + HOLES_H + 12, bw, 80)
-	Art.rrect(ci, Rect2(box.position + Vector2(0, 3), box.size), Color(0, 0, 0, 0.1), 16)
-	Art.rrect(ci, box, Color(C_PANEL, 0.97), 16)
-	_text(ci, Vector2(box.get_center().x, box.position.y + 32), "Drag back from anywhere, then let go.", 20, C_INK, 1, bw - 28, true)
-	_text(ci, Vector2(box.get_center().x, box.position.y + 60), "Land the bouquet in the glowing hands.", 18, C_MUTED, 1, bw - 28)
-
-
-func _modal_panel(ci: CanvasItem, w: float, h: float) -> Rect2:
-	ci.draw_rect(Rect2(Vector2.ZERO, uvs), Color(0.12, 0.08, 0.16, 0.45))
-	var pw := minf(w, uvs.x - 24)
-	var ph := minf(h, uvs.y - 24)
-	var r := Rect2((uvs.x - pw) / 2, (uvs.y - ph) / 2, pw, ph)
-	Art.rrect(ci, Rect2(r.position + Vector2(0, 5), r.size), Color(0, 0, 0, 0.15), 22)
-	Art.rrect(ci, r, C_PANEL, 22)
-	return r
+	var bw := minf(uvs.x - GTUI.SP_L * 2, 440.0)
+	var lh1 := GTUI.line_height(GTUI.FS_BODY)
+	var lh2 := GTUI.line_height(GTUI.FS_LABEL)
+	var box := Rect2((uvs.x - bw) / 2, HEADER_H + HOLES_H + GTUI.SP_M, bw, lh1 + lh2 + GTUI.SP_M * 2)
+	GTUI.box(ci, box, Color(C_PANEL, 0.97), GTUI.R_PANEL, C_FAINT)
+	GTUI.text_in(ci, Rect2(box.position.x + GTUI.SP_M, box.position.y + GTUI.SP_M, bw - GTUI.SP_M * 2, lh1), "Drag back from anywhere, then let go.", GTUI.FS_BODY, C_INK, 0, true)
+	GTUI.text_in(ci, Rect2(box.position.x + GTUI.SP_M, box.position.y + GTUI.SP_M + lh1, bw - GTUI.SP_M * 2, lh2), "Land the bouquet in the glowing hands.", GTUI.FS_LABEL, C_MUTED)
 
 
 func _draw_help(ci: CanvasItem) -> void:
-	var r := _modal_panel(ci, 480, 420)
-	var x := r.position.x + 24
-	var w := r.size.x - 48
-	_text(ci, Vector2(r.get_center().x, r.position.y + 48), "How to play", 28, C_INK, 1, w, true)
-	var lines := [
-		"Drag back from anywhere on the screen, aim, and let go to throw.",
-		"Five throws a day, each to a different guest. Fewest tries wins; tap a number to switch.",
-		"Bounce off walls, ceilings and tables all you like. Not the cake.",
-		"Everyone gets the same venue each day. Arrow keys and Space work too.",
-	]
-	var y := r.position.y + 90
-	for l in lines:
-		var wr := _wrap(l, 19, w - 26, 2)
-		ci.draw_circle(Vector2(x + 7, y - 6), 5, C_ACCENT)
-		for s in wr[1]:
-			_text(ci, Vector2(x + 24, y), s, wr[0], C_INK, 0, w - 26)
-			y += wr[0] + 6
-		y += 12
-	_button(ci, "close", Rect2(r.get_center().x - 110, r.end.y - 72, 220, 52), "Got it", true)
+	var w := _content_w(480)
+	var h := 0.0
+	for l in HELP_LINES:
+		h = GTUI.paragraph(ci, 0, h, w - GTUI.SP_L, l, GTUI.FS_BODY, C_INK, false, false) + GTUI.SP_S
+	var card := _modal_card(ci, 480, h)
+	buttons.append({"id": "close", "rect": GTUI.modal_close_rect(card), "enabled": true})
+	var c := GTUI.modal(ci, card, "How to play", "close")
+	var y := c.position.y
+	for l in HELP_LINES:
+		ci.draw_circle(Vector2(c.position.x + 4, y + GTUI.line_height(GTUI.FS_BODY) / 2.0), 3, C_ACCENT)
+		y = GTUI.paragraph(ci, c.position.x + GTUI.SP_L, y, c.size.x - GTUI.SP_L, l, GTUI.FS_BODY, C_INK) + GTUI.SP_S
+	_button(ci, "got_it", GTUI.modal_buttons_rect(c), "Got it", true)
 
 
 func _draw_end(ci: CanvasItem) -> void:
-	var r := _modal_panel(ci, 500, 500)
-	var w := r.size.x - 48
-	var cx := r.get_center().x
-	var y := r.position.y + 50
-	_text(ci, Vector2(cx, y), "All five caught!", 32, C_ACCENT_DARK, 1, w, true)
-	y += 30
-	_text(ci, Vector2(cx, y), "Bouquet Toss #%d · %s" % [int(level.number), Daily.short_date(date)], 17, C_MUTED, 1, w)
-	y += 16
+	var th := GTUI.TARGET
+	var stat_h := GTUI.line_height(GTUI.FS_TITLE) + GTUI.line_height(GTUI.FS_CAPTION)
+	var content_h := GTUI.line_height(GTUI.FS_LABEL) + 96 + GTUI.line_height(GTUI.FS_TITLE) + GTUI.SP_L + stat_h + GTUI.SP_XL + th + GTUI.SP_S + th + GTUI.SP_M + GTUI.line_height(GTUI.FS_CAPTION)
+	var card := _modal_card(ci, 500, content_h, false)
+	buttons.append({"id": "close", "rect": GTUI.modal_close_rect(card), "enabled": true})
+	var c := GTUI.modal(ci, card, "All five caught!", "close")
+	var w := c.size.x
+	var cx := c.get_center().x
+	var y := c.position.y
+	GTUI.text(ci, Vector2(c.position.x, y), "Bouquet Toss #%d · %s" % [int(level.number), Daily.short_date(date)], GTUI.FS_LABEL, C_MUTED)
+	y += GTUI.line_height(GTUI.FS_LABEL)
 	var t := int(result.get("throws", 0))
 	var per: Array = result.get("holes", [])
-	# one bouquet per throw, with how many tries it took underneath
+	# one bouquet per throw, with how many tries it took underneath (game art)
 	var slot := minf(64.0, w / Daily.HOLES)
 	for i in Daily.HOLES:
-		var c := Vector2(cx - slot * Daily.HOLES / 2.0 + slot * (i + 0.5), y + 34)
+		var bc := Vector2(cx - slot * Daily.HOLES / 2.0 + slot * (i + 0.5), y + 40)
 		var n: int = (per[i] as Array).size() if i < per.size() else 0
-		Art.bouquet(ci, c, -0.3 + 0.15 * i, 1.4 if n == 1 else 1.1)
-		_text(ci, c + Vector2(0, 42), "%d" % n, 18, C_INK if n == 1 else C_MUTED, 1, slot - 6, true)
-	y += 108
-	_text(ci, Vector2(cx, y), Scoring.rating_total(t, Daily.HOLES), 30, C_INK, 1, w, true)
-	y += 20
-	# three stat cells
-	var cw := (w - 16) / 3.0
+		Art.bouquet(ci, bc, -0.3 + 0.15 * i, 1.4 if n == 1 else 1.1)
+		GTUI.text_in(ci, Rect2(bc.x - slot / 2.0, bc.y + 30, slot, GTUI.line_height(GTUI.FS_LABEL)), "%d" % n, GTUI.FS_LABEL, C_INK if n == 1 else C_MUTED, 0, true)
+	y += 96
+	GTUI.text_in(ci, Rect2(c.position.x, y, w, GTUI.line_height(GTUI.FS_TITLE)), Scoring.rating_total(t, Daily.HOLES), GTUI.FS_TITLE, C_ACCENT_DARK, 0, true)
+	y += GTUI.line_height(GTUI.FS_TITLE) + GTUI.SP_L
+	# three stats, flat (no boxes)
 	var labels := ["Tries", "Accuracy", "Time"]
 	var vals := [str(t), "%d%%" % int(result.get("accuracy", 0)), Scoring.clock(float(result.get("seconds", 0)))]
+	var cw := w / 3.0
 	for i in 3:
-		var cr := Rect2(r.position.x + 24 + i * (cw + 8), y, cw, 70)
-		Art.rrect(ci, cr, C_BTN, 12)
-		_text(ci, Vector2(cr.get_center().x, cr.position.y + 34), vals[i], 26, C_INK, 1, cw - 12, true)
-		_text(ci, Vector2(cr.get_center().x, cr.position.y + 58), labels[i], 15, C_MUTED, 1, cw - 12)
-	y += 90
-	var bw := (w - 12) / 2.0
-	_button(ci, "share", Rect2(r.position.x + 24, y, bw, 54), "Share", true)
-	_button(ci, "copy", Rect2(r.position.x + 36 + bw, y, bw, 54), "Copy result", false)
-	y += 64
-	_button(ci, "close", Rect2(r.position.x + 24, y, bw, 50), "Keep throwing", false, true, 18)
-	_button(ci, "archive", Rect2(r.position.x + 36 + bw, y, bw, 50), "Past days", false, true, 18)
-	y += 64
-	_text(ci, Vector2(cx, minf(y + 8, r.end.y - 16)), "New venue tomorrow.", 16, C_MUTED, 1, w)
+		var sx := c.position.x + i * cw
+		GTUI.text_in(ci, Rect2(sx, y, cw, GTUI.line_height(GTUI.FS_TITLE)), vals[i], GTUI.FS_TITLE, C_INK, 0, true)
+		GTUI.text_in(ci, Rect2(sx, y + GTUI.line_height(GTUI.FS_TITLE), cw, GTUI.line_height(GTUI.FS_CAPTION)), labels[i].to_upper(), GTUI.FS_CAPTION, C_MUTED, 0, true)
+	y += stat_h + GTUI.SP_XL
+	var r1 := GTUI.row(Rect2(c.position.x, y, w, th), 2, [1.0, 1.4])
+	_button(ci, "copy", r1[0], "Copy result")
+	_button(ci, "share", r1[1], "Share", true)
+	y += th + GTUI.SP_S
+	var r2 := GTUI.row(Rect2(c.position.x, y, w, th), 2)
+	_button(ci, "close_end", r2[0], "Keep throwing")
+	_button(ci, "archive", r2[1], "Past days")
+	y += th + GTUI.SP_M
+	GTUI.text_in(ci, Rect2(c.position.x, y, w, GTUI.line_height(GTUI.FS_CAPTION)), "New venue in " + GTUI.countdown(), GTUI.FS_CAPTION, C_MUTED)
 
 
 func _draw_archive(ci: CanvasItem) -> void:
-	var r := _modal_panel(ci, 480, 120 + ARCHIVE_ROWS * 62 + 80)
-	var w := r.size.x - 48
-	_text(ci, Vector2(r.get_center().x, r.position.y + 46), "Past days", 28, C_INK, 1, w, true)
-	var y := r.position.y + 72
+	var rh := GTUI.TARGET + GTUI.SP_S
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.SP_S + ARCHIVE_ROWS * rh - GTUI.SP_S
+	var card := _modal_card(ci, 480, content_h)
+	buttons.append({"id": "close", "rect": GTUI.modal_close_rect(card), "enabled": true})
+	var c := GTUI.modal(ci, card, "Past days", "close")
+	GTUI.text(ci, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
+	var y := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.SP_S
 	var first := archive_page * ARCHIVE_ROWS
-	for k in ARCHIVE_ROWS:
-		var i := first + k
-		var row := Rect2(r.position.x + 24, y, w, 54)
-		if i < archive_count():
-			var d := Daily.add_days(today, -i)
-			var lab := "#%d · %s" % [Daily.day_number(d), Daily.short_date(d)]
-			if d == today:
-				lab += " · today"
-			var res := String(archive_results.get(d, ""))
-			_button(ci, "day:" + d, row, "", d == date)
-			var tc := Color("ffffff") if d == date else C_INK
-			_text(ci, Vector2(row.position.x + 16, row.position.y + 34), lab, 19, tc, 0, w * 0.55, true)
-			_text(ci, Vector2(row.end.x - 16, row.position.y + 34), res if res != "" else "Not played", 17, tc if res != "" else Color(tc, 0.6), 2, w * 0.4)
-		else:
-			Art.rrect(ci, row, Color(C_BTN, 0.35), 12)    # placeholder keeps the layout fixed
-		y += 62
-	var bw := (w - 24) / 3.0
-	_button(ci, "arch_prev", Rect2(r.position.x + 24, r.end.y - 70, bw, 50), "Newer", false, archive_page > 0, 18)
-	_button(ci, "close", Rect2(r.position.x + 36 + bw, r.end.y - 70, bw, 50), "Close", true, true, 18)
-	_button(ci, "arch_next", Rect2(r.position.x + 48 + bw * 2, r.end.y - 70, bw, 50), "Older", false, archive_page < archive_pages() - 1, 18)
+	for j in ARCHIVE_ROWS:
+		var i := first + j
+		if i >= archive_count():
+			break
+		var row := Rect2(c.position.x, y, c.size.x, GTUI.TARGET)
+		var d := Daily.add_days(today, -i)
+		var res := String(archive_results.get(d, ""))
+		buttons.append({"id": "day:" + d, "rect": row, "enabled": true})
+		GTUI.list_row(ci, "day:" + d, row, "#%d" % Daily.day_number(d), "Today" if d == today else Daily.short_date(d),
+			res if res != "" else "Not played", d == date, C_TEAL.darkened(0.2) if res != "" else Color(0, 0, 0, 0))
+		y += rh
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	_button(ci, "arch_prev", pr[0], "Newer", false, archive_page > 0)
+	_button(ci, "arch_next", pr[1], "Older", false, archive_page < archive_pages() - 1)
 
 
 func _draw_dev(ci: CanvasItem) -> void:
 	var w := minf(340.0, uvs.x - 24)
-	var r := Rect2(12, HEADER_H + HOLES_H + 10, w, 268)
+	var r := Rect2(12, HEADER_H + HOLES_H + 10, w, 280)
 	Art.rrect(ci, r, Color(0.1, 0.08, 0.14, 0.86), 12)
 	var st := dev_stats() if level.has("stats") else {}
 	var sol: Dictionary = level.get("solution", {})
@@ -1584,5 +1551,21 @@ func _draw_dev(ci: CanvasItem) -> void:
 		["dev_close", "Hide"]]
 	var bw := (w - 24 - 9) / 4.0
 	for i in ids.size():
-		var br := Rect2(r.position.x + 12 + (i % 4) * (bw + 3), y + 8 + (i / 4) * 46, bw, 40)
-		_button(ci, ids[i][0], br, ids[i][1], false, true, 15)
+		var br := Rect2(r.position.x + 12 + (i % 4) * (bw + 3), y + 8 + (i / 4) * 48, bw, GTUI.TARGET)
+		_button(ci, ids[i][0], br, ids[i][1], false, true, GTUI.FS_LABEL)
+
+
+const HELP_LINES := [
+	"Drag back from anywhere on the screen, aim, and let go to throw.",
+	"Five throws a day, each to a different guest. Fewest tries wins; tap a number to switch.",
+	"Bounce off walls, ceilings and tables all you like. Not the cake.",
+	"Everyone gets the same venue each day. Arrow keys and Space work too.",
+]
+
+
+func _modal_card(ci: CanvasItem, w: float, content_h: float, buttons_row := true) -> Rect2:
+	return GTUI.modal_rect(ci, w, GTUI.modal_height(content_h, true, buttons_row))
+
+
+func _content_w(w: float) -> float:
+	return minf(w, uvs.x - GTUI.SP_L * 2) - GTUI.SP_XL * 2
