@@ -62,11 +62,14 @@ var gx := 0.0
 var gy := 0.0
 var total_time := 0.0
 var start_height := 0.0
+var heavy_joint := -1            # joint carrying the Heavy Top weight (-1: none)
+var top_mass := 0.0
 
 
 ## design: Array of {a: Vector2i, b: Vector2i, m: int}; anchors: Array of Vector2i (y == 0).
 ## unit: metres per design coordinate (the game builds in centimetres, so 0.01).
-func setup(design: Array, anchors: Array, q, unit := 1.0) -> void:
+## opts.top_mass: extra kg on the highest joint attached to an anchor (Heavy Top days).
+func setup(design: Array, anchors: Array, q, unit := 1.0, opts := {}) -> void:
 	quake = q
 	total_time = SETTLE + q.duration + AFTER
 	var index := {}
@@ -120,6 +123,12 @@ func setup(design: Array, anchors: Array, q, unit := 1.0) -> void:
 		rest_y[j] = py[j]
 		anchor[j] = 1 if (p.y == 0 and anchors.has(p)) else 0
 		inv_m[j] = 0.0 if anchor[j] == 1 else 1.0 / masses[j]
+	top_mass = float(opts.get("top_mass", 0.0))
+	heavy_joint = -1
+	if top_mass > 0.0:
+		heavy_joint = top_joint(grid_pts, connected(), anchor)
+		if heavy_joint >= 0:
+			inv_m[heavy_joint] = 1.0 / (masses[heavy_joint] + top_mass)
 	t = 0.0
 	steps = 0
 	gx = 0.0
@@ -243,6 +252,17 @@ func stress_ratio(i: int) -> float:
 func run_to_end() -> void:
 	while not done():
 		step()
+
+
+## The highest attached non-anchor joint (ties: leftmost, then first built), or -1.
+static func top_joint(pts: Array, attached: PackedByteArray, is_anchor: PackedByteArray) -> int:
+	var best := -1
+	for j in pts.size():
+		if attached[j] == 0 or is_anchor[j] == 1:
+			continue
+		if best < 0 or pts[j].y > pts[best].y or (pts[j].y == pts[best].y and pts[j].x < pts[best].x):
+			best = j
+	return best
 
 
 ## Joints still connected to an anchor through intact beams.

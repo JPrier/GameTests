@@ -5,7 +5,9 @@ extends Node2D
 ## (highest joint attached to an anchor) once the shaking stops. Three tries a day; best counts.
 
 const Sim = preload("res://quake_sim.gd")
-const Quake = preload("res://quake.gd")
+const Gen = preload("res://challenge/generator.gd")
+const DayUI = preload("res://ui/day_ui.gd")
+const TutorialUI = preload("res://ui/tutorial_ui.gd")
 
 const GW := 14                        # build grid width (m)
 const GH := 18                        # build grid height (m)
@@ -52,6 +54,9 @@ var quake_no := 1
 var budget := 50
 var anchors: Array = []               # Vector2i on y = 0
 var quake = null
+var challenge = null                  # today's DailyChallenge (challenge/challenge.gd)
+var briefed := false                  # the day's briefing card has been dismissed (saved per day)
+var brief_open := false
 
 # player
 var design: Array = []                # [{a: Vector2i, b: Vector2i, m: int}]
@@ -175,27 +180,14 @@ func day_number(d: String) -> int:
 
 
 ## Build the site and quake for a date. Deterministic: same date -> same day everywhere.
+## All the rules live in challenge/generator.gd (v2 from its CUTOVER, frozen v1 before).
 func generate(d: String) -> void:
 	date = d
 	quake_no = day_number(d)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = ("site:" + d).hash()
-	budget = rng.randi_range(8, 13) * 5
-	anchors.clear()
-	var count := rng.randi_range(2, 3)
-	var tries_left := 200
-	while anchors.size() < count and tries_left > 0:
-		tries_left -= 1
-		var x := rng.randi_range(2, GW - 2)
-		var ok := true
-		for a in anchors:
-			if absi(a.x / U - x) < 2:
-				ok = false
-		if ok:
-			anchors.append(Vector2i(x * U, 0))
-	anchors.sort_custom(func(a, b): return a.x < b.x)
-	quake = Quake.new()
-	quake.make(d)
+	challenge = Gen.generate(d)
+	budget = challenge.budget
+	anchors = challenge.anchors.duplicate()
+	quake = challenge.make_quake()
 
 
 func load_day(d: String) -> void:
@@ -206,11 +198,13 @@ func load_day(d: String) -> void:
 	finished = false
 	selected = Vector2i(-1, -1)
 	sim = null
+	briefed = false
 	_load_state()
 	if finished or tries.size() >= MAX_TRIES:
 		_enter_final()
 	else:
 		phase = Phase.BUILD
+	brief_open = can_brief() and tries.is_empty() and not briefed
 
 
 # ------------------------------------------------------------------ building
@@ -218,7 +212,7 @@ func load_day(d: String) -> void:
 func design_cost(d: Array = design) -> float:
 	var c := 0.0
 	for b in d:
-		c += beam_len(b) * float(Sim.MATS[int(b.m)].cost)
+		c += beam_len(b) * mat_cost(int(b.m))
 	return c
 
 
@@ -238,6 +232,20 @@ static func dot(x: int, y: int) -> Vector2i:
 
 func money_left() -> float:
 	return budget - design_cost()
+
+
+## Today's price per metre (modifiers can change it).
+func mat_cost(m: int) -> float:
+	return challenge.mat_cost(m) if challenge != null else float(Sim.MATS[m].cost)
+
+
+## Minimum Height days: the quake can only start once the build reaches it.
+func min_height() -> float:
+	return challenge.min_height() if challenge != null else 0.0
+
+
+func height_ok() -> bool:
+	return built_height() + 1e-6 >= min_height()
 
 
 func is_anchor(p: Vector2i) -> bool:
@@ -303,7 +311,7 @@ func check_beam(a: Vector2i, b: Vector2i, mat: int = build_mat) -> String:
 		return "Too long — max %.1f m" % MAX_LEN
 	if beam_index(a, b) >= 0:
 		return "Already built"
-	var c := wpos(a).distance_to(wpos(b)) * float(Sim.MATS[mat].cost)
+	var c := wpos(a).distance_to(wpos(b)) * mat_cost(mat)
 	if c > money_left() + 1e-6:
 		return "Not enough budget ($%d needed)" % ceili(c)
 	return ""
@@ -377,7 +385,7 @@ func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = buil
 			if p.y == 0 and not is_anchor(p):
 				out.why = "Only anchors can touch the ground"
 				return out
-	var unit_cost := float(Sim.MATS[mat].cost)
+	var unit_cost := mat_cost(mat)
 	var left := money_left()
 	var any_new := false
 	for sg in segs:
@@ -527,9 +535,12 @@ func built_height(d: Array = design) -> float:
 func run() -> void:
 	if phase != Phase.BUILD or design.is_empty():
 		return
+	if not height_ok():
+		_toast("Build at least %d m tall first" % int(min_height()))
+		return
 	selected = Vector2i(-1, -1)
 	sim = Sim.new()
-	sim.setup(design, anchors, quake, 1.0 / U)
+	sim.setup(design, anchors, quake, 1.0 / U, {"top_mass": challenge.top_mass() if challenge else 0.0})
 	sim_acc = 0.0
 	fast = false
 	flashes.clear()
@@ -657,7 +668,7 @@ func _save_path() -> String:
 func _save_state() -> void:
 	var f := FileAccess.open(_save_path(), FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"tries": tries, "design": _design_to_json(design), "finished": finished}))
+		f.store_string(JSON.stringify({"tries": tries, "design": _design_to_json(design), "finished": finished, "briefed": briefed}))
 
 
 func _load_state() -> void:
@@ -678,6 +689,7 @@ func _load_state() -> void:
 		})
 	design = _design_from_json(data.get("design", []))
 	finished = bool(data.get("finished", false))
+	briefed = bool(data.get("briefed", false))
 
 
 func wipe_save() -> void:
@@ -989,6 +1001,9 @@ func _process(delta: float) -> void:
 	if tut_open:
 		if keys_free and Input.is_action_just_pressed("run"):
 			close_tutorial()
+	elif brief_open and not dev_open:
+		if keys_free and Input.is_action_just_pressed("run"):
+			close_brief()
 	elif not dev_open and not archive_open:
 		if keys_free and Input.is_action_just_pressed("run"):
 			match phase:
@@ -1014,6 +1029,8 @@ func _input(ev: InputEvent) -> void:
 			dev_open = false
 		elif tut_open:
 			close_tutorial()
+		elif brief_open:
+			close_brief()
 		elif archive_open:
 			archive_open = false
 		_build_buttons()
@@ -1025,7 +1042,7 @@ func _input(ev: InputEvent) -> void:
 		if ev.pressed:
 			if gesture:
 				return
-			if dev_open or tut_open or archive_open:
+			if overlay_open():
 				_press_button(p)
 				return
 			if help_rect.grow(10).has_point(p):
@@ -1036,6 +1053,9 @@ func _input(ev: InputEvent) -> void:
 				return
 			if title_rect.grow(8).has_point(p):
 				_dev_tap()
+				return
+			if seis_rect.has_point(p) and phase == Phase.BUILD and can_brief():
+				open_brief()
 				return
 			if _press_button(p):
 				return
@@ -1069,7 +1089,7 @@ func _input(ev: InputEvent) -> void:
 				_end_pointer()
 				return
 			var was_pan_drag := panning and dragging
-			if phase == Phase.BUILD and not dev_open and not tut_open and not erasing and not was_pan_drag and board_rect.has_point(p):
+			if phase == Phase.BUILD and not overlay_open() and not erasing and not was_pan_drag and board_rect.has_point(p):
 				_release(p)
 			_end_pointer()
 	elif ev is InputEventMouseMotion and not gesture:
@@ -1108,7 +1128,7 @@ func _end_pointer() -> void:
 
 ## Zoom/pan input: mouse wheel, trackpad pinch/scroll, two-finger touch. True when consumed.
 func _camera_input(ev: InputEvent) -> bool:
-	if dev_open or tut_open:
+	if dev_open or tut_open or brief_open:
 		return false
 	if ev is InputEventMouseButton and ev.pressed and (ev.button_index == MOUSE_BUTTON_WHEEL_UP or ev.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 		var p: Vector2 = make_input_local(ev).position
@@ -1382,7 +1402,10 @@ func _press_button(p: Vector2) -> bool:
 					"dev_today": dev_reset_today()
 					"dev_all": dev_reset_all()
 					"dev_close": dev_open = false
+					"dev_prev": dev_set_day(_date_add(date, -1))
+					"dev_next": dev_set_day(_date_add(date, 1))
 					"tut_close", "tut_x": close_tutorial()
+					"brief_close", "brief_x": close_brief()
 					"arch_newer": archive_shift(-1)
 					"arch_older": archive_shift(1)
 					"arch_close":
@@ -1402,6 +1425,7 @@ const TUT_FLAG := "user://quake_tutorial_seen"
 
 func close_tutorial() -> void:
 	tut_open = false
+	brief_open = can_brief() and tries.is_empty() and not briefed and phase == Phase.BUILD
 	var f := FileAccess.open(TUT_FLAG, FileAccess.WRITE)
 	if f:
 		f.store_string("1")
@@ -1421,7 +1445,7 @@ func _layout() -> void:
 	var portrait := vs.y >= vs.x * 1.05
 	var view_w := GW + VIEW_PAD * 2
 	var view_h := GH + VIEW_PAD + VIEW_GROUND
-	var seis_h := GTUI.dp(56)
+	var seis_h := GTUI.dp(56) + GTUI.line_height(GTUI.FS_CAPTION)
 	if portrait:
 		head_rect = Rect2(m, m, vs.x - m * 2, _head_h())
 		seis_rect = Rect2(m, head_rect.end.y + gap, vs.x - m * 2, seis_h)
@@ -1454,20 +1478,19 @@ func _build_buttons() -> void:
 	buttons.clear()
 	seg_rect = Rect2()
 	if tut_open and not dev_open:
-		var card := _tut_card()
+		var card := TutorialUI.card(self)
 		buttons.append({"id": "tut_close", "label": "Let's build", "primary": true, "enabled": true, "kind": "button",
 			"rect": GTUI.modal_buttons_rect(GTUI.modal_content(card))})
 		buttons.append({"id": "tut_x", "label": "", "primary": false, "enabled": true, "kind": "row", "rect": GTUI.modal_close_rect(card)})
+		return
+	if brief_open and not dev_open:
+		DayUI.brief_buttons(self)
 		return
 	if archive_open and not dev_open:
 		_archive_buttons()
 		return
 	if dev_open:
-		var c := _dev_card()
-		var y := c.position.y
-		for l in [["dev_today", "Reset today", false], ["dev_all", "Reset all days", false], ["dev_close", "Close", true]]:
-			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "kind": "button", "rect": Rect2(c.position.x, y, c.size.x, GTUI.target())})
-			y += GTUI.target() + GTUI.dp(GTUI.SP_S)
+		DayUI.dev_buttons(self)
 		return
 	var bh := GTUI.target()
 	var gap := GTUI.dp(GTUI.SP_S)
@@ -1513,7 +1536,7 @@ func _draw() -> void:
 	_draw_header()
 	_draw_seismo()
 	_draw_panel()
-	if not (tut_open or dev_open or archive_open):
+	if not overlay_open():
 		for b in buttons:
 			if b.get("kind", "") != "row":
 				_draw_button(b)
@@ -1530,14 +1553,14 @@ func _draw() -> void:
 	if toast_t > 0.0 and toast != "":
 		GTUI.toast(self, toast, GTUI.toast_alpha(toast_t, 2.6), board_rect.end.y - GTUI.dp(GTUI.SP_M))
 	if tut_open and not dev_open:
-		_draw_tutorial()
+		TutorialUI.draw(self)
+	elif brief_open and not dev_open:
+		DayUI.draw_brief(self)
 	if archive_open and not dev_open:
 		_draw_archive()
 	if dev_open:
-		var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
-		var c := GTUI.modal(self, card, "Dev menu")
-		GTUI.text(self, c.position, "Reset saved progress for #%d (%s)" % [quake_no, date], GTUI.FS_LABEL, C_MUTED)
-	if tut_open or dev_open or archive_open:
+		DayUI.draw_dev(self)
+	if overlay_open():
 		for b in buttons:
 			if b.get("kind", "") != "row":
 				_draw_button(b)
@@ -1575,42 +1598,7 @@ func _draw_header() -> void:
 
 
 func _draw_seismo() -> void:
-	var r := seis_rect
-	GTUI.panel(self, r)
-	var pad := GTUI.dp(GTUI.SP_M)
-	var cap_h := GTUI.line_height(GTUI.FS_CAPTION)
-	GTUI.text_in(self, Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS), r.size.x - pad * 2, cap_h), "TODAY'S QUAKE  " + quake.describe(), GTUI.FS_CAPTION, C_MUTED, -1, true)
-	var tr := Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS) + cap_h, r.size.x - pad * 2, r.size.y - cap_h - GTUI.dp(GTUI.SP_S) - GTUI.dp(GTUI.SP_XS))
-	var mid := tr.get_center().y
-	draw_line(Vector2(tr.position.x, mid), Vector2(tr.end.x, mid), Color(1, 1, 1, 0.08), 1.0)
-	var tr_data: PackedFloat32Array = quake.trace
-	var n := tr_data.size()
-	if n < 2:
-		return
-	var cols := int(tr.size.x / 2.0)
-	var head_frac := -1.0
-	if phase == Phase.RUN and sim != null:
-		head_frac = clampf(sim.quake_time() / quake.duration, 0.0, 1.0)
-	elif phase == Phase.RESULT or phase == Phase.FINAL:
-		head_frac = 1.0
-	for c in cols:
-		var i0 := int(float(c) / cols * n)
-		var i1 := maxi(i0 + 1, int(float(c + 1) / cols * n))
-		var lo := 0.0
-		var hi := 0.0
-		for i in range(i0, mini(i1, n)):
-			lo = minf(lo, tr_data[i])
-			hi = maxf(hi, tr_data[i])
-		var x := tr.position.x + c * 2.0 + 1.0
-		var frac := float(c) / cols
-		var col := Color(C_ACCENT, 0.9) if head_frac >= 0.0 and frac <= head_frac else Color(C_MUTED, 0.55)
-		draw_line(Vector2(x, mid - hi * tr.size.y * 0.5), Vector2(x, mid - lo * tr.size.y * 0.5 + 1), col, 1.6)
-	if phase == Phase.RUN and sim != null:
-		var qt: float = sim.quake_time()
-		var hx := tr.position.x + head_frac * tr.size.x
-		draw_line(Vector2(hx, tr.position.y), Vector2(hx, tr.end.y), C_INK, 2.0)
-		var status := "settling…" if qt < 0.0 else ("%.1fs" % minf(qt, quake.duration) if qt < quake.duration else "aftershock check…")
-		GTUI.text_in(self, Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS), r.size.x - pad * 2, cap_h), status, GTUI.FS_CAPTION, C_INK, 1, true)
+	DayUI.seismograph(self)
 
 
 func _draw_board() -> void:
@@ -1654,6 +1642,12 @@ func _draw_board() -> void:
 		for hy in range(2, GH + 1, 2):
 			var s := world_to_screen(Vector2(-0.45, hy))
 			_text_r("%d" % hy, s + Vector2(0, 5), 13, Color(C_MUTED, 0.6))
+		# Minimum Height days: the line the build has to reach
+		if min_height() > 0.0:
+			var my := world_to_screen(Vector2(0, min_height())).y
+			var col := C_OK if height_ok() else C_ACCENT
+			_dashed(Vector2(r.position.x + 6, my), Vector2(r.end.x - 6, my), Color(col, 0.7))
+			draw_string(font, Vector2(r.position.x + 12, my - 8), "reach %d m" % int(min_height()), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(col, 0.9))  # gt:art
 	# ghost of the built design after a run
 	if (phase == Phase.RESULT or phase == Phase.FINAL) and show_try >= 0:
 		for b in _design_from_json(tries[show_try].design):
@@ -1708,6 +1702,11 @@ func _draw_beam(a: Vector2, b: Vector2, mat: int, tint := Color(0, 0, 0, 0), alp
 	draw_line(a, b, Color(base, alpha), w)
 
 
+## Heavy Top days: the joint the weight hangs on ((-1, -1) when there's none).
+func heavy_point(d: Array = design) -> Vector2i:
+	return DayUI.heavy_point(self, d)
+
+
 func _draw_joint(s: Vector2, anchor := false) -> void:
 	var r := maxf(3.5, ppm * 0.12)
 	draw_circle(s, r + 1.5, Color(0, 0, 0, 0.5))
@@ -1743,6 +1742,9 @@ func _draw_design() -> void:
 		_draw_joint(world_to_screen(wpos(a)), true)
 	for p in plan_pts:
 		_draw_joint(world_to_screen(wpos(p)), false)
+	var tp := heavy_point()
+	if tp.x >= 0:
+		DayUI.draw_weight(self, world_to_screen(wpos(tp)))
 	if selected.x >= 0:
 		var s := world_to_screen(wpos(selected))
 		draw_arc(s, ppm * 0.32 + 2.0 * sin(anim_t * 6.0), 0, TAU, 28, C_DOT_REACH, 3.0)
@@ -1813,6 +1815,8 @@ func _draw_sim() -> void:
 		_draw_beam(a, b, sim.b_mat[i], _stress_tint(ratio))
 	for j in sim.n:
 		_draw_joint(world_to_screen(_vis(j)), sim.anchor[j] == 1)
+	if sim.heavy_joint >= 0:
+		DayUI.draw_weight(self, world_to_screen(_vis(sim.heavy_joint)))
 
 
 func _draw_end_state() -> void:
@@ -1851,6 +1855,9 @@ func _draw_end_state() -> void:
 	for p in pts:
 		var j: int = index[p]
 		_draw_joint(world_to_screen(Vector2(float(ex[j]), float(ey[j]))), is_anchor(p))
+	var tp := heavy_point(d)
+	if tp.x >= 0 and index.has(tp):
+		DayUI.draw_weight(self, world_to_screen(Vector2(float(ex[index[tp]]), float(ey[index[tp]]))))
 
 
 func _draw_panel() -> void:
@@ -1864,7 +1871,8 @@ func _draw_panel() -> void:
 			elif selected.x >= 0:
 				hint = "Tap a lit dot to build a line to it from the selected joint. Tap the joint again to deselect."
 			lines.append([hint, GTUI.FS_BODY, C_INK, false])
-			lines.append(["Built %d m · %d beams · try %d of %d%s" % [int(built_height()), design.size(), tries.size() + 1, MAX_TRIES,
+			var need := ("  ·  reach %d m to start" % int(min_height())) if not height_ok() else ""
+			lines.append(["Built %d m · %d beams · try %d of %d%s%s" % [int(built_height()), design.size(), tries.size() + 1, MAX_TRIES, need,
 				("  ·  " + _tries_line()) if not tries.is_empty() else ""], GTUI.FS_LABEL, C_MUTED, false])
 		Phase.RUN:
 			var qt: float = sim.quake_time()
@@ -1933,7 +1941,7 @@ func _draw_button(b: Dictionary) -> void:
 			var x := r.position.x + GTUI.dp(GTUI.SP_M)
 			draw_line(Vector2(x, cy), Vector2(x + sw, cy), C_WOOD if id == "wood" else C_STEEL, GTUI.dp(4))
 			var tx := x + sw + GTUI.dp(GTUI.SP_S)
-			var price := "$%d/m" % (1 if mat == Sim.Mat.WOOD else 3)
+			var price := "$%s/m" % DayUI.price(mat_cost(mat))
 			var tw := r.end.x - tx - GTUI.dp(GTUI.SP_S)
 			var txt := "%s · %s" % [String(b.label), price]
 			if GTUI.text_width(txt, GTUI.FS_LABEL, b.primary) > tw:
@@ -2089,39 +2097,6 @@ func _clip_seg(a: Vector2, b: Vector2, r: Rect2) -> Array:
 	return [a + d * t0, a + d * t1]
 
 
-func _draw_tutorial() -> void:
-	var c := GTUI.modal(self, _tut_card(), "How Earthquake Test works", "tut_x")
-	var x := c.position.x
-	var tw := c.size.x
-	var y := c.position.y
-	var bottom := c.end.y - GTUI.target() - GTUI.dp(GTUI.SP_M)
-	var icon := GTUI.dp(20)
-	var k := icon / 30.0   # icon art below was drawn in a 30 px box
-	for row in _tut_rows():
-		var ir := Rect2(x, y + (GTUI.line_height(GTUI.FS_BODY) - icon) / 2.0, icon, icon)
-		var p := ir.position
-		match row[0]:
-			"anchor":
-				draw_colored_polygon(PackedVector2Array([p + Vector2(3, 26) * k, p + Vector2(27, 26) * k, p + Vector2(15, 4) * k]), C_ANCHOR)
-			"beam":
-				_draw_beam(p + Vector2(3, 26) * k, p + Vector2(27, 4) * k, Sim.Mat.WOOD)
-			"steel":
-				_draw_beam(p + Vector2(3, 26) * k, p + Vector2(27, 4) * k, Sim.Mat.STEEL)
-			"quake":
-				var pts := PackedVector2Array()
-				for j in 9:
-					pts.append(p + Vector2(j * 3.4, 15 + (12 if j % 2 == 0 else -12) * (1.0 - absf(j - 4) / 5.0)) * k)
-				draw_polyline(pts, C_ACCENT, 2.0)
-			"height":
-				_dashed(p + Vector2(0, 8) * k, p + Vector2(30, 8) * k, C_OK)
-				draw_line(p + Vector2(15, 28) * k, p + Vector2(15, 10) * k, C_OK, 2.5)
-			"tries":
-				GTUI.text_in(self, ir, str(MAX_TRIES), GTUI.FS_BODY, C_ACCENT, 0, true)
-		y = GTUI.paragraph(self, x + icon + GTUI.dp(GTUI.SP_M), y, tw - icon - GTUI.dp(GTUI.SP_M), row[1], GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
-	if GTUI.paragraph(self, x, y, tw, TUT_NOTE, GTUI.FS_LABEL, C_MUTED, false, false) < bottom:
-		GTUI.paragraph(self, x, y + GTUI.dp(GTUI.SP_XS), tw, TUT_NOTE, GTUI.FS_LABEL, C_MUTED)
-
-
 func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:
 	draw_multiline_string(font, Vector2(x, y + font.get_ascent(size)), text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1, col)
 	return y + font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size).y
@@ -2171,6 +2146,9 @@ func get_agent_state() -> Dictionary:
 		"tries": tries.map(func(t): return t.score), "best": best_score(),
 		"target": target_score, "tutorial": tut_open,
 		"archive_open": archive_open, "archive_page": archive_page, "today": today,
+		"brief_open": brief_open, "min_height": min_height(), "mat_costs": [mat_cost(0), mat_cost(1)],
+		"challenge": {"version": challenge.version, "quake": challenge.quake_archetype, "soil": challenge.soil,
+			"site": challenge.site_archetype, "modifier": challenge.modifier} if challenge else {},
 		"share": share_text() if not tries.is_empty() else "",
 	}
 
@@ -2196,7 +2174,7 @@ func _rows(width: float) -> Array:
 				rows.append(mats)
 				rows.append(seg)
 			rows.append([["clear", "Clear", false, not design.is_empty(), "button"], ["erase", "Erase", erasing, not design.is_empty() or erasing, "toggle"],
-				["undo", "Undo", false, not history.is_empty(), "button"], ["run", "Start quake", true, not design.is_empty(), "button"]])
+				["undo", "Undo", false, not history.is_empty(), "button"], ["run", "Start quake", true, not design.is_empty() and height_ok(), "button"]])
 		Phase.RUN:
 			rows.append([["skip", "Fast-forward" if not fast else "Fast-forwarding…", false, not fast, "button"]])
 		Phase.RESULT:
@@ -2210,35 +2188,36 @@ func _rows(width: float) -> Array:
 	return rows
 
 
-func _dev_card() -> Rect2:
-	var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
-	var c := GTUI.modal_content(card)
-	c.position.y += GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L)
-	return c
+## Dev: load any date, including future ones (normal play only reaches today and earlier).
+func dev_set_day(d: String) -> void:
+	if RegEx.create_from_string("^\\d{4}-\\d{2}-\\d{2}$").search(d) != null and d >= EPOCH:
+		target_score = 0
+		load_day(d)
+		_layout()
 
 
-func _tut_rows() -> Array:
-	return [
-		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
-		["beam", "Pick a max piece length (1, 2 or 3 m), then drag a line from an anchor or joint to any dot, at any angle. It's split into equal pieces no longer than that. Only the Erase tool removes pieces."],
-		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
-		["quake", "Start the quake: today's exact seismogram hits your build. Overloaded beams snap."],
-		["height", "Score = height still standing (attached to an anchor) when the shaking stops."],
-		["tries", "%d tries a day — best counts. Share your result; the link opens the same quake." % MAX_TRIES],
-	]
+# ------------------------------------------------------------------ daily briefing
 
-const TUT_NOTE := "While you draw, a magnifier above your finger shows where the line will land, and Lock (on by default) snaps it onto nearby joints. Pinch or use + and - to zoom."
+## Days from generator v2 have a briefing card; legacy days don't.
+func can_brief() -> bool:
+	return challenge != null and not challenge.is_legacy()
 
 
-func _tut_content_h(w: float) -> float:
-	var icon := GTUI.dp(20)
-	var h := 0.0
-	for row in _tut_rows():
-		h = GTUI.paragraph(self, 0, h, w - icon - GTUI.dp(GTUI.SP_M), row[1], GTUI.FS_BODY, C_INK, false, false) + GTUI.dp(GTUI.SP_S)
-	return GTUI.paragraph(self, 0, h + GTUI.dp(GTUI.SP_XS), w, TUT_NOTE, GTUI.FS_LABEL, C_MUTED, false, false)
+func overlay_open() -> bool:
+	return tut_open or dev_open or archive_open or brief_open
 
 
-func _tut_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(GTUI.dp(540), vs.x - GTUI.dp(GTUI.SP_L) * 2) - GTUI.dp(GTUI.SP_XL) * 2
-	return GTUI.modal_rect(self, 540, GTUI.modal_height(_tut_content_h(w) + GTUI.dp(GTUI.SP_S)))
+func open_brief() -> void:
+	if not can_brief():
+		return
+	brief_open = true
+	selected = Vector2i(-1, -1)
+	_build_buttons()
+
+
+func close_brief() -> void:
+	brief_open = false
+	if not briefed:
+		briefed = true
+		_save_state()
+	_build_buttons()

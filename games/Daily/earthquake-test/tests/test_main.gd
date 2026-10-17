@@ -10,6 +10,7 @@ func _fresh(d := DAY) -> Node:
 	main.target_score = 0
 	main.load_day(d)
 	main.tut_open = false
+	main.brief_open = false
 	return main
 
 
@@ -286,7 +287,7 @@ func test_existing_pieces_are_skipped_and_budget_truncates():
 func test_long_beams_buckle_sooner():
 	var Sim = load("res://quake_sim.gd")
 	var s = Sim.new()
-	var q = load("res://quake.gd").new()
+	var q = load("res://quake/quake_v1.gd").new()
 	q.make(DAY)
 	s.setup([{"a": Vector2i(0, 0), "b": Vector2i(0, 1), "m": 0}, {"a": Vector2i(1, 0), "b": Vector2i(1, 3), "m": 0}], [Vector2i(0, 0), Vector2i(1, 0)], q)
 	assert_eq(s.b_cstrength[0], s.b_strength[0], "short beams: full compression strength")
