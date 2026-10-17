@@ -81,6 +81,11 @@ var font: Font
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_GRID_BG, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": Color(C_INK, 0.12), "accent": C_BTN_PRIMARY, "on_accent": Color("06180e"),
+		"success": C_ALIVE, "danger": Color("ff8f8f"), "focus": C_ACCENT,
+	})
 	RenderingServer.set_default_clear_color(C_BG)
 	_add_key_action("run", [KEY_ENTER, KEY_SPACE])
 	_add_key_action("clear", [KEY_BACKSPACE, KEY_DELETE])
@@ -610,69 +615,41 @@ func _short_date(d: String) -> String:
 
 
 func _archive_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w: float = min(vs.x - 40.0, 680.0)
 	var rh := _archive_row_h()
-	var h := 100.0 + ARCHIVE_ROWS * rh + 110.0
-	return Rect2((vs.x - w) / 2.0, max(20.0, (vs.y - h) / 2.0), w, h)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * rh - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 480, GTUI.modal_height(content_h))
 
 
 func _archive_row_h() -> float:
-	var vs := get_viewport_rect().size
-	return clampf((vs.y - 40.0 - 210.0) / ARCHIVE_ROWS, 64.0, 92.0)
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_buttons() -> void:
-	var c := _archive_card()
+	var card := _archive_card()
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h()
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
 		buttons.append({"id": "day_" + String(days[i]), "label": "", "primary": false, "enabled": true, "row": true,
-			"rect": Rect2(c.position.x + 20, c.position.y + 100 + i * rh, c.size.x - 40, rh - 10)})
-	var bw := (c.size.x - 40 - 24) / 3.0
-	var by := c.end.y - 90
-	buttons.append({"id": "arch_newer", "label": "< Newer", "primary": false, "enabled": archive_page > 0,
-		"rect": Rect2(c.position.x + 20, by, bw, 70)})
-	buttons.append({"id": "arch_close", "label": "Close", "primary": true, "enabled": true,
-		"rect": Rect2(c.position.x + 32 + bw, by, bw, 70)})
-	buttons.append({"id": "arch_older", "label": "Older >", "primary": false, "enabled": archive_page < archive_pages() - 1,
-		"rect": Rect2(c.position.x + 44 + bw * 2, by, bw, 70)})
+			"rect": Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target())})
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	buttons.append({"id": "arch_newer", "label": "Newer", "primary": false, "enabled": archive_page > 0, "rect": pr[0]})
+	buttons.append({"id": "arch_older", "label": "Older", "primary": false, "enabled": archive_page < archive_pages() - 1, "rect": pr[1]})
+	buttons.append({"id": "arch_close", "label": "", "primary": false, "enabled": true, "row": true, "rect": GTUI.modal_close_rect(card)})
 
 
 func _draw_archive() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
-	var c := _archive_card()
-	_box(c, C_GRID_BG, 20, Color(C_INK, 0.15))
-	draw_string(font, c.position + Vector2(30, 64), "Past puzzles", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, C_INK)
-	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
-	var pw := font.get_string_size(pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
-	draw_string(font, Vector2(c.end.x - 30 - pw, c.position.y + 62), pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, C_MUTED)
+	var card := _archive_card()
+	var c := GTUI.modal(self, card, "Past puzzles", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
-		if not b.get("row", false):
+		if not String(b.id).begins_with("day_"):
 			continue
 		var d := String(b.id).substr(4)
-		var r: Rect2 = b.rect
-		_box(r, C_BTN, 14, C_ACCENT if d == date and not practice else Color(0, 0, 0, 0))
-		var mid := r.get_center().y + 10
-		draw_string(font, Vector2(r.position.x + 22, mid), "#%d" % day_number(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_STAR)
-		draw_string(font, Vector2(r.position.x + 120, mid), "Today" if d == today else _short_date(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_INK)
 		var res := String(archive_results.get(d, ""))
-		var txt := res if res != "" else "Not played"
-		var sz := 26 if res != "" else 22
-		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-		draw_string(font, Vector2(r.end.x - 22 - tw, mid), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, C_ACCENT if res != "" else C_MUTED)
-
-
-## Calendar glyph for the past-days button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var r := Rect2(c.x - 13, c.y - 11, 26, 24)
-	draw_rect(r, col_, false, 2.5)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 7), col_)
-	draw_line(Vector2(c.x - 6.5, c.y - 16), Vector2(c.x - 6.5, c.y - 8), col_, 2.5)
-	draw_line(Vector2(c.x + 6.5, c.y - 16), Vector2(c.x + 6.5, c.y - 8), col_, 2.5)
-	for i in 3:
-		draw_rect(Rect2(c.x - 9.5 + i * 7, c.y + 2, 4.5, 4.5), col_)
+		GTUI.list_row(self, String(b.id), b.rect, "#%d" % day_number(d), "Today" if d == today else _short_date(d),
+			res if res != "" else "Not played", d == date and not practice, C_ACCENT if res != "" else Color(0, 0, 0, 0))
 
 
 func share_text() -> String:
@@ -787,10 +764,11 @@ func _process(delta: float) -> void:
 			step()
 		if gen >= GENS:
 			_finish_try()
+	var keys_free := GTUI.focused_id() == ""   # Enter/Space press the focused control instead
 	if tut_open:
-		if Input.is_action_just_pressed("run"):
+		if keys_free and Input.is_action_just_pressed("run"):
 			tut_next()
-	elif Input.is_action_just_pressed("run"):
+	elif keys_free and not archive_open and Input.is_action_just_pressed("run"):
 		match phase:
 			Phase.PLAN: run()
 			Phase.RUN: skip()
@@ -802,6 +780,20 @@ func _process(delta: float) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var g := GTUI.handle_input(make_input_local(ev))
+	if g.has("activate"):
+		for e in GTUI.tap_events(g.pos):
+			_input(e)
+		return
+	if g.has("cancel"):
+		if dev_open:
+			dev_open = false
+		elif tut_open:
+			close_tutorial()
+		elif archive_open:
+			archive_open = false
+		_layout()
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
@@ -967,36 +959,39 @@ func _press_button(p: Vector2) -> bool:
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	var m := 20.0
+	var m := GTUI.dp(GTUI.SP_L)
+	var gap := GTUI.dp(GTUI.SP_L)
+	var bh := GTUI.target()
 	var portrait := vs.y >= vs.x * 1.05
 	var plan := phase == Phase.PLAN
 	if portrait:
-		head_rect = Rect2(m, m, vs.x - m * 2, 110)
-		var g: float = min(vs.x - m * 2, vs.y - head_rect.end.y - 360)
+		head_rect = Rect2(m, m, vs.x - m * 2, _head_h())
+		var g: float = min(vs.x - m * 2, vs.y - head_rect.end.y - GTUI.dp(300))
 		g = max(g, 200.0)
-		grid_rect = Rect2((vs.x - g) / 2.0, head_rect.end.y + 8, g, g)
-		panel_rect = Rect2(m, grid_rect.end.y + 28, vs.x - m * 2, vs.y - grid_rect.end.y - 28 - m)
+		grid_rect = Rect2((vs.x - g) / 2.0, head_rect.end.y + gap, g, g)
+		panel_rect = Rect2(m, grid_rect.end.y + GTUI.dp(GTUI.SP_XL), vs.x - m * 2, vs.y - grid_rect.end.y - GTUI.dp(GTUI.SP_XL) - m)
 	else:
 		var g: float = min(vs.y - m * 2, vs.x * 0.58)
 		grid_rect = Rect2(m * 1.5, (vs.y - g) / 2.0, g, g)
-		var px := grid_rect.end.x + 32
-		head_rect = Rect2(px, grid_rect.position.y, vs.x - px - m * 1.5, 156)   # room for the mode button under the date
-		panel_rect = Rect2(px, head_rect.end.y + 12, head_rect.size.x, grid_rect.end.y - head_rect.end.y - 12)
-	text_rect = Rect2(panel_rect.position, panel_rect.size - Vector2(0, 80))
+		var px := grid_rect.end.x + GTUI.dp(GTUI.SP_2XL)
+		head_rect = Rect2(px, grid_rect.position.y, vs.x - px - m * 1.5, _head_h())
+		panel_rect = Rect2(px, head_rect.end.y + gap, head_rect.size.x, grid_rect.end.y - head_rect.end.y - gap)
+	text_rect = Rect2(panel_rect.position, panel_rect.size - Vector2(0, bh + gap))
 	mini_rect = Rect2()
 	chips.clear()
 	if plan:
 		# from the bottom: buttons, shape chips, then mini map + text in what's left
 		var chips_h := _flow_chips(panel_rect.position.x, panel_rect.size.x, 0.0)
-		var chips_top := panel_rect.end.y - 64.0 - 16.0 - chips_h
+		var chips_top := panel_rect.end.y - bh - gap - chips_h
 		for c in chips:
 			c.rect.position.y += chips_top
-		var top_h := chips_top - 16.0 - panel_rect.position.y
-		var ms: float = clamp(min(top_h - 34.0, panel_rect.size.x * 0.42), 0.0, 230.0)
+		var top_h := chips_top - gap - panel_rect.position.y
+		var hint_h := GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_S)
+		var ms: float = clamp(min(top_h - hint_h, panel_rect.size.x * 0.42), 0.0, GTUI.dp(150))
 		var tx := panel_rect.position.x
-		if ms >= 70.0:
+		if ms >= GTUI.dp(56):
 			mini_rect = Rect2(panel_rect.position + Vector2(4, 4), Vector2(ms, ms))
-			tx += ms + 28.0
+			tx += ms + GTUI.dp(GTUI.SP_XL)
 		text_rect = Rect2(tx, panel_rect.position.y, panel_rect.end.x - tx, top_h)
 	main_region = _region_for_main()
 	cell_px = _board_cell_px(grid_rect, main_region)
@@ -1013,43 +1008,39 @@ func _build_buttons() -> void:
 		_archive_buttons()
 		return
 	if dev_open:
-		var vs := get_viewport_rect().size
-		var w: float = min(vs.x - 80, 420.0)
-		var x := (vs.x - w) / 2.0
-		var y := vs.y / 2.0 - 110
-		for l in [["dev_today", "Reset today", true], ["dev_all", "Reset all days", true], ["dev_close", "Close", false]]:
-			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "rect": Rect2(x, y, w, 64)})
-			y += 78
+		var c := _dev_card()
+		var y := c.position.y
+		for l in [["dev_today", "Reset today", false], ["dev_all", "Reset all days", false], ["dev_close", "Close", true]]:
+			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "rect": Rect2(c.position.x, y, c.size.x, GTUI.target())})
+			y += GTUI.target() + GTUI.dp(GTUI.SP_S)
 		return
 	var labels: Array = []
 	match phase:
 		Phase.PLAN:
-			labels = [["run", "Run", true, not seeds.is_empty()], ["clear", "Clear", false, not seeds.is_empty()]]
+			labels = [["clear", "Clear", false, not seeds.is_empty()], ["run", "Run", true, not seeds.is_empty()]]
 		Phase.RUN:
 			labels = [["skip", "Skip to end", false, true]]
 		Phase.RESULT:
 			if practice:
-				labels = [["again", "Try again", true, true], ["start_over", "Clear seeds", false, true]]
+				labels = [["start_over", "Clear seeds", false, true], ["again", "Try again", true, true]]
 			else:
-				labels = [["again", "Retry (%d left)" % (MAX_TRIES - tries.size()), true, true], ["finish", "Finish", false, true]]
+				labels = [["finish", "Finish", false, true], ["again", "Retry (%d left)" % (MAX_TRIES - tries.size()), true, true]]
 		Phase.FINAL:
-			labels = [["share", "Share score", true, true]]
 			if date != today:
 				labels.append(["today", "Play today's", false, true])
-	var bh := 64.0
-	var gap := 12.0
-	var y := panel_rect.end.y - bh
-	var n := labels.size()
-	var x := panel_rect.position.x
-	var free := panel_rect.size.x - gap * (n - 1)
-	for i in n:
+			labels.append(["share", "Share score", true, true])
+	var row := Rect2(panel_rect.position.x, panel_rect.end.y - GTUI.target(), panel_rect.size.x, GTUI.target())
+	var weights: Array = []
+	for l in labels:
+		weights.append(1.6 if l[2] else 1.0)
+	var rects := GTUI.row(row, labels.size(), weights)
+	for i in labels.size():
 		var l: Array = labels[i]
-		var w: float = free if n == 1 else free * (0.62 if i == 0 else 0.38)
-		buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": l[3], "rect": Rect2(x, y, w, bh)})
-		x += w + gap
+		buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": l[3], "rect": rects[i]})
 
 
 func _draw() -> void:
+	GTUI.begin()
 	if buttons.is_empty() and phase != Phase.RUN:
 		_layout()
 	_draw_header()
@@ -1065,40 +1056,52 @@ func _draw() -> void:
 			var cp := _board_cell_px(mr, full)
 			var pr := plant_region()
 			draw_rect(Rect2(mr.position + Vector2(pr.position) * cp, Vector2(pr.size) * cp), C_INK, false, 2.0)
-		_box(mr.grow(6), Color(0, 0, 0, 0), 10, Color(C_INK, 0.25))
+		GTUI.box(self, mr.grow(6), Color(0, 0, 0, 0), GTUI.R_PANEL, Color(C_INK, 0.25))
 		var hint := "Tap: full map" if zoomed else "Tap: zoom in"
-		_text_c(hint, Vector2(mr.get_center().x, mr.end.y + 30), 18, C_MUTED)
+		GTUI.text_in(self, Rect2(mr.position.x - 6, mr.end.y + GTUI.dp(GTUI.SP_S), mr.size.x + 12, GTUI.line_height(GTUI.FS_LABEL)), hint, GTUI.FS_LABEL, C_MUTED)
 	_draw_panel()
 	_draw_chips()
-	_draw_help_button()
-	_draw_mode_button()
 	if tut_open and not dev_open:
 		_draw_tutorial()
 	if archive_open and not dev_open:
 		_draw_archive()
 	if dev_open:
-		var vs := get_viewport_rect().size
-		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
-		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 140), 32, C_STAR)
-		_text_c("Saved progress for #%d (%s)" % [puzzle_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 180), 20, C_MUTED)
+		var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
+		var c := GTUI.modal(self, card, "Dev menu")
+		GTUI.text(self, c.position, "Saved progress for #%d (%s)" % [puzzle_no, date], GTUI.FS_LABEL, C_MUTED)
 	for b in buttons:
 		if not b.get("row", false):
 			_draw_button(b)
 	if toast_t > 0.0 and toast != "":
-		var a: float = clamp(toast_t * 2.0, 0.0, 1.0)
-		var vs := get_viewport_rect().size
-		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x + 40
-		var ty: float = buttons[0].rect.position.y - 64.0 if not buttons.is_empty() else grid_rect.position.y + 14
-		var r := Rect2((vs.x - tw) / 2.0, ty, tw, 48)
-		_box(r, Color(0.05, 0.07, 0.12, 0.92 * a), 24, Color(C_ACCENT, 0.6 * a))
-		_text_c(toast, r.get_center() + Vector2(0, 8), 24, Color(C_INK, a))
+		var ty: float = buttons[0].rect.position.y - GTUI.dp(GTUI.SP_M) if not buttons.is_empty() else grid_rect.end.y - GTUI.dp(GTUI.SP_M)
+		GTUI.toast(self, toast, GTUI.toast_alpha(toast_t, 2.6), ty)
 
 
 func _draw_header() -> void:
 	var r := head_rect
-	draw_string(font, r.position + Vector2(0, 52), "Bloom", HORIZONTAL_ALIGNMENT_LEFT, -1, 52, C_INK)
+	var th := GTUI.target()
+	# Row 1: game name (Bloom's own lettering) + standard icon buttons, right-aligned.
+	var title_px := GTUI.fs(GTUI.FS_HEADING + 6)
+	draw_string(font, Vector2(r.position.x, r.position.y + (th + font.get_ascent(title_px) - font.get_descent(title_px)) / 2.0), "Bloom", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px, C_INK)
+	var ids := ["help"] if practice else ["calendar", "help"]
+	var icons := GTUI.icon_row(r.end.x, r.position.y, ids)
+	help_rect = icons["help"]
+	GTUI.icon_button(self, "help", help_rect, "help")
+	cal_rect = Rect2()
 	if not practice:
-		draw_string(font, r.position + Vector2(0, 90), "#%d · %s" % [puzzle_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, C_MUTED if date == today else C_STAR)
+		cal_rect = icons["calendar"]
+		GTUI.icon_button(self, "calendar", cal_rect, "calendar", phase != Phase.RUN)
+	# Row 2: puzzle meta + mode switch on the left, the live stat on the right.
+	var y2 := r.position.y + th + GTUI.dp(GTUI.SP_S)
+	var meta := "Playground · practice map" if practice else "#%d · %s" % [puzzle_no, _short_date(date)]
+	var meta_w := GTUI.text_width(meta, GTUI.FS_LABEL)
+	GTUI.text_in(self, Rect2(r.position.x, y2, meta_w + 2, th), meta, GTUI.FS_LABEL, C_MUTED if date == today or practice else C_STAR, -1)
+	mode_rect = Rect2()
+	if phase != Phase.RUN:
+		var label := "Back to daily" if practice else "Playground"
+		var mw := GTUI.text_width(label, GTUI.FS_LABEL + 2, true) + GTUI.dp(GTUI.SP_L) * 2
+		mode_rect = Rect2(r.position.x + meta_w + GTUI.dp(GTUI.SP_M), y2, mw, th)
+		GTUI.button(self, "mode", mode_rect, label, "secondary")
 	var label := "seeds left"
 	var big := str(budget - seeds.size())
 	if _unlimited():
@@ -1114,11 +1117,7 @@ func _draw_header() -> void:
 		Phase.RESULT:
 			label = "impact"
 			big = str(tries[-1].score)
-	label = label.to_upper()
-	var lw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
-	draw_string(font, Vector2(r.end.x - lw, r.position.y + 14), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, C_MUTED)
-	var bw := font.get_string_size(big, HORIZONTAL_ALIGNMENT_LEFT, -1, 52).x
-	draw_string(font, Vector2(r.end.x - bw, r.position.y + 62), big, HORIZONTAL_ALIGNMENT_LEFT, -1, 52, C_ACCENT)
+	GTUI.stat(self, Vector2(r.end.x, y2), label, big, 1, C_ACCENT)
 
 
 ## Draw the cells of `region` into `rect` (rect is already sized to whole cells).
@@ -1181,53 +1180,52 @@ func _draw_star(c: Vector2, r: float, hit: bool) -> void:
 
 func _draw_panel() -> void:
 	var r := text_rect
-	var lines: Array = []   # [text, size, color]
+	var lines: Array = []   # [text, size, color, bold]
+	var B := GTUI.FS_BODY
 	match phase:
 		Phase.PLAN:
 			if tool >= 0:
 				_draw_tool_info(r)
 				return
 			if practice:
-				lines.append(["Playground: a practice map that never changes.", 24, C_INK])
+				lines.append(["Playground: a practice map that never changes.", B, C_INK, true])
 				if no_limits:
-					lines.append(["No limits is on: plant anywhere, as many seeds as you like.", 20, C_ACCENT])
+					lines.append(["No limits is on: plant anywhere, as many seeds as you like.", B, C_ACCENT, false])
 				else:
-					lines.append(["Same rules as the daily puzzle. Try as often as you like; scores here don't count.", 20, C_MUTED])
+					lines.append(["Same rules as the daily puzzle. Try as often as you like; scores here don't count.", B, C_MUTED, false])
 				if not tries.is_empty():
-					lines.append([_tries_line(), 20, C_MUTED])
+					lines.append([_tries_line(), B, C_MUTED, false])
 			else:
-				lines.append(["Plant up to %d seeds in the green zone." % budget, 24, C_INK])
-				lines.append(["Tap squares one by one, or pick a shape below. Press Run to play %d steps." % GENS, 20, C_MUTED])
-				lines.append(["Try %d of %d" % [tries.size() + 1, MAX_TRIES] + ("  ·  " + _tries_line() if not tries.is_empty() else ""), 20, C_MUTED])
+				lines.append(["Plant up to %d seeds in the green zone." % budget, B, C_INK, true])
+				lines.append(["Tap squares one by one, or pick a shape below. Press Run to play %d steps." % GENS, B, C_MUTED, false])
+				lines.append(["Try %d of %d" % [tries.size() + 1, MAX_TRIES] + ("  ·  " + _tries_line() if not tries.is_empty() else ""), B, C_MUTED, false])
 		Phase.RUN:
 			var s := current_score()
-			lines.append(["Step %d of %d" % [gen, GENS], 28, C_INK])
-			lines.append(["%d squares reached · %d/%d stars · %d alive now" % [s.touched, s.stars, star_total, s.alive], 22, C_MUTED])
+			lines.append(["Step %d of %d" % [gen, GENS], GTUI.FS_TITLE, C_INK, true])
+			lines.append(["%d squares reached · %d/%d stars · %d alive now" % [s.touched, s.stars, star_total, s.alive], B, C_MUTED, false])
 		Phase.RESULT:
 			var t: Dictionary = tries[-1]
-			lines.append(["Impact %d" % t.score, 32, C_ACCENT])
-			lines.append(["%d squares reached + %d stars × %d" % [t.touched, t.stars, STAR_BONUS], 22, C_MUTED])
-			lines.append([_tries_line(), 22, C_MUTED])
-			lines.append(["Tap the board to tweak your seeds.", 22, C_MUTED])
+			lines.append(["Impact %d" % t.score, GTUI.FS_TITLE, C_ACCENT, true])
+			lines.append(["%d squares reached + %d stars × %d" % [t.touched, t.stars, STAR_BONUS], B, C_MUTED, false])
+			lines.append([_tries_line(), B, C_MUTED, false])
+			lines.append(["Tap the board to tweak your seeds.", B, C_MUTED, false])
 		Phase.FINAL:
 			var b := best_try()
-			lines.append(["Best impact %d" % best_score(), 32, C_ACCENT])
-			lines.append([_tries_line() + "  ·  %d/%d stars" % [int(b.get("stars", 0)), star_total], 22, C_MUTED])
+			lines.append(["Best impact %d" % best_score(), GTUI.FS_TITLE, C_ACCENT, true])
+			lines.append([_tries_line() + "  ·  %d/%d stars" % [int(b.get("stars", 0)), star_total], B, C_MUTED, false])
 			if date == today:
-				lines.append(["Next Bloom in " + _countdown(), 22, C_MUTED])
+				lines.append(["Next Bloom in " + _countdown(), B, C_MUTED, false])
 			else:
-				lines.append(["Today's puzzle is waiting.", 22, C_MUTED])
+				lines.append(["Today's puzzle is waiting.", B, C_MUTED, false])
 	if target_score > 0 and not practice:
 		var beat := phase == Phase.FINAL and best_score() > target_score
-		lines.append([("You beat %d!" if beat else "Score to beat: %d") % target_score, 24, C_STAR])
-	var y := r.position.y + 4
+		lines.append([("You beat %d!" if beat else "Score to beat: %d") % target_score, B, C_STAR, true])
+	var y := r.position.y
 	for l in lines:
-		var sz: int = l[1]
-		var h := font.get_multiline_string_size(l[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x, sz).y
+		var h := GTUI.paragraph(self, r.position.x, y, r.size.x, l[0], l[1], l[2], l[3], false) - y
 		if y + h > r.end.y and phase == Phase.PLAN:
 			break
-		draw_multiline_string(font, Vector2(r.position.x, y + font.get_ascent(sz)), l[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x, sz, -1, l[2])
-		y += h + 10.0
+		y = GTUI.paragraph(self, r.position.x, y, r.size.x, l[0], l[1], l[2], l[3]) + GTUI.dp(GTUI.SP_XS)
 
 
 func _tries_line() -> String:
@@ -1240,20 +1238,11 @@ func _tries_line() -> String:
 
 
 func _countdown() -> String:
-	var t := Time.get_time_dict_from_system()
-	var left := 86400 - (int(t.hour) * 3600 + int(t.minute) * 60 + int(t.second))
-	return "%dh %02dm" % [left / 3600, (left % 3600) / 60]
+	return GTUI.countdown()
 
 
 func _draw_button(b: Dictionary) -> void:
-	var col: Color = C_BTN_PRIMARY if b.primary else C_BTN
-	if not b.enabled:
-		col = Color(col, 0.35)
-	_box(b.rect, col, 14)
-	var sz := 28
-	while sz > 16 and font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > b.rect.size.x - 20:
-		sz -= 2
-	_text_c(b.label, b.rect.get_center() + Vector2(0, sz * 0.36), sz, C_INK if b.enabled else Color(C_INK, 0.4))
+	GTUI.button(self, String(b.id), b.rect, String(b.label), "primary" if b.primary else "secondary", b.enabled)
 
 
 func _box(r: Rect2, col: Color, radius: float, border := Color(0, 0, 0, 0)) -> void:
@@ -1383,6 +1372,7 @@ static func shape_size(idx: int) -> Vector2i:
 
 const TUT_FLAG := "user://bloom_tutorial_seen"
 const TUT_PAGES := 4
+const TUT_TITLES := ["How life works here", "The 4 rules", "Watch it happen", "Today's puzzle"]
 const DEMO_STEP := 0.7              # seconds per step in the tutorial animations
 const DEMO_N := 7                   # each demo board is DEMO_N x DEMO_N, wrapping at the edges
 const DEMOS := [["Block", "Stays still"], ["Blinker", "Flips back and forth"], ["Glider", "Walks away"]]
@@ -1469,38 +1459,33 @@ func _tut_process(delta: float) -> void:
 
 func _tut_layout() -> void:
 	var vs := get_viewport_rect().size
-	var w: float = min(vs.x - 32, 680.0)
-	var h: float = min(vs.y - 32, 900.0)
-	tut_rect = Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
-	var bh := 64.0
-	var pad := 24.0
-	var y := tut_rect.end.y - pad - bh
-	var bw := (tut_rect.size.x - pad * 2 - 12) / 2.0
-	var x0 := tut_rect.position.x + pad
-	var left := ["tut_skip", "Skip"] if tut_page == 0 else ["tut_back", "Back"]
+	tut_rect = GTUI.modal_rect(self, 560, minf(vs.y - GTUI.dp(GTUI.SP_L) * 2, GTUI.dp(720)))
+	var c := GTUI.modal_content(tut_rect)
+	var rects := GTUI.row(GTUI.modal_buttons_rect(c), 2)
 	var right := "Let's play" if tut_page == TUT_PAGES - 1 else "Next"
-	buttons.append({"id": left[0], "label": left[1], "primary": false, "enabled": true, "rect": Rect2(x0, y, bw, bh)})
-	buttons.append({"id": "tut_next", "label": right, "primary": true, "enabled": true, "rect": Rect2(x0 + bw + 12, y, bw, bh)})
+	buttons.append({"id": "tut_back", "label": "Back", "primary": false, "enabled": tut_page > 0, "rect": rects[0]})
+	buttons.append({"id": "tut_next", "label": right, "primary": true, "enabled": true, "rect": rects[1]})
+	buttons.append({"id": "tut_skip", "label": "", "primary": false, "enabled": true, "row": true, "rect": GTUI.modal_close_rect(tut_rect)})
 
 
-## Draws wrapped text at y and returns the y below it.
+## Draws wrapped text (size in dp) at y and returns the y below it.
 func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:
-	draw_multiline_string(font, Vector2(x, y + font.get_ascent(size)), text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1, col)
-	return y + font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size).y
+	return GTUI.paragraph(self, x, y, w, text, size, col)
 
 
 func _draw_tutorial() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.02, 0.03, 0.06, 0.82))
-	_box(tut_rect, Color("18203a"), 18, Color(C_ACCENT, 0.35))
-	var pad := 28.0
-	var x := tut_rect.position.x + pad
-	var w := tut_rect.size.x - pad * 2
-	var y := tut_rect.position.y + pad
-	var bottom: float = tut_rect.end.y - 24.0 - 64.0 - 20.0   # above the button row
+	var c := GTUI.modal(self, tut_rect, TUT_TITLES[tut_page], "tut_skip")
+	var x := c.position.x
+	var w := c.size.x
+	var y := c.position.y
+	var bottom: float = c.end.y - GTUI.target() - GTUI.dp(GTUI.SP_XL)   # above the button row
+	# page dots, centred just above the buttons
+	var dot := GTUI.dp(6)
+	var dots_w := TUT_PAGES * dot + (TUT_PAGES - 1) * GTUI.dp(GTUI.SP_S)
 	for i in TUT_PAGES:
-		draw_circle(Vector2(tut_rect.end.x - pad - (TUT_PAGES - 1 - i) * 22, y + 12), 6, C_ACCENT if i == tut_page else Color(C_INK, 0.25))
-	_text_c("%d / %d" % [tut_page + 1, TUT_PAGES], Vector2(tut_rect.end.x - pad - (TUT_PAGES - 1) * 11, y + 44), 16, C_MUTED)
+		var dc := Vector2(c.get_center().x - dots_w / 2.0 + dot / 2.0 + i * (dot + GTUI.dp(GTUI.SP_S)), bottom + GTUI.dp(GTUI.SP_M))
+		draw_circle(dc, dot / 2.0, C_ACCENT if i == tut_page else Color(C_INK, 0.25))
+	bottom -= GTUI.dp(GTUI.SP_S)
 	match tut_page:
 		0: _tut_page_board(x, y, w, bottom)
 		1: _tut_page_rules(x, y, w, bottom)
@@ -1509,17 +1494,21 @@ func _draw_tutorial() -> void:
 
 
 func _tut_page_board(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("How life works here", x, y, w - 110, 34, C_INK) + 14
-	y = _para("Bloom is built on a famous puzzle called the Game of Life. The board is a field of little squares:", x, y, w, 22, C_MUTED) + 14
+	var B := GTUI.FS_BODY
+	y = _para("Bloom is built on a famous puzzle called the Game of Life. The board is a field of little squares:", x, y, w, B, C_MUTED) + GTUI.dp(GTUI.SP_M)
 	# legend
-	var lg := 30.0
-	_box(Rect2(x, y, lg, lg), C_ALIVE, 7)
-	_para("green = alive", x + lg + 10, y + 2, 200, 22, C_INK)
-	_box(Rect2(x + 230, y, lg, lg), C_GRID_BG, 7, Color(C_INK, 0.2))
-	_para("dark = empty", x + 230 + lg + 10, y + 2, 200, 22, C_INK)
-	y += lg + 22
+	var lg := GTUI.line_height(B)
+	_box(Rect2(x, y, lg, lg), C_ALIVE, GTUI.dp(4))
+	GTUI.text_in(self, Rect2(x + lg + GTUI.dp(GTUI.SP_S), y, w / 2.0, lg), "green = alive", B, C_INK, -1)
+	var x2 := x + w / 2.0
+	_box(Rect2(x2, y, lg, lg), C_GRID_BG, GTUI.dp(4), Color(C_INK, 0.2))
+	GTUI.text_in(self, Rect2(x2 + lg + GTUI.dp(GTUI.SP_S), y, w / 2.0 - lg, lg), "dark = empty", B, C_INK, -1)
+	y += lg + GTUI.dp(GTUI.SP_L)
+	var t1 := "The 8 squares touching a square (sides and corners, inside the gold box) are its neighbours. The middle square here has 3 living neighbours."
+	var t2 := "Life moves in steps. At every step, each square counts its living neighbours, and that number decides if it lives, dies, or is born. You don't steer it: you only choose where life starts."
+	var text_h := GTUI.paragraph(self, x, 0, w, t1, GTUI.FS_LABEL, C_MUTED, false, false) + GTUI.paragraph(self, x, 0, w, t2, B, C_INK, false, false)
 	# neighbour diagram: 5x5, centre square and its 8 neighbours
-	var cell: float = clamp((bottom - y - 200) / 5.0, 26.0, 44.0)
+	var cell: float = clamp((bottom - y - text_h - GTUI.dp(GTUI.SP_XL)) / 5.0, _u(20), _u(44))
 	var side := cell * 5
 	var at := Vector2(x + (w - side) / 2.0, y)
 	_box(Rect2(at, Vector2(side, side)).grow(4), C_GRID_BG, 8)
@@ -1531,39 +1520,41 @@ func _tut_page_board(x: float, y: float, w: float, bottom: float) -> void:
 		_box(Rect2(at + Vector2(c) * cell, Vector2(cell, cell)).grow(-cell * 0.1), C_ALIVE, cell * 0.2)
 	draw_rect(Rect2(at + Vector2(cell, cell), Vector2(cell * 3, cell * 3)), C_STAR, false, 2.0)
 	draw_rect(Rect2(at + Vector2(cell * 2, cell * 2), Vector2(cell, cell)), C_INK, false, 3.0)
-	y += side + 16
-	y = _para("The 8 squares touching a square (sides and corners, inside the gold box) are its neighbours. The middle square here has 3 living neighbours.", x, y, w, 20, C_MUTED) + 16
-	y = _para("Life moves in steps. At every step, each square counts its living neighbours, and that number decides if it lives, dies, or is born. You don't steer it: you only choose where life starts.", x, y, w, 22, C_INK)
+	y += side + GTUI.dp(GTUI.SP_L)
+	y = _para(t1, x, y, w, GTUI.FS_LABEL, C_MUTED) + GTUI.dp(GTUI.SP_S)
+	_para(t2, x, y, w, B, C_INK)
 
 
 func _tut_page_rules(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("The 4 rules", x, y, w - 110, 34, C_INK) + 8
-	y = _para("Every step, every square checks its neighbours:", x, y, w, 22, C_MUTED) + 18
+	y = _para("Every step, every square checks its neighbours:", x, y, w, GTUI.FS_BODY, C_MUTED) + GTUI.dp(GTUI.SP_L)
 	var rules := [
 		["Too lonely", "A living square with 0 or 1 living neighbours dies.", [2], true, false, Color("ff8f8f")],
 		["Just right", "A living square with 2 or 3 living neighbours stays alive.", [0, 4], true, true, C_ACCENT],
 		["Too crowded", "A living square with 4 or more living neighbours dies.", [0, 2, 4, 6], true, false, Color("ff8f8f")],
 		["New life", "An empty square with exactly 3 living neighbours comes alive.", [0, 2, 5], false, true, C_STAR],
 	]
-	var row_h: float = (bottom - y - 50) / 4.0
-	var cell: float = clamp((row_h - 16) / 3.0, 14.0, 26.0)
+	var foot := "The middle square (white outline) is the one being checked. All squares update at the same moment."
+	var foot_h := GTUI.paragraph(self, x, 0, w, foot, GTUI.FS_LABEL, C_MUTED, false, false)
+	var row_h: float = (bottom - y - foot_h - GTUI.line_height(GTUI.FS_CAPTION)) / 4.0
+	var cell: float = clamp((row_h - GTUI.dp(GTUI.SP_M)) / 3.0, _u(14), _u(26))
 	var patch := cell * 3
-	var gap := 34.0
+	var gap := _u(34)
 	var diag_w := patch * 2 + gap
-	_text_c("before", Vector2(x + patch / 2.0, y - 4), 16, C_MUTED)
-	_text_c("after", Vector2(x + patch * 1.5 + gap, y - 4), 16, C_MUTED)
-	y += 10
+	GTUI.text_in(self, Rect2(x, y, patch, GTUI.line_height(GTUI.FS_CAPTION)), "before", GTUI.FS_CAPTION, C_MUTED)
+	GTUI.text_in(self, Rect2(x + patch + gap, y, patch, GTUI.line_height(GTUI.FS_CAPTION)), "after", GTUI.FS_CAPTION, C_MUTED)
+	y += GTUI.line_height(GTUI.FS_CAPTION)
 	for rule in rules:
 		_draw_patch(Vector2(x, y), cell, rule[2], rule[3])
 		var ay := y + patch / 2.0
 		var ax := x + patch + gap / 2.0
-		draw_colored_polygon(PackedVector2Array([Vector2(ax - 8, ay - 8), Vector2(ax + 7, ay), Vector2(ax - 8, ay + 8)]), C_MUTED)
+		var a := _u(8)
+		draw_colored_polygon(PackedVector2Array([Vector2(ax - a, ay - a), Vector2(ax + a, ay), Vector2(ax - a, ay + a)]), C_MUTED)
 		_draw_patch(Vector2(x + patch + gap, y), cell, rule[2], rule[4], true)
-		var tx := x + diag_w + 22
-		var ty := _para(rule[0], tx, y - 2, w - diag_w - 22, 24, rule[5])
-		_para(rule[1], tx, ty + 2, w - diag_w - 22, 20, C_INK)
-		y += max(row_h, patch + 14)
-	_para("The middle square (white outline) is the one being checked. All squares update at the same moment.", x, y, w, 18, C_MUTED)
+		var tx := x + diag_w + GTUI.dp(GTUI.SP_L)
+		var ty := GTUI.paragraph(self, tx, y, w - diag_w - GTUI.dp(GTUI.SP_L), rule[0], GTUI.FS_BODY, rule[5], true)
+		_para(rule[1], tx, ty, w - diag_w - GTUI.dp(GTUI.SP_L), GTUI.FS_LABEL, C_INK)
+		y += max(row_h, patch + GTUI.dp(GTUI.SP_M))
+	_para(foot, x, y, w, GTUI.FS_LABEL, C_MUTED)
 
 
 ## A 3x3 patch: centre cell plus the listed neighbour slots (0..7, clockwise from top-left) alive.
@@ -1584,28 +1575,27 @@ func _draw_patch(at: Vector2, cell: float, alive_n: Array, centre: bool, faded :
 
 
 func _tut_page_watch(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("Watch it happen", x, y, w - 110, 34, C_INK) + 8
-	y = _para("Same 4 rules, different starting shapes, and very different results:", x, y, w, 22, C_MUTED) + 22
-	var gap := 18.0
-	var bw := (w - gap * 2) / 3.0
+	y = _para("Same 4 rules, different starting shapes, and very different results:", x, y, w, GTUI.FS_BODY, C_MUTED) + GTUI.dp(GTUI.SP_L)
+	var gap := GTUI.dp(GTUI.SP_M)
+	var bw := minf((w - gap * 2) / 3.0, GTUI.dp(140))
+	var x0 := x + (w - (bw * 3 + gap * 2)) / 2.0
 	for i in DEMOS.size():
-		var r := Rect2(x + i * (bw + gap), y, bw, bw)
+		var r := Rect2(x0 + i * (bw + gap), y, bw, bw)
 		_draw_cells(r, demos[i], DEMO_N, DEMO_N)
-		_text_c(DEMOS[i][0], Vector2(r.get_center().x, r.end.y + 32), 22, C_INK)
-		_text_c(DEMOS[i][1], Vector2(r.get_center().x, r.end.y + 58), 18, C_MUTED)
-	y += bw + 84
-	_text_c("Step %d" % demo_gen, Vector2(x + w / 2.0, y), 22, C_ACCENT)
-	y += 26
-	y = _para("Some shapes freeze, some blink, some travel, and some explode into big colonies. In Bloom, shapes that spread and travel reach the most squares.", x, y, w, 22, C_INK) + 14
-	if y + 30 < bottom:
-		_para("Want to experiment? Tap the purple Playground button at the top any time. It has more shapes and a practice map.", x, y, w, 20, C_MUTED)
+		GTUI.text_in(self, Rect2(r.position.x - gap / 2.0, r.end.y + GTUI.dp(GTUI.SP_S), bw + gap, GTUI.line_height(GTUI.FS_BODY)), DEMOS[i][0], GTUI.FS_BODY, C_INK, 0, true)
+		GTUI.text_in(self, Rect2(r.position.x - gap / 2.0, r.end.y + GTUI.dp(GTUI.SP_S) + GTUI.line_height(GTUI.FS_BODY), bw + gap, GTUI.line_height(GTUI.FS_LABEL)), DEMOS[i][1], GTUI.FS_LABEL, C_MUTED)
+	y += bw + GTUI.dp(GTUI.SP_S) + GTUI.line_height(GTUI.FS_BODY) + GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_M)
+	GTUI.text_in(self, Rect2(x, y, w, GTUI.line_height(GTUI.FS_BODY)), "Step %d" % demo_gen, GTUI.FS_BODY, C_ACCENT, 0, true)
+	y += GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_S)
+	y = _para("Some shapes freeze, some blink, some travel, and some explode into big colonies. In Bloom, shapes that spread and travel reach the most squares.", x, y, w, GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_M)
+	_para_fit("Want to experiment? Tap Playground at the top any time. It has more shapes and a practice map.", x, y, w, GTUI.FS_LABEL, C_MUTED, bottom)
 
 
 func _tut_page_bloom(x: float, y: float, w: float, bottom: float) -> void:
-	y = _para("Today's puzzle", x, y, w - 110, 34, C_INK) + 16
-	var icon := 28.0
-	var tx := x + icon + 18
-	var tw := w - icon - 18
+	var icon := GTUI.dp(20)
+	var k := icon / 28.0   # icon art below was drawn in a 28 px box
+	var tx := x + icon + GTUI.dp(GTUI.SP_M)
+	var tw := w - icon - GTUI.dp(GTUI.SP_M)
 	var rows := [
 		["zone", "You get %d seeds (living squares). Tap squares inside the green box to plant them. Tap again to remove." % budget],
 		["shape", "Shortcut buttons drop in a whole Blinker or Glider for you. Rotate turns them to aim."],
@@ -1616,53 +1606,32 @@ func _tut_page_bloom(x: float, y: float, w: float, bottom: float) -> void:
 		["tries", "You have %d tries a day and your best one counts. Everyone gets the same map, so you can compare scores." % MAX_TRIES],
 	]
 	for row in rows:
-		var ir := Rect2(x, y + 2, icon, icon)
+		var ny := GTUI.paragraph(self, tx, y, tw, row[1], GTUI.FS_BODY, C_INK, false, false)
+		if ny > bottom:
+			break
+		var ir := Rect2(x, y + (GTUI.line_height(GTUI.FS_BODY) - icon) / 2.0, icon, icon)
 		match row[0]:
 			"zone":
 				draw_rect(ir, C_ZONE)
 				draw_rect(ir, C_ZONE_EDGE, false, 2.0)
-				_box(Rect2(ir.position + Vector2(8, 8), Vector2(12, 12)), C_SEED, 3)
+				_box(Rect2(ir.position + Vector2(8, 8) * k, Vector2(12, 12) * k), C_SEED, 3)
 			"play":
-				_box(ir, C_BTN_PRIMARY, 6)
-				draw_colored_polygon(PackedVector2Array([ir.position + Vector2(10, 7), ir.position + Vector2(21, 14), ir.position + Vector2(10, 21)]), C_INK)
+				_box(ir, C_BTN_PRIMARY, GTUI.dp(GTUI.R_CONTROL))
+				draw_colored_polygon(PackedVector2Array([ir.position + Vector2(10, 7) * k, ir.position + Vector2(21, 14) * k, ir.position + Vector2(10, 21) * k]), Color("06180e"))
 			"touch":
 				_box(ir.grow(-2), C_TOUCHED, 4)
 			"shape":
 				for c in [Vector2i(1, 0), Vector2i(2, 1), Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2)]:
-					draw_rect(Rect2(ir.position + Vector2(c) * 9.5 + Vector2(1, 1), Vector2(8, 8)), C_ALIVE)
+					draw_rect(Rect2(ir.position + (Vector2(c) * 9.5 + Vector2(1, 1)) * k, Vector2(8, 8) * k), C_ALIVE)
 			"star":
-				_draw_star(ir.get_center(), 13, true)
+				_draw_star(ir.get_center(), 13 * k, true)
 			"wall":
 				draw_rect(ir.grow(-2), C_WALL)
-				draw_rect(Rect2(ir.position + Vector2(2, 2), Vector2(ir.size.x - 4, 5)), C_WALL_HI)
+				draw_rect(Rect2(ir.position + Vector2(2, 2), Vector2(ir.size.x - 4, 5 * k)), C_WALL_HI)
 			"tries":
-				_text_c(str(MAX_TRIES), ir.get_center() + Vector2(0, 9), 26, C_ACCENT)
-		var ny := _para(row[1], tx, y, tw, 21, C_INK)
-		y = max(ny, y + icon + 4) + 14
-		if y > bottom:
-			break
-	if y + 40 < bottom:
-		_para("Tip: start with a shape that grows or travels, then try small changes between tries.", x, y + 6, w, 19, C_MUTED)
-
-
-func _draw_help_button() -> void:
-	var tw := font.get_string_size("Bloom", HORIZONTAL_ALIGNMENT_LEFT, -1, 52).x
-	help_rect = Rect2(head_rect.position + Vector2(tw + 16, 18), Vector2(40, 40))
-	draw_circle(help_rect.get_center(), 19, C_BTN)
-	draw_arc(help_rect.get_center(), 19, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
-	_text_c("?", help_rect.get_center() + Vector2(0, 9), 26, C_INK)
-	cal_rect = Rect2()
-	if not practice:
-		cal_rect = Rect2(help_rect.end.x + 14, help_rect.position.y, 40, 40)
-		var a := 0.4 if phase == Phase.RUN else 1.0
-		draw_circle(cal_rect.get_center(), 19, Color(C_BTN, a))
-		draw_arc(cal_rect.get_center(), 19, 0, TAU, 32, Color(C_INK, 0.35 * a), 2.0)
-		_draw_calendar(cal_rect.get_center() + Vector2(0, 1), Color(C_INK, a))
-	if practice:
-		var bw := font.get_string_size("PLAYGROUND", HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 24
-		var br := Rect2(help_rect.end.x + 12, help_rect.position.y + 6, bw, 28)
-		_box(br, Color(C_MODE, 0.25), 14, C_MODE)
-		_text_c("PLAYGROUND", br.get_center() + Vector2(0, 6), 16, C_INK)
+				GTUI.text_in(self, ir, str(MAX_TRIES), GTUI.FS_BODY, C_ACCENT, 0, true)
+		y = GTUI.paragraph(self, tx, y, tw, row[1], GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
+	_para_fit("Tip: start with a shape that grows or travels, then try small changes between tries.", x, y + GTUI.dp(GTUI.SP_XS), w, GTUI.FS_LABEL, C_MUTED, bottom)
 
 
 # ------------------------------------------------------------------ playground (practice map) + shape tools
@@ -1766,15 +1735,14 @@ func _chip_defs() -> Array:
 	return out
 
 
-## Lay the chips out in rows across width w starting at x; returns the total height.
 func _flow_chips(x0: float, w: float, top: float) -> float:
 	chips.clear()
-	var ch := 44.0
-	var gap := 8.0
+	var ch := GTUI.target()
+	var gap := GTUI.dp(GTUI.SP_S)
 	var x := x0
 	var y := 0.0
 	for c in _chip_defs():
-		var cw: float = font.get_string_size(c.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x + 32
+		var cw: float = GTUI.text_width(c.label, GTUI.FS_LABEL, true) + GTUI.dp(GTUI.SP_L) * 2
 		if x + cw > x0 + w and x > x0:
 			x = x0
 			y += ch + gap
@@ -1812,75 +1780,42 @@ func _chip_pressed(c: Dictionary) -> void:
 
 
 func _draw_chips() -> void:
-	for c in chips:
-		var r: Rect2 = c.rect
+	for i in chips.size():
+		var c: Dictionary = chips[i]
 		match c.id:
 			"tool":
-				var sel: bool = c.idx == tool
-				var kc: Color = C_INK if c.idx < 0 else KIND_COL[SHAPES[c.idx].kind]
-				_box(r, Color(kc, 0.25) if sel else C_BTN, 22, kc if sel else Color(kc, 0.4))
-				_text_c(c.label, r.get_center() + Vector2(0, 7), 19, C_INK if sel else Color(C_INK, 0.85))
+				GTUI.chip(self, "chip_%d" % i, c.rect, c.label, c.idx == tool)
 			"rotate":
-				var on := tool >= 0
-				_box(r, C_BTN, 22, Color(C_INK, 0.45 if on else 0.15))
-				_text_c(c.label, r.get_center() + Vector2(0, 7), 19, C_INK if on else Color(C_INK, 0.35))
+				GTUI.chip(self, "chip_%d" % i, c.rect, c.label, false, tool >= 0)
 			"limits":
-				_box(r, Color(C_ACCENT, 0.25) if no_limits else C_BTN, 22, C_ACCENT if no_limits else Color(C_INK, 0.3))
-				_text_c(c.label, r.get_center() + Vector2(0, 7), 19, C_INK)
+				GTUI.chip(self, "chip_%d" % i, c.rect, c.label, no_limits)
 
 
-## Draws text only if it fits above `bottom`; returns the y below it (or y unchanged).
+## Draws text only if it fits above `bottom`; returns the y below it (or y unchanged). Size in dp.
 func _para_fit(text: String, x: float, y: float, w: float, size: int, col: Color, bottom: float) -> float:
-	var h := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size).y
-	if y + h > bottom:
+	if GTUI.paragraph(self, x, y, w, text, size, col, false, false) > bottom:
 		return y
-	return _para(text, x, y, w, size, col)
+	return GTUI.paragraph(self, x, y, w, text, size, col)
 
 
 func _draw_tool_info(r: Rect2) -> void:
 	var s: Dictionary = SHAPES[tool]
 	var sz := rotated_size(tool, tool_rot)
 	var cells := rotated_cells(tool, tool_rot)
-	var pv: float = min(96.0, r.size.y * 0.55, r.size.x * 0.34)
+	var pv: float = min(GTUI.dp(64), r.size.y * 0.55, r.size.x * 0.34)
 	var grid := PackedByteArray()
 	grid.resize((sz.x + 2) * (sz.y + 2))
 	for c in cells:
 		grid[(c.y + 1) * (sz.x + 2) + c.x + 1] = 1
 	_draw_cells(Rect2(r.position + Vector2(2, 4), Vector2(pv, pv)), grid, sz.x + 2, sz.y + 2, KIND_COL[s.kind])
-	var tx := r.position.x + pv + 16
+	var tx := r.position.x + pv + GTUI.dp(GTUI.SP_L)
 	var tw := r.end.x - tx
-	var y := _para(s.name, tx, r.position.y, tw, 24, C_INK)
-	y = _para(String(s.kind).to_upper(), tx, y + 2, tw, 16, KIND_COL[s.kind])
-	y = _para("Uses %d seeds" % cells.size(), tx, y + 4, tw, 18, C_MUTED)
-	y = max(y, r.position.y + pv + 8) + 6
-	y = _para_fit(s.desc, r.position.x, y, r.size.x, 19, C_MUTED, r.end.y) + 6
-	_para_fit("Tap the board to place it." if _unlimited() else "Tap inside the green box to place it.", r.position.x, y, r.size.x, 19, C_ACCENT, r.end.y)
-
-
-func _draw_mode_button() -> void:
-	var label := "Back to daily puzzle" if practice else "Playground"
-	var tw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
-	var w := tw + 66
-	var x := head_rect.position.x
-	var y := head_rect.position.y + 62
-	if not practice:
-		if head_rect.size.y > 120.0:
-			y = head_rect.position.y + 104   # wide layout: its own line under the date
-		else:
-			x += font.get_string_size("#%d · %s" % [puzzle_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x + 18
-	mode_rect = Rect2(x, y, w, 46)
-	if phase == Phase.RUN:
-		mode_rect = Rect2()
-		return
-	_box(Rect2(mode_rect.position + Vector2(0, 4), mode_rect.size), Color(0, 0, 0, 0.35), 23)   # shadow
-	_box(mode_rect, C_MODE, 23, Color(1, 1, 1, 0.25))
-	var ic := mode_rect.position + Vector2(24, mode_rect.size.y / 2.0)
-	if practice:
-		draw_colored_polygon(PackedVector2Array([ic + Vector2(6, -9), ic + Vector2(-6, 0), ic + Vector2(6, 9)]), Color.WHITE)
-	else:
-		for c in [Vector2i(1, 0), Vector2i(2, 1), Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2)]:   # a tiny glider
-			draw_rect(Rect2(ic + Vector2(-9, -9) + Vector2(c) * 6.5, Vector2(5, 5)), Color.WHITE)
-	draw_string(font, Vector2(mode_rect.position.x + 46, mode_rect.get_center().y + 7), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+	var y := GTUI.paragraph(self, tx, r.position.y, tw, s.name, GTUI.FS_BODY, C_INK, true)
+	y = GTUI.paragraph(self, tx, y, tw, String(s.kind).to_upper(), GTUI.FS_CAPTION, KIND_COL[s.kind], true)
+	y = GTUI.paragraph(self, tx, y, tw, "Uses %d seeds" % cells.size(), GTUI.FS_LABEL, C_MUTED)
+	y = max(y, r.position.y + pv + 8) + GTUI.dp(GTUI.SP_S)
+	y = _para_fit(s.desc, r.position.x, y, r.size.x, GTUI.FS_LABEL, C_MUTED, r.end.y)
+	_para_fit("Tap the board to place it." if _unlimited() else "Tap inside the green box to place it.", r.position.x, y, r.size.x, GTUI.FS_LABEL, C_ACCENT, r.end.y)
 
 
 # ------------------------------------------------------------------ agent hooks
@@ -1894,3 +1829,19 @@ func get_agent_state() -> Dictionary:
 		"stars": star_total, "target": target_score, "share": share_text() if not tries.is_empty() else "",
 		"archive_open": archive_open, "archive_page": archive_page, "today": today,
 	}
+
+
+func _head_h() -> float:
+	return GTUI.target() + GTUI.dp(GTUI.SP_S) + maxf(GTUI.target(), GTUI.line_height(GTUI.FS_CAPTION) + GTUI.line_height(GTUI.FS_HEADING))
+
+
+func _dev_card() -> Rect2:
+	var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
+	var c := GTUI.modal_content(card)
+	c.position.y += GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L)
+	return c
+
+
+## Tutorial illustrations were drawn for the 720 px canvas; this keeps them in proportion with dp text.
+func _u(v: float) -> float:
+	return GTUI.dp(v * 0.72)
