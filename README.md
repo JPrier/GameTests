@@ -18,6 +18,8 @@ games/
     kitchen-crawl/
 ```
 
+[Game idea backlog](game-ideas/README.md): add concepts to the inbox for agents to review and claim.
+
 | Game | Folder |
 |---|---|
 | **Daily** | |
@@ -50,7 +52,7 @@ Pull requests run steps 1–3 without deploying.
 
 To add a game, put a Godot project with a `Web` export preset in `games/<Category>/<name>/` (or one level deeper, `games/<Category>/<Subcategory>/<name>/`) and push. A new category is just a new folder.
 
-The game's folder name is its URL (`https://jprier.github.io/GameTests/<name>/`), whatever category it's in, so folder names must be unique across categories, and moving a game between categories never breaks its links or saved results. The build fails if two games share a folder name or a game sits directly in `games/`.
+The game's folder name is its URL (`https://jprier.github.io/GameTests/<name>/`), whatever category it's in, so folder names must be unique across categories, and moving a game between categories never breaks their links or saved results. The build fails if two games share a folder name or a game sits directly in `games/`.
 
 ## Home page
 
