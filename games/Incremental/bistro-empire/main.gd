@@ -116,6 +116,11 @@ var import_text := ""
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_CARD, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_LINE, "accent": C_ACCENT, "on_accent": Color("241703"),
+		"success": C_GREEN, "danger": C_RED, "focus": C_ACCENT, "scrim": Color(0, 0, 0, 0.72),
+	})
 	E = Econ.new()
 	_add_key_action("serve", [KEY_SPACE, KEY_ENTER])
 	for i in TABS.size():
@@ -783,6 +788,8 @@ func _do(id: String) -> void:
 # =================================================================== input
 
 func _unhandled_input(ev: InputEvent) -> void:
+	if GTUI.focused_id() != "" and ev.is_action_pressed("serve"):
+		return   # Enter/Space press the focused control instead
 	if ev.is_action_pressed("serve") and modal == "":
 		serve()
 	elif ev.is_action_pressed("back"):
@@ -798,6 +805,15 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventMouseButton:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.button_index == MOUSE_BUTTON_LEFT:
@@ -994,12 +1010,20 @@ var _sb_cache := {}
 
 
 func _rr(r: Rect2, color: Color, radius := 12.0, border := Color(0, 0, 0, 0), bw := 0) -> void:
-	var key := "%s|%d|%s|%d" % [color.to_html(), int(radius), border.to_html() if bw > 0 else "", bw]
+	var key := "%s|%d|%s|%d|%d" % [color.to_html(), int(radius), border.to_html() if bw > 0 else "", bw, int(cv == overlay)]
 	var sb: StyleBoxFlat = _sb_cache.get(key)
 	if sb == null:
 		sb = StyleBoxFlat.new()
 		sb.bg_color = color
-		sb.set_corner_radius_all(int(radius))
+		# snap to the shared radii: controls 6, cards 8, pop-up cards 12; tiny badges/art keep theirs
+		var rad := radius
+		if radius >= 16.0 and cv == overlay:
+			rad = GTUI.R_OVERLAY
+		elif radius >= 12.0:
+			rad = GTUI.R_PANEL
+		elif radius >= 10.0:
+			rad = GTUI.R_CONTROL
+		sb.set_corner_radius_all(int(rad))
 		sb.anti_aliasing = true
 		if bw > 0:
 			sb.border_color = border
@@ -1032,8 +1056,16 @@ func _button(id: String, r: Rect2, label: String, style := "", layer := "chrome"
 	if not enabled:
 		bg = Color("2c241d")
 		fg = C_DIM
+	# shared GameTests control states: hover / press / keyboard focus
+	var visible := layer != "content" or content_r.intersects(r)
+	if visible:
+		GTUI.register(id, r, enabled, false, 1 if layer == "modal" else 0)
 	var pressed: bool = not press.is_empty() and String(press.id) == id and not press.moved
-	var rr := r.grow(-1.5) if pressed else r
+	if enabled and pressed:
+		bg = GTUI._shade(bg, 0.16)
+	elif enabled and GTUI.is_hover(id):
+		bg = GTUI._shade(bg, 0.08)
+	var rr := r
 	_rr(rr, bg, 10)
 	var lines := label.split("\n")
 	_owner = "%s#%d" % [id, button_log.size()]
@@ -1045,12 +1077,15 @@ func _button(id: String, r: Rect2, label: String, style := "", layer := "chrome"
 		_tcf(rr, rr.get_center().y - 2, lines[0], size - 3, rr.size.x - 8, Color(fg, 0.85))
 		_tcf(rr, rr.get_center().y + size - 1, lines[1], size, rr.size.x - 8, fg)
 	_owner = ""
+	if visible:
+		GTUI.focus_ring(cv, id, r)
 	_btn(id, r, layer, hold)
 
 
 # =================================================================== draw: chrome
 
 func _draw() -> void:
+	GTUI.begin()
 	text_log.clear()
 	button_log.clear()
 	cv = self
@@ -1300,6 +1335,8 @@ func _draw_nav() -> void:
 		if t == "legacy" and E.can_prestige():
 			cv.draw_circle(Vector2(br.get_center().x + 14, br.position.y + 14), 5, C_ACCENT)
 		_btn("tab:" + t, br)
+		GTUI.register("tab:" + t, br)
+		GTUI.focus_ring(cv, "tab:" + t, br.grow(-4))
 
 
 func _nav_icon(t: String, c: Vector2, col_: Color, locked: bool) -> void:
@@ -1332,6 +1369,7 @@ func _nav_icon(t: String, c: Vector2, col_: Color, locked: bool) -> void:
 
 func _draw_content() -> void:
 	cv = content
+	GTUI.begin(content)
 	content.draw_set_transform(-content_r.position)
 	var y0 := content_r.position.y + 6.0 - float(scroll[tab])
 	var y := _draw_alerts(y0)
@@ -1377,16 +1415,19 @@ func _section(y: float, title: String, sub := "") -> float:
 	return y + 28
 
 
+## Buy amount (x1 / x10 / x100 / Max) as the shared segmented control.
+func _buy_mode_control(r: Rect2) -> void:
+	var rects := GTUI.segmented(cv, "mode", r, ["x1", "x10", "x100", "Max"], buy_mode)
+	for i in rects.size():
+		_btn("mode:%d" % i, rects[i], "content")
+
+
 func _draw_build(y: float) -> float:
 	var a := E.agg()
 	# buy mode chips
-	var r := _row_rect(y, 36)
-	var labels := ["x1", "x10", "x100", "Max"]
-	var cw := (r.size.x - 3 * 6) / 4.0
-	for i in 4:
-		var br := Rect2(r.position.x + i * (cw + 6), r.position.y, cw, r.size.y)
-		_button("mode:%d" % i, br, labels[i], "on" if buy_mode == i else "ghost", "content", false, true, 15)
-	y += 44
+	var r := _row_rect(y, GTUI.TARGET)
+	_buy_mode_control(r)
+	y += GTUI.TARGET + 8
 	# the four builds
 	for rep in Econ.REPS:
 		var rr := _row_rect(y, 138)
@@ -1656,21 +1697,22 @@ func _filtered() -> Array:
 
 func _draw_upgrades(y: float) -> float:
 	# filter chips
-	var r := _row_rect(y, 32)
+	var th := GTUI.TARGET
+	var r := _row_rect(y, th)
 	var cw := (r.size.x - 2 * 6) / 3.0
 	for k in UPG_FILTERS.size():
 		var f: String = UPG_FILTERS[k]
-		var br := Rect2(r.position.x + (k % 3) * (cw + 6), y + (k / 3) * 38, cw, 32)
+		var br := Rect2(r.position.x + (k % 3) * (cw + 6), y + (k / 3) * (th + 6), cw, th)
 		_button("filter:" + f, br, UPG_FILTER_LABEL[f], "on" if upg_filter == f else "ghost", "content", false, true, 13)
-	y += 2 * 38 + 4
+	y += 2 * (th + 6) + 4
 	var owned_run := E.owned.size()
 	for k in E.inf:
 		owned_run += int(E.inf[k])
 	var list := _filtered()
 	y = _section(y, "%d available" % list.size(), "%s owned this run" % Econ.fmt_count(owned_run))
-	var br := _row_rect(y, 40)
+	var br := _row_rect(y, GTUI.TARGET)
 	_button("buyall", br, ("Buy all %d affordable (skips Crossroads)" % afford_count) if afford_count > 0 else "Nothing affordable yet", "accent" if afford_count > 0 else "", "content", false, afford_count > 0, 15)
-	y += 48
+	y += GTUI.TARGET + 8
 	if list.is_empty():
 		var er := _row_rect(y, 60)
 		_rr(er, C_CARD, 12)
@@ -2160,12 +2202,9 @@ func _draw_biz_page(y: float, i: int) -> float:
 	# market
 	y = _draw_market(y, i, s, col)
 	# builds
-	var r := _row_rect(y, 32)
-	var labels := ["x1", "x10", "x100", "Max"]
-	var cw := (r.size.x - 3 * 6) / 4.0
-	for k in 4:
-		_button("mode:%d" % k, Rect2(r.position.x + k * (cw + 6), y, cw, 32), labels[k], "on" if buy_mode == k else "ghost", "content", false, true, 14)
-	y += 40
+	var r := _row_rect(y, GTUI.TARGET)
+	_buy_mode_control(r)
+	y += GTUI.TARGET + 8
 	for w in ["a", "b"]:
 		var rr := _row_rect(y, 72)
 		if _visible(rr):
@@ -2882,7 +2921,7 @@ func _draw_challenge_row(y: float, id: String) -> float:
 	var lvl := E.challenge_next_level(id)
 	var maxed := false
 	var bl := _wrap(String(c.blurb), 13, content_r.size.x - 52)
-	var r := _row_rect(y, 108 + bl.size() * 17)
+	var r := _row_rect(y, 112 + bl.size() * 17)
 	if not _visible(r):
 		return r.end.y + 8
 	_rr(r, C_CARD, 12)
@@ -2896,7 +2935,7 @@ func _draw_challenge_row(y: float, id: String) -> float:
 	var yy := r.position.y + 48 + bl.size() * 17
 	if not maxed:
 		_tf(Vector2(r.position.x + 14, yy + 2), "Goal: earn %s in one run · Grit x%s" % [Num.fmt_money(E.challenge_goal_l(lvl)), Econ.fmt_mult(float(c.mult) * (1.0 + 0.5 * lvl))], 12, r.size.x - 28, C_INK)
-	var br := Rect2(r.position.x + 14, r.end.y - 50, r.size.x - 28, 40)
+	var br := Rect2(r.position.x + 14, r.end.y - 54, r.size.x - 28, GTUI.TARGET)
 	if maxed:
 		_button("noop", br, "Mastered", "", "content", false, false, 14)
 	elif E.challenge != "":
@@ -3080,6 +3119,7 @@ func _draw_backup(y: float) -> float:
 
 func _draw_overlay() -> void:
 	cv = overlay
+	GTUI.begin(overlay)
 	var vs := get_viewport_rect().size
 	deco = true
 	for f in floaters:
@@ -3091,14 +3131,10 @@ func _draw_overlay() -> void:
 		_text(p - Vector2(_tw(s, 18) * 0.5, 0), s, 18, Color(f.color, a))
 	deco = false
 	if toast_t > 0.0 and toast != "":
-		var a := clampf(toast_t / 0.3, 0.0, 1.0)
-		var tw := _tw(toast, 16) + 36
-		var tr := Rect2((vs.x - tw) * 0.5, nav_r.position.y - 56, tw, 40)
-		_rr(tr, Color(0.07, 0.05, 0.04, 0.94 * a), 20)
-		_text_c(tr, tr.position.y + 26, toast, 16, Color(C_INK, a))
+		GTUI.toast(overlay, toast, clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0), nav_r.position.y - GTUI.dp(GTUI.SP_M))
 	if modal == "":
 		return
-	cv.draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
+	cv.draw_rect(Rect2(Vector2.ZERO, vs), GTUI.c("scrim"))
 	_btn("noop", Rect2(Vector2.ZERO, vs), "modal")
 	match modal:
 		"concept": _modal_concept(vs)

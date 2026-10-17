@@ -58,8 +58,8 @@ static var font_bold: Font
 static var _owner: WeakRef
 static var _fixed_scale := 0.0
 
-static var _targets: Array = []          # this frame: [{id, rect, layer, enabled, compact}]
-static var _last: Array = []             # last completed frame
+static var _targets: Array = []          # [{id, rect, layer, enabled, compact, ci}] from each canvas's last draw
+static var _cur: Object                  # canvas currently drawing (set by begin())
 static var _layer := 0
 static var _pointer := Vector2(-9999, -9999)
 static var _down := false
@@ -81,7 +81,7 @@ static func setup(owner: CanvasItem, palette: Dictionary, scale := 0.0) -> void:
 	fv.variation_embolden = 0.6
 	font_bold = fv
 	_targets = []
-	_last = []
+	_cur = owner
 	_focus = ""
 	_hover = ""
 	_controls = owner if owner is Control else null
@@ -182,19 +182,25 @@ static func space(v: float) -> float:
 
 # ------------------------------------------------------------------ frame + input
 
-## Call at the top of the game's _draw() (the canvas item that draws product UI).
+## Call at the top of every _draw() that draws product UI (pass the canvas if it isn't the one given
+## to setup()). It forgets that canvas's controls from its previous draw.
 static func begin(ci: CanvasItem = null) -> void:
-	_last = _targets
-	_targets = []
-	_layer = 0
+	_cur = ci if ci else owner()
+	_targets = _targets.filter(func(t): return t.ci != _cur)
+	if ci == null or ci == owner():
+		_layer = 0
 
 
 ## Registers a tappable rect so it gets hover/press/focus treatment and is checked by the target-size test.
 ## Product controls drawn with GTUI register themselves; call this for custom-drawn controls.
 ## compact = an on-screen keyboard key: may be narrower (TARGET_COMPACT) and is skipped by Tab, since a
 ## physical keyboard already types those keys.
-static func register(id: String, rect: Rect2, enabled := true, compact := false) -> void:
-	_targets.append({"id": id, "rect": rect, "layer": _layer, "enabled": enabled, "compact": compact})
+static func register(id: String, rect: Rect2, enabled := true, compact := false, layer := -1) -> void:
+	# a control redrawn by a second canvas in the same frame replaces its earlier entry
+	for i in range(_targets.size() - 1, -1, -1):
+		if _targets[i].id == id:
+			_targets.remove_at(i)
+	_targets.append({"id": id, "rect": rect, "layer": _layer if layer < 0 else layer, "enabled": enabled, "compact": compact, "ci": _cur})
 
 
 static func is_hover(id: String) -> bool:
@@ -272,10 +278,10 @@ static func tap_events(pos: Vector2) -> Array:
 
 static func _active_targets(keyboard := false) -> Array:
 	var top := 0
-	for t in _last:
+	for t in _targets:
 		top = maxi(top, int(t.layer))
 	var out: Array = []
-	for t in _last:
+	for t in _targets:
 		if int(t.layer) == top and t.enabled and not (keyboard and t.compact):
 			out.append(t)
 	return out
@@ -327,7 +333,7 @@ static func undersized() -> Array:
 
 
 static func targets() -> Array:
-	return _scan_controls() if _controls else _last
+	return _scan_controls() if _controls else _targets
 
 
 # ------------------------------------------------------------------ text
@@ -586,9 +592,10 @@ static func segmented(ci: CanvasItem, id: String, r: Rect2, labels: Array, selec
 	var w := inner.size.x / maxf(n, 1)
 	for i in n:
 		var sr := Rect2(inner.position.x + i * w, inner.position.y, w, inner.size.y)
-		rects.append(sr)
+		var hit := Rect2(sr.position.x, r.position.y, sr.size.x, r.size.y)   # full height for touch
+		rects.append(hit)
 		var sid := "%s:%d" % [id, i]
-		register(sid, sr, enabled)
+		register(sid, hit, enabled)
 		if i == selected:
 			box(ci, sr, c("accent"), R_CONTROL - 2.0)
 		elif enabled and is_pressed(sid, sr):
