@@ -1563,9 +1563,9 @@ func _draw_sugg_row(row: Rect2, i: int) -> void:
 	var d := DB.get_drink(id)
 	var used: bool = game.guesses.has(id)
 	if i == sugg_hover and not used:
-		_rrect(row, C_CARD.lightened(0.08), 10)
+		_rrect(row, C_CARD.lightened(0.08), GTUI.dp(GTUI.R_CONTROL))
 	elif i % 2 == 0:
-		_rrect(row, C_CARD, 10)
+		_rrect(row, C_CARD, GTUI.dp(GTUI.R_CONTROL))
 	var widths := sugg_text_widths()
 	var lay := sugg_row_layout(d)
 	var nf: Dictionary = lay.name
@@ -1578,7 +1578,7 @@ func _draw_sugg_row(row: Rect2, i: int) -> void:
 	cv.draw_string(bold, Vector2(x, y + bold.get_ascent(nf.size)), nf.lines[0], HORIZONTAL_ALIGNMENT_LEFT, widths[0], nf.size,
 		C_FAINT if used else C_INK)
 	if used:
-		cv.draw_string(font, Vector2(row.end.x - 84, y + bold.get_ascent(nf.size)), "tried", HORIZONTAL_ALIGNMENT_RIGHT, 70, 18, C_FAINT)
+		cv.draw_string(font, Vector2(row.end.x - 84, y + bold.get_ascent(nf.size)), "tried", HORIZONTAL_ALIGNMENT_RIGHT, 70, GTUI.fs(GTUI.FS_LABEL), C_FAINT)
 	var iy: float = y + name_h + 4 + font.get_ascent(inf.size)
 	for l in inf.lines:
 		cv.draw_string(font, Vector2(x, iy), l, HORIZONTAL_ALIGNMENT_LEFT, widths[1], inf.size, C_FAINT if used else C_MUTED)
