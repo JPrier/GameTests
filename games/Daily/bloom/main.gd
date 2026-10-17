@@ -780,12 +780,12 @@ func _process(delta: float) -> void:
 
 
 func _input(ev: InputEvent) -> void:
-	var g := GTUI.handle_input(make_input_local(ev))
-	if g.has("activate"):
-		for e in GTUI.tap_events(g.pos):
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
 			_input(e)
 		return
-	if g.has("cancel"):
+	if gt.has("cancel"):
 		if dev_open:
 			dev_open = false
 		elif tut_open:
@@ -1081,7 +1081,7 @@ func _draw_header() -> void:
 	var r := head_rect
 	var th := GTUI.target()
 	# Row 1: game name (Bloom's own lettering) + standard icon buttons, right-aligned.
-	var title_px := GTUI.fs(GTUI.FS_HEADING + 6)
+	var title_px := GTUI.fs(GTUI.FS_HEADING)
 	draw_string(font, Vector2(r.position.x, r.position.y + (th + font.get_ascent(title_px) - font.get_descent(title_px)) / 2.0), "Bloom", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px, C_INK)
 	var ids := ["help"] if practice else ["calendar", "help"]
 	var icons := GTUI.icon_row(r.end.x, r.position.y, ids)

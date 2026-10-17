@@ -328,6 +328,8 @@ static func text(ci: CanvasItem, pos: Vector2, s: String, size_dp: int, col: Col
 
 ## One line inside `r`, vertically centred. align: -1 left, 0 centre, 1 right. Shrinks to fit (down to CAPTION).
 static func text_in(ci: CanvasItem, r: Rect2, s: String, size_dp: int, col: Color, align := 0, bold := false) -> void:
+	if s == "" or r.size.y <= 0.0:
+		return
 	var f: Font = font_bold if bold else font
 	var px := fs(size_dp)
 	var min_px := fs(FS_CAPTION)
@@ -497,7 +499,7 @@ static func button(ci: CanvasItem, id: String, r: Rect2, label: String, variant 
 
 
 ## Square icon button (TARGET x TARGET by default). icon: help, calendar, close, back, next, share,
-## sound_on, sound_off, menu, restart, settings — or "" and draw your own glyph on top.
+## sound_on, sound_off, plus, minus, menu, restart, settings — or "" and draw your own glyph on top.
 static func icon_button(ci: CanvasItem, id: String, r: Rect2, icon: String, enabled := true, active := false) -> void:
 	register(id, r, enabled)
 	var fill := c("surface_high")
@@ -702,6 +704,8 @@ static func _shade(col: Color, amt: float) -> Color:
 
 ## Monoline icons drawn in a box of `size` around `ctr`. One stroke weight (size/11, at least 1.5 px).
 static func glyph(ci: CanvasItem, icon: String, ctr: Vector2, size: float, col: Color) -> void:
+	if size < 2.0:
+		return
 	var u := size / 2.0
 	var w := maxf(1.5, size / 11.0)
 	match icon:
@@ -744,6 +748,10 @@ static func glyph(ci: CanvasItem, icon: String, ctr: Vector2, size: float, col: 
 			else:
 				ci.draw_line(ctr + Vector2(u * 0.3, -u * 0.35), ctr + Vector2(u * 0.9, u * 0.35), col, w, true)
 				ci.draw_line(ctr + Vector2(u * 0.9, -u * 0.35), ctr + Vector2(u * 0.3, u * 0.35), col, w, true)
+		"plus", "minus":
+			ci.draw_line(ctr + Vector2(-u * 0.6, 0), ctr + Vector2(u * 0.6, 0), col, w, true)
+			if icon == "plus":
+				ci.draw_line(ctr + Vector2(0, -u * 0.6), ctr + Vector2(0, u * 0.6), col, w, true)
 		"menu":
 			for dy in [-0.5, 0.0, 0.5]:
 				ci.draw_line(ctr + Vector2(-u * 0.7, u * dy), ctr + Vector2(u * 0.7, u * dy), col, w, true)

@@ -115,14 +115,20 @@ var tut_open := false
 var help_rect := Rect2()
 var title_rect := Rect2()             # tap 5x quickly to open the dev menu
 var font: Font
+var seg_rect := Rect2()               # piece-length segmented control
 
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_PANEL, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": Color(C_INK, 0.12), "accent": C_BTN_PRIMARY, "on_accent": Color.WHITE,
+		"success": C_OK, "danger": C_DANGER, "focus": C_ACCENT,
+	})
 	RenderingServer.set_default_clear_color(C_BG)
 	_add_key_action("run", [KEY_ENTER, KEY_SPACE])
 	_add_key_action("undo", [KEY_BACKSPACE, KEY_Z])
-	_add_key_action("build_mat", [KEY_TAB, KEY_M])
+	_add_key_action("build_mat", [KEY_M])   # Tab is reserved for keyboard focus
 	today = Time.get_date_string_from_system(false)
 	var want := today
 	var url := _read_url()
@@ -830,68 +836,39 @@ func _short_date(d: String) -> String:
 
 
 func _archive_row_h() -> float:
-	var vs := get_viewport_rect().size
-	return clampf((vs.y - 40.0 - 210.0) / ARCHIVE_ROWS, 64.0, 92.0)
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w: float = min(vs.x - 40.0, 680.0)
-	var h := 100.0 + ARCHIVE_ROWS * _archive_row_h() + 110.0
-	return Rect2((vs.x - w) / 2.0, max(20.0, (vs.y - h) / 2.0), w, h)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h() - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 480, GTUI.modal_height(content_h))
 
 
 func _archive_buttons() -> void:
-	var c := _archive_card()
+	var card := _archive_card()
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h()
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
 		buttons.append({"id": "day_" + String(days[i]), "label": "", "primary": false, "enabled": true, "kind": "row",
-			"rect": Rect2(c.position.x + 20, c.position.y + 100 + i * rh, c.size.x - 40, rh - 10)})
-	var bw := (c.size.x - 40 - 24) / 3.0
-	var by := c.end.y - 90
-	buttons.append({"id": "arch_newer", "label": "< Newer", "primary": false, "enabled": archive_page > 0,
-		"rect": Rect2(c.position.x + 20, by, bw, 70)})
-	buttons.append({"id": "arch_close", "label": "Close", "primary": true, "enabled": true,
-		"rect": Rect2(c.position.x + 32 + bw, by, bw, 70)})
-	buttons.append({"id": "arch_older", "label": "Older >", "primary": false, "enabled": archive_page < archive_pages() - 1,
-		"rect": Rect2(c.position.x + 44 + bw * 2, by, bw, 70)})
+			"rect": Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target())})
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	buttons.append({"id": "arch_newer", "label": "Newer", "primary": false, "enabled": archive_page > 0, "kind": "button", "rect": pr[0]})
+	buttons.append({"id": "arch_older", "label": "Older", "primary": false, "enabled": archive_page < archive_pages() - 1, "kind": "button", "rect": pr[1]})
+	buttons.append({"id": "arch_close", "label": "", "primary": false, "enabled": true, "kind": "row", "rect": GTUI.modal_close_rect(card)})
 
 
 func _draw_archive() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
-	var c := _archive_card()
-	_box(c, C_PANEL, 20, Color(C_INK, 0.15))
-	draw_string(font, c.position + Vector2(30, 64), "Past quakes", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, C_INK)
-	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
-	var pw := font.get_string_size(pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
-	draw_string(font, Vector2(c.end.x - 30 - pw, c.position.y + 62), pg, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, C_MUTED)
+	var c := GTUI.modal(self, _archive_card(), "Past quakes", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
-		if b.get("kind", "") != "row":
+		if not String(b.id).begins_with("day_"):
 			continue
 		var d := String(b.id).substr(4)
-		var r: Rect2 = b.rect
-		_box(r, C_BTN, 14, C_ACCENT if d == date else Color(0, 0, 0, 0))
-		var mid := r.get_center().y + 10
-		draw_string(font, Vector2(r.position.x + 22, mid), "#%d" % day_number(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_ACCENT)
-		draw_string(font, Vector2(r.position.x + 120, mid), "Today" if d == today else _short_date(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, C_INK)
 		var res := String(archive_results.get(d, ""))
-		var txt := res if res != "" else "Not played"
-		var sz := 26 if res != "" else 22
-		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-		draw_string(font, Vector2(r.end.x - 22 - tw, mid), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, C_ACCENT if res != "" else C_MUTED)
-
-
-## Calendar glyph for the past-days button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var r := Rect2(c.x - 12, c.y - 10, 24, 22)
-	draw_rect(r, col_, false, 2.4)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 6.5), col_)
-	draw_line(Vector2(c.x - 6, c.y - 15), Vector2(c.x - 6, c.y - 7), col_, 2.4)
-	draw_line(Vector2(c.x + 6, c.y - 15), Vector2(c.x + 6, c.y - 7), col_, 2.4)
-	for i in 3:
-		draw_rect(Rect2(c.x - 9 + i * 6.5, c.y + 2, 4.5, 4.5), col_)
+		GTUI.list_row(self, String(b.id), b.rect, "#%d" % day_number(d), "Today" if d == today else _short_date(d),
+			res if res != "" else "Not played", d == date, C_ACCENT if res != "" else Color(0, 0, 0, 0))
 
 
 func share_text() -> String:
@@ -1008,11 +985,12 @@ func _process(delta: float) -> void:
 	for f in flashes:
 		f.t -= delta
 	flashes = flashes.filter(func(f): return f.t > 0.0)
+	var keys_free := GTUI.focused_id() == ""   # Enter/Space press the focused control instead
 	if tut_open:
-		if Input.is_action_just_pressed("run"):
+		if keys_free and Input.is_action_just_pressed("run"):
 			close_tutorial()
-	elif not dev_open:
-		if Input.is_action_just_pressed("run"):
+	elif not dev_open and not archive_open:
+		if keys_free and Input.is_action_just_pressed("run"):
 			match phase:
 				Phase.BUILD: run()
 				Phase.RUN: skip()
@@ -1026,6 +1004,20 @@ func _process(delta: float) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		return
+	if gt.has("cancel"):
+		if dev_open:
+			dev_open = false
+		elif tut_open:
+			close_tutorial()
+		elif archive_open:
+			archive_open = false
+		_build_buttons()
+		return
 	if _camera_input(ev):
 		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
@@ -1390,7 +1382,7 @@ func _press_button(p: Vector2) -> bool:
 					"dev_today": dev_reset_today()
 					"dev_all": dev_reset_all()
 					"dev_close": dev_open = false
-					"tut_close": close_tutorial()
+					"tut_close", "tut_x": close_tutorial()
 					"arch_newer": archive_shift(-1)
 					"arch_older": archive_shift(1)
 					"arch_close":
@@ -1424,29 +1416,32 @@ func tutorial_seen() -> bool:
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	var m := 16.0
+	var m := GTUI.dp(GTUI.SP_L)
+	var gap := GTUI.dp(GTUI.SP_M)
 	var portrait := vs.y >= vs.x * 1.05
 	var view_w := GW + VIEW_PAD * 2
 	var view_h := GH + VIEW_PAD + VIEW_GROUND
+	var seis_h := GTUI.dp(56)
 	if portrait:
-		head_rect = Rect2(m, m, vs.x - m * 2, 92)
-		seis_rect = Rect2(m, head_rect.end.y + 4, vs.x - m * 2, 64)
-		var panel_h := 236.0 if phase == Phase.BUILD else 200.0
-		var avail := Rect2(m, seis_rect.end.y + 10, vs.x - m * 2, vs.y - seis_rect.end.y - 10 - panel_h - m)
+		head_rect = Rect2(m, m, vs.x - m * 2, _head_h())
+		seis_rect = Rect2(m, head_rect.end.y + gap, vs.x - m * 2, seis_h)
+		var rows := _rows(vs.x - m * 2).size()
+		var panel_h := _panel_text_h() + rows * GTUI.target() + (rows - 1) * GTUI.dp(GTUI.SP_S) + gap
+		var avail := Rect2(m, seis_rect.end.y + gap, vs.x - m * 2, vs.y - seis_rect.end.y - gap - panel_h - gap - m)
 		ppm = minf(avail.size.x / view_w, avail.size.y / view_h)
 		var bs := Vector2(view_w, view_h) * ppm
 		board_rect = Rect2(avail.position + Vector2((avail.size.x - bs.x) / 2.0, 0), bs)
-		panel_rect = Rect2(m, board_rect.end.y + 12, vs.x - m * 2, vs.y - board_rect.end.y - 12 - m)
+		panel_rect = Rect2(m, board_rect.end.y + gap, vs.x - m * 2, vs.y - board_rect.end.y - gap - m)
 	else:
 		var avail_h := vs.y - m * 2
 		ppm = minf(avail_h / view_h, (vs.x * 0.56) / view_w)
 		var bs := Vector2(view_w, view_h) * ppm
 		board_rect = Rect2(m, (vs.y - bs.y) / 2.0, bs.x, bs.y)
-		var px := board_rect.end.x + 24
+		var px := board_rect.end.x + GTUI.dp(GTUI.SP_XL)
 		var pw := vs.x - px - m
-		head_rect = Rect2(px, m, pw, 92)
-		seis_rect = Rect2(px, head_rect.end.y + 4, pw, 72)
-		panel_rect = Rect2(px, seis_rect.end.y + 16, pw, vs.y - seis_rect.end.y - 16 - m)
+		head_rect = Rect2(px, m, pw, _head_h())
+		seis_rect = Rect2(px, head_rect.end.y + gap, pw, seis_h)
+		panel_rect = Rect2(px, seis_rect.end.y + GTUI.dp(GTUI.SP_L), pw, vs.y - seis_rect.end.y - GTUI.dp(GTUI.SP_L) - m)
 	fit_ppm = ppm
 	if cam_center.x < -1e8:
 		cam_center = _fit_center()
@@ -1457,85 +1452,60 @@ func _layout() -> void:
 
 func _build_buttons() -> void:
 	buttons.clear()
-	var vs := get_viewport_rect().size
+	seg_rect = Rect2()
 	if tut_open and not dev_open:
-		var w := minf(vs.x - 32, 640.0)
-		var h := minf(vs.y - 32, 860.0)
-		var r := Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
-		buttons.append({"id": "tut_close", "label": "Let's build", "primary": true, "enabled": true,
-			"rect": Rect2(r.position.x + 24, r.end.y - 24 - 64, r.size.x - 48, 64)})
+		var card := _tut_card()
+		buttons.append({"id": "tut_close", "label": "Let's build", "primary": true, "enabled": true, "kind": "button",
+			"rect": GTUI.modal_buttons_rect(GTUI.modal_content(card))})
+		buttons.append({"id": "tut_x", "label": "", "primary": false, "enabled": true, "kind": "row", "rect": GTUI.modal_close_rect(card)})
 		return
 	if archive_open and not dev_open:
 		_archive_buttons()
 		return
 	if dev_open:
-		var w := minf(vs.x - 80, 420.0)
-		var x := (vs.x - w) / 2.0
-		var y := vs.y / 2.0 - 110
-		for l in [["dev_today", "Reset today", true], ["dev_all", "Reset all days", true], ["dev_close", "Close", false]]:
-			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "rect": Rect2(x, y, w, 64)})
-			y += 78
+		var c := _dev_card()
+		var y := c.position.y
+		for l in [["dev_today", "Reset today", false], ["dev_all", "Reset all days", false], ["dev_close", "Close", true]]:
+			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": true, "kind": "button", "rect": Rect2(c.position.x, y, c.size.x, GTUI.target())})
+			y += GTUI.target() + GTUI.dp(GTUI.SP_S)
 		return
-	var bh := 62.0
-	var gap := 10.0
-	var rows: Array = []
-	match phase:
-		Phase.BUILD:
-			var mats := [["wood", "Wood $1/m", build_mat == Sim.Mat.WOOD, true], ["steel", "Steel $3/m", build_mat == Sim.Mat.STEEL, true]]
-			var lens: Array = []
-			for l in PIECE_LENS:
-				lens.append(["len%d" % l, "%d m" % l, piece_len == l, true])
-			if panel_rect.size.x >= 560:
-				rows.append(mats + lens)
-			else:
-				rows.append(mats)
-				rows.append(lens)
-			rows.append([["run", "Start quake", true, not design.is_empty()], ["undo", "Undo", false, not history.is_empty()], ["erase", "Erase", erasing, not design.is_empty() or erasing], ["clear", "Clear", false, not design.is_empty()]])
-		Phase.RUN:
-			rows.append([["skip", "Fast-forward" if not fast else "Fast-forwarding…", false, not fast]])
-		Phase.RESULT:
-			rows.append([["again", "Rebuild (%d left)" % (MAX_TRIES - tries.size()), true, true], ["finish", "Finish", false, true]])
-		Phase.FINAL:
-			var row := [["share", "Share result", true, true]]
-			if date != today:
-				row.append(["today", "Play today's", false, true])
-			rows.append(row)
+	var bh := GTUI.target()
+	var gap := GTUI.dp(GTUI.SP_S)
+	var rows := _rows(panel_rect.size.x)
 	var y := panel_rect.end.y - bh * rows.size() - gap * (rows.size() - 1)
-	text_rect = Rect2(panel_rect.position, Vector2(panel_rect.size.x, y - panel_rect.position.y - 8))
+	text_rect = Rect2(panel_rect.position, Vector2(panel_rect.size.x, y - panel_rect.position.y - GTUI.dp(GTUI.SP_S)))
 	for row in rows:
-		var n: int = row.size()
-		var free := panel_rect.size.x - gap * (n - 1)
-		var x := panel_rect.position.x
-		for i in n:
+		var weights: Array = []
+		for l in row:
+			weights.append(1.6 if l[2] and l[4] == "button" else (2.0 if l[4] == "seg" else 1.0))
+		var rects := GTUI.row(Rect2(panel_rect.position.x, y, panel_rect.size.x, bh), row.size(), weights)
+		for i in row.size():
 			var l: Array = row[i]
-			var w := free / n
-			if n == 4:
-				w = free * (0.34 if i == 0 else 0.22)
-			elif n == 5:
-				w = free * (0.25 if i < 2 else 0.5 / 3.0)
-			elif n == 3 and phase == Phase.BUILD and String(row[0][0]).begins_with("len"):
-				w = free / 3.0
-			elif n == 3:
-				w = free * (0.46 if i == 0 else 0.27)
-			elif n == 2 and phase != Phase.BUILD:
-				w = free * (0.62 if i == 0 else 0.38)
-			var kind := "toggle" if l[0] in ["wood", "steel", "erase"] or String(l[0]).begins_with("len") else "button"
-			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": l[3], "rect": Rect2(x, y, w, bh), "kind": kind})
-			x += w + gap
+			if l[4] == "seg":
+				seg_rect = rects[i]
+				var pw: float = (seg_rect.size.x - 4) / PIECE_LENS.size()
+				for k in PIECE_LENS.size():
+					var n: int = PIECE_LENS[k]
+					buttons.append({"id": "len%d" % n, "label": "%d m" % n, "primary": piece_len == n, "enabled": true, "kind": "seg",
+						"rect": Rect2(seg_rect.position.x + 2 + k * pw, y + 2, pw, bh - 4)})
+				continue
+			buttons.append({"id": l[0], "label": l[1], "primary": l[2], "enabled": l[3], "rect": rects[i], "kind": l[4]})
 		y += bh + gap
 	# zoom controls in the board's top-right corner
-	var zs := 46.0
-	var zx := board_rect.end.x - zs - 8
-	var zy := board_rect.position.y + 8
+	var zs := GTUI.target()
+	var zx := board_rect.end.x - zs - gap
+	var zy := board_rect.position.y + gap
 	buttons.append({"id": "zoom_in", "label": "+", "primary": false, "enabled": zoom < ZOOM_MAX - 0.01, "rect": Rect2(zx, zy, zs, zs), "kind": "zoom"})
-	buttons.append({"id": "zoom_out", "label": "-", "primary": false, "enabled": zoom > 1.01, "rect": Rect2(zx, zy + zs + 6, zs, zs), "kind": "zoom"})
+	buttons.append({"id": "zoom_out", "label": "-", "primary": false, "enabled": zoom > 1.01, "rect": Rect2(zx, zy + zs + gap, zs, zs), "kind": "zoom"})
 	if phase == Phase.BUILD:
-		buttons.append({"id": "lock", "label": "LOCK", "primary": auto_lock, "enabled": true, "rect": Rect2(zx - 14, zy + (zs + 6) * 2, zs + 14, zs), "kind": "zoom"})
+		var lw := GTUI.text_width("Lock", GTUI.FS_LABEL, true) + GTUI.dp(GTUI.SP_L) * 2
+		buttons.append({"id": "lock", "label": "Lock", "primary": auto_lock, "enabled": true, "rect": Rect2(board_rect.end.x - lw - gap, zy + (zs + gap) * 2, lw, zs), "kind": "zoom"})
 
 
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
+	GTUI.begin()
 	if buttons.is_empty():
 		_layout()
 	_draw_board()
@@ -1543,32 +1513,36 @@ func _draw() -> void:
 	_draw_header()
 	_draw_seismo()
 	_draw_panel()
-	_draw_help_button()
+	if not (tut_open or dev_open or archive_open):
+		for b in buttons:
+			if b.get("kind", "") != "row":
+				_draw_button(b)
+		if seg_rect.has_area():
+			var labels: Array = []
+			var sel := -1
+			for k in PIECE_LENS.size():
+				labels.append("%d m" % PIECE_LENS[k])
+				if piece_len == PIECE_LENS[k]:
+					sel = k
+			GTUI.segmented(self, "len", seg_rect, labels, sel if not erasing else -1, not erasing)
+	if loupe_active():
+		_draw_loupe()
+	if toast_t > 0.0 and toast != "":
+		GTUI.toast(self, toast, GTUI.toast_alpha(toast_t, 2.6), board_rect.end.y - GTUI.dp(GTUI.SP_M))
 	if tut_open and not dev_open:
 		_draw_tutorial()
 	if archive_open and not dev_open:
 		_draw_archive()
 	if dev_open:
-		var vs := get_viewport_rect().size
-		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.72))
-		_text_c("Dev menu", Vector2(vs.x / 2.0, vs.y / 2.0 - 172), 32, C_ACCENT)
-		_text_c("Reset saved progress for #%d (%s)" % [quake_no, date], Vector2(vs.x / 2.0, vs.y / 2.0 - 136), 20, C_MUTED)
-	for b in buttons:
-		if b.get("kind", "") != "row":
-			_draw_button(b)
-	if loupe_active():
-		_draw_loupe()
-	if toast_t > 0.0 and toast != "":
-		var a := clampf(toast_t * 2.0, 0.0, 1.0)
-		var vs := get_viewport_rect().size
-		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 40
-		var ty := board_rect.position.y + 12
-		var r := Rect2((vs.x - tw) / 2.0, ty, tw, 46)
-		_box(r, Color(0.08, 0.07, 0.06, 0.94 * a), 23, Color(C_ACCENT, 0.6 * a))
-		_text_c(toast, r.get_center() + Vector2(0, 8), 22, Color(C_INK, a))
+		var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
+		var c := GTUI.modal(self, card, "Dev menu")
+		GTUI.text(self, c.position, "Reset saved progress for #%d (%s)" % [quake_no, date], GTUI.FS_LABEL, C_MUTED)
+	if tut_open or dev_open or archive_open:
+		for b in buttons:
+			if b.get("kind", "") != "row":
+				_draw_button(b)
 
 
-## Cover anything drawn outside the board (the zoomed site) with the page background.
 func _mask_outside_board() -> void:
 	var vs := get_viewport_rect().size
 	var r := board_rect
@@ -1576,36 +1550,37 @@ func _mask_outside_board() -> void:
 	draw_rect(Rect2(0, r.end.y, vs.x, vs.y - r.end.y), C_BG)
 	draw_rect(Rect2(0, r.position.y, r.position.x, r.size.y), C_BG)
 	draw_rect(Rect2(r.end.x, r.position.y, vs.x - r.end.x, r.size.y), C_BG)
-	_box(r.grow(2), Color(0, 0, 0, 0), 12, Color(C_INK, 0.08))
+	GTUI.box(self, r, Color(0, 0, 0, 0), GTUI.R_PANEL, Color(C_INK, 0.08))
 
 
 func _draw_header() -> void:
 	var r := head_rect
-	var title_sz := _title_size()
-	draw_string(font, r.position + Vector2(0, 46), "Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_sz, C_INK)
-	draw_string(font, r.position + Vector2(0, 80), "#%d · %s" % [quake_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, 22, C_MUTED if date == today else C_ACCENT)
+	var th := GTUI.target()
+	var title_px := GTUI.fs(GTUI.FS_HEADING)
+	var tw := font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px).x
+	title_rect = Rect2(r.position, Vector2(tw, th))
+	draw_string(font, Vector2(r.position.x, r.position.y + (th + font.get_ascent(title_px) - font.get_descent(title_px)) / 2.0), "Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px, C_INK)
+	var icons := GTUI.icon_row(r.end.x, r.position.y, ["calendar", "help"])
+	help_rect = icons["help"]
+	cal_rect = icons["calendar"]
+	GTUI.icon_button(self, "help", help_rect, "help")
+	GTUI.icon_button(self, "calendar", cal_rect, "calendar", phase != Phase.RUN)
+	var y2 := r.position.y + th + GTUI.dp(GTUI.SP_S)
+	GTUI.text_in(self, Rect2(r.position.x, y2, r.size.x * 0.6, th), "#%d · %s" % [quake_no, _short_date(date)], GTUI.FS_LABEL, C_MUTED if date == today else C_ACCENT, -1)
 	var st := _stat()
 	var label: String = st[0]
-	var big: String = st[1]
-	var col := C_ACCENT
-	label = label.to_upper()
-	var lw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-	draw_string(font, Vector2(r.end.x - lw, r.position.y + 14), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, C_MUTED)
-	var bw := font.get_string_size(big, HORIZONTAL_ALIGNMENT_LEFT, -1, 44).x
-	draw_string(font, Vector2(r.end.x - bw, r.position.y + 56), big, HORIZONTAL_ALIGNMENT_LEFT, -1, 44, col)
 	if phase == Phase.BUILD:
-		var sub := "of $%d" % budget
-		var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-		draw_string(font, Vector2(r.end.x - sw, r.position.y + 82), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, C_MUTED)
+		label = "left of $%d" % budget
+	GTUI.stat(self, Vector2(r.end.x, y2), label, st[1], 1, C_ACCENT)
 
 
-## Today's seismogram, with a playhead while the quake runs.
 func _draw_seismo() -> void:
 	var r := seis_rect
-	_box(r, C_PANEL, 10)
-	var label: String = "TODAY'S QUAKE  " + quake.describe()
-	draw_string(font, r.position + Vector2(12, 20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, C_MUTED)
-	var tr := Rect2(r.position + Vector2(10, 26), r.size - Vector2(20, 32))
+	GTUI.panel(self, r)
+	var pad := GTUI.dp(GTUI.SP_M)
+	var cap_h := GTUI.line_height(GTUI.FS_CAPTION)
+	GTUI.text_in(self, Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS), r.size.x - pad * 2, cap_h), "TODAY'S QUAKE  " + quake.describe(), GTUI.FS_CAPTION, C_MUTED, -1, true)
+	var tr := Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS) + cap_h, r.size.x - pad * 2, r.size.y - cap_h - GTUI.dp(GTUI.SP_S) - GTUI.dp(GTUI.SP_XS))
 	var mid := tr.get_center().y
 	draw_line(Vector2(tr.position.x, mid), Vector2(tr.end.x, mid), Color(1, 1, 1, 0.08), 1.0)
 	var tr_data: PackedFloat32Array = quake.trace
@@ -1635,8 +1610,7 @@ func _draw_seismo() -> void:
 		var hx := tr.position.x + head_frac * tr.size.x
 		draw_line(Vector2(hx, tr.position.y), Vector2(hx, tr.end.y), C_INK, 2.0)
 		var status := "settling…" if qt < 0.0 else ("%.1fs" % minf(qt, quake.duration) if qt < quake.duration else "aftershock check…")
-		var sw := font.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-		draw_string(font, Vector2(r.end.x - sw - 12, r.position.y + 20), status, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, C_INK)
+		GTUI.text_in(self, Rect2(r.position.x + pad, r.position.y + GTUI.dp(GTUI.SP_XS), r.size.x - pad * 2, cap_h), status, GTUI.FS_CAPTION, C_INK, 1, true)
 
 
 func _draw_board() -> void:
@@ -1881,7 +1855,7 @@ func _draw_end_state() -> void:
 
 func _draw_panel() -> void:
 	var r := text_rect
-	var lines: Array = []
+	var lines: Array = []   # [text, size, color, bold]
 	match phase:
 		Phase.BUILD:
 			var hint := "Drag a line from an anchor or joint to any dot — it's split into equal pieces up to the chosen length. Use Erase to remove pieces."
@@ -1889,44 +1863,41 @@ func _draw_panel() -> void:
 				hint = "Erasing: tap or swipe across pieces to remove them. Tap Erase again to build."
 			elif selected.x >= 0:
 				hint = "Tap a lit dot to build a line to it from the selected joint. Tap the joint again to deselect."
-			lines.append([hint, 21, C_INK])
+			lines.append([hint, GTUI.FS_BODY, C_INK, false])
 			lines.append(["Built %d m · %d beams · try %d of %d%s" % [int(built_height()), design.size(), tries.size() + 1, MAX_TRIES,
-				("  ·  " + _tries_line()) if not tries.is_empty() else ""], 19, C_MUTED])
+				("  ·  " + _tries_line()) if not tries.is_empty() else ""], GTUI.FS_LABEL, C_MUTED, false])
 		Phase.RUN:
 			var qt: float = sim.quake_time()
 			var msg := "Settling under its own weight…"
 			if qt >= 0.0 and qt < quake.duration:
-				msg = "SHAKING — %d%% intensity" % int(round(quake.intensity(qt) * 100))
+				msg = "Shaking — %d%% intensity" % int(round(quake.intensity(qt) * 100))
 			elif qt >= quake.duration:
 				msg = "The ground is still. Checking what's left…"
-			lines.append([msg, 26, C_INK if qt < 0.0 else C_ACCENT])
-			lines.append(["%d of %d beams snapped" % [sim.broken_count(), sim.m], 21, C_MUTED])
+			lines.append([msg, GTUI.FS_TITLE, C_INK if qt < 0.0 else C_ACCENT, true])
+			lines.append(["%d of %d beams snapped" % [sim.broken_count(), sim.m], GTUI.FS_BODY, C_MUTED, false])
 		Phase.RESULT:
 			var t: Dictionary = tries[-1]
-			lines.append(["Still standing: %s" % fmt_m(int(t.score)), 30, C_OK if int(t.score) > 0 else C_DANGER])
-			lines.append(["Built %s · %d of %d beams snapped" % [fmt_m(int(t.built)), int(t.broken), int(t.beams)], 20, C_MUTED])
-			lines.append([_tries_line() + "  ·  tap the site to rebuild", 19, C_MUTED])
+			lines.append(["Still standing: %s" % fmt_m(int(t.score)), GTUI.FS_TITLE, C_OK if int(t.score) > 0 else C_DANGER, true])
+			lines.append(["Built %s · %d of %d beams snapped" % [fmt_m(int(t.built)), int(t.broken), int(t.beams)], GTUI.FS_BODY, C_MUTED, false])
+			lines.append([_tries_line() + "  ·  tap the site to rebuild", GTUI.FS_LABEL, C_MUTED, false])
 		Phase.FINAL:
 			var bi := best_index()
 			if bi >= 0:
 				var b: Dictionary = tries[bi]
-				lines.append(["Best: %s still standing" % fmt_m(int(b.score)), 30, C_OK])
-				lines.append(["%s  ·  built %s, %d/%d beams snapped" % [_tries_line(), fmt_m(int(b.built)), int(b.broken), int(b.beams)], 19, C_MUTED])
+				lines.append(["Best: %s still standing" % fmt_m(int(b.score)), GTUI.FS_TITLE, C_OK, true])
+				lines.append(["%s  ·  built %s, %d/%d beams snapped" % [_tries_line(), fmt_m(int(b.built)), int(b.broken), int(b.beams)], GTUI.FS_LABEL, C_MUTED, false])
 			if date == today:
-				lines.append(["Next quake in " + _countdown(), 19, C_MUTED])
+				lines.append(["Next quake in " + _countdown(), GTUI.FS_LABEL, C_MUTED, false])
 			else:
-				lines.append(["Today's quake is waiting.", 19, C_MUTED])
+				lines.append(["Today's quake is waiting.", GTUI.FS_LABEL, C_MUTED, false])
 	if target_score > 0 and phase != Phase.RUN:
 		var beat := best_score() > target_score
-		lines.append([("You beat %s!" if beat else "Height to beat: %s") % fmt_m(target_score), 21, C_ACCENT])
-	var y := r.position.y + 2
+		lines.append([("You beat %s!" if beat else "Height to beat: %s") % fmt_m(target_score), GTUI.FS_BODY, C_ACCENT, true])
+	var y := r.position.y
 	for l in lines:
-		var sz: int = l[1]
-		var h := font.get_multiline_string_size(l[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x, sz).y
-		if y + h > r.end.y + 4:
+		if GTUI.paragraph(self, r.position.x, y, r.size.x, l[0], l[1], l[2], l[3], false) > r.end.y + 4:
 			break
-		draw_multiline_string(font, Vector2(r.position.x, y + font.get_ascent(sz)), l[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x, sz, -1, l[2])
-		y += h + 6.0
+		y = GTUI.paragraph(self, r.position.x, y, r.size.x, l[0], l[1], l[2], l[3]) + GTUI.dp(GTUI.SP_XS)
 
 
 func _tries_line() -> String:
@@ -1937,57 +1908,39 @@ func _tries_line() -> String:
 
 
 func _countdown() -> String:
-	var t := Time.get_time_dict_from_system()
-	var left := 86400 - (int(t.hour) * 3600 + int(t.minute) * 60 + int(t.second))
-	return "%dh %02dm" % [left / 3600, (left % 3600) / 60]
+	return GTUI.countdown()
 
 
 func _draw_button(b: Dictionary) -> void:
-	if b.id == "lock":
-		var on: bool = b.primary
-		_box(b.rect, Color(C_DOT_REACH, 0.9) if on else Color(0.1, 0.09, 0.08, 0.8), 12, Color(C_INK, 0.25))
-		var ink := Color("1b1917") if on else C_MUTED
-		_text_c("LOCK", b.rect.get_center() + Vector2(0, -2), 14, ink)
-		_text_c("ON" if on else "OFF", b.rect.get_center() + Vector2(0, 15), 13, ink)
+	var id := String(b.id)
+	var kind := String(b.get("kind", ""))
+	if kind == "seg":
 		return
-	if b.get("kind", "") == "zoom":
-		_box(b.rect, Color(0.1, 0.09, 0.08, 0.8 if b.enabled else 0.4), 12, Color(C_INK, 0.25))
-		var c: Vector2 = b.rect.get_center()
-		var col := C_INK if b.enabled else Color(C_INK, 0.3)
-		draw_line(c - Vector2(9, 0), c + Vector2(9, 0), col, 3.0)
-		if b.id == "zoom_in":
-			draw_line(c - Vector2(0, 9), c + Vector2(0, 9), col, 3.0)
+	if kind == "zoom":
+		if id == "lock":
+			GTUI.chip(self, id, b.rect, "Lock", b.primary)
+		else:
+			GTUI.icon_button(self, id, b.rect, "plus" if id == "zoom_in" else "minus", b.enabled)
 		return
-	var toggle: bool = b.get("kind", "") == "toggle"
-	var col: Color = C_BTN_PRIMARY if b.primary else C_BTN
-	if toggle:
-		var mc: Color = C_WOOD if b.id == "wood" else (C_STEEL if b.id == "steel" else (C_DANGER if b.id == "erase" else C_DOT_REACH))
-		col = Color(mc, 0.95) if b.primary else C_BTN
-	if not b.enabled:
-		col = Color(col, 0.35)
-	_box(b.rect, col, 14, Color(C_INK, 0.7) if toggle and b.primary else Color(0, 0, 0, 0))
-	var sz := 26
-	while sz > 15 and font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > b.rect.size.x - 20:
-		sz -= 2
-	var ink := C_INK if b.enabled else Color(C_INK, 0.4)
-	if toggle and b.primary:
-		ink = Color("1b1917")
-	_text_c(b.label, b.rect.get_center() + Vector2(0, sz * 0.36), sz, ink)
-
-
-func _draw_help_button() -> void:
-	var title_sz := _title_size()
-	var tw := font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_sz).x
-	title_rect = Rect2(head_rect.position, Vector2(tw, 56))
-	help_rect = Rect2(head_rect.position + Vector2(tw + 14, 14), Vector2(38, 38))
-	draw_circle(help_rect.get_center(), 18, C_BTN)
-	draw_arc(help_rect.get_center(), 18, 0, TAU, 32, Color(C_INK, 0.35), 2.0)
-	_text_c("?", help_rect.get_center() + Vector2(0, 9), 24, C_INK)
-	cal_rect = Rect2(help_rect.end.x + 12, help_rect.position.y, 38, 38)
-	var a := 0.4 if phase == Phase.RUN else 1.0
-	draw_circle(cal_rect.get_center(), 18, Color(C_BTN, a))
-	draw_arc(cal_rect.get_center(), 18, 0, TAU, 32, Color(C_INK, 0.35 * a), 2.0)
-	_draw_calendar(cal_rect.get_center() + Vector2(0, 1), Color(C_INK, a))
+	if kind == "tool" or kind == "toggle":
+		GTUI.chip(self, id, b.rect, "" if kind == "tool" else String(b.label), b.primary, b.enabled)
+		if kind == "tool":
+			# material swatch + price, as in Daily Bridge's tool chips
+			var r: Rect2 = b.rect
+			var cy := r.get_center().y
+			var mat := Sim.Mat.WOOD if id == "wood" else Sim.Mat.STEEL
+			var sw := GTUI.dp(14)
+			var x := r.position.x + GTUI.dp(GTUI.SP_M)
+			draw_line(Vector2(x, cy), Vector2(x + sw, cy), C_WOOD if id == "wood" else C_STEEL, GTUI.dp(4))
+			var tx := x + sw + GTUI.dp(GTUI.SP_S)
+			var price := "$%d/m" % (1 if mat == Sim.Mat.WOOD else 3)
+			var tw := r.end.x - tx - GTUI.dp(GTUI.SP_S)
+			var txt := "%s · %s" % [String(b.label), price]
+			if GTUI.text_width(txt, GTUI.FS_LABEL, b.primary) > tw:
+				txt = String(b.label)
+			GTUI.text_in(self, Rect2(tx, r.position.y, tw, r.size.y), txt, GTUI.FS_LABEL, C_INK, -1, b.primary)
+		return
+	GTUI.button(self, id, b.rect, String(b.label), "primary" if b.primary else "secondary", b.enabled)
 
 
 ## [label, big value] for the header's right-hand stat.
@@ -2000,16 +1953,6 @@ func _stat() -> Array:
 		Phase.FINAL:
 			return ["best", "%.2f m" % (best_score() / 100.0)]
 	return ["budget left", "$%d" % floori(money_left() + 1e-6)]
-
-
-## Title font size that leaves room for the "?" button and the big stat on the right.
-func _title_size() -> int:
-	var stat_w := font.get_string_size("18.00 m", HORIZONTAL_ALIGNMENT_LEFT, -1, 44).x
-	var room := head_rect.size.x - stat_w - 16.0 - 56.0 - 52.0   # "?" and past-days buttons
-	var sz := 44
-	while sz > 24 and font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > room:
-		sz -= 2
-	return sz
 
 
 # ------------------------------------------------------------------ magnifier (loupe)
@@ -2146,53 +2089,37 @@ func _clip_seg(a: Vector2, b: Vector2, r: Rect2) -> Array:
 	return [a + d * t0, a + d * t1]
 
 
-
 func _draw_tutorial() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.03, 0.02, 0.02, 0.84))
-	var w := minf(vs.x - 32, 640.0)
-	var h := minf(vs.y - 32, 860.0)
-	var r := Rect2((vs.x - w) / 2.0, (vs.y - h) / 2.0, w, h)
-	_box(r, Color("2a2622"), 18, Color(C_ACCENT, 0.4))
-	var x := r.position.x + 28
-	var tw := r.size.x - 56
-	var y := r.position.y + 26
-	var bottom := r.end.y - 24 - 64 - 16
-	y = _para("How Earthquake Test works", x, y, tw, 32, C_INK) + 14
-	var rows := [
-		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
-		["beam", "Pick a max piece length (1, 2 or 3 m), then drag a line from an anchor or joint to any dot, at any angle. It's split into equal pieces no longer than that. Only the Erase tool removes pieces."],
-		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
-		["quake", "Start the quake: today's exact seismogram hits your build. Overloaded beams snap."],
-		["height", "Score = height still standing (attached to an anchor) when the shaking stops."],
-		["tries", "%d tries a day — best counts. Share your result; the link opens the same quake." % MAX_TRIES],
-	]
-	var icon := 30.0
-	for row in rows:
-		var ir := Rect2(x, y + 2, icon, icon)
+	var c := GTUI.modal(self, _tut_card(), "How Earthquake Test works", "tut_x")
+	var x := c.position.x
+	var tw := c.size.x
+	var y := c.position.y
+	var bottom := c.end.y - GTUI.target() - GTUI.dp(GTUI.SP_M)
+	var icon := GTUI.dp(20)
+	var k := icon / 30.0   # icon art below was drawn in a 30 px box
+	for row in _tut_rows():
+		var ir := Rect2(x, y + (GTUI.line_height(GTUI.FS_BODY) - icon) / 2.0, icon, icon)
+		var p := ir.position
 		match row[0]:
 			"anchor":
-				draw_colored_polygon(PackedVector2Array([ir.position + Vector2(3, 26), ir.position + Vector2(27, 26), ir.position + Vector2(15, 4)]), C_ANCHOR)
+				draw_colored_polygon(PackedVector2Array([p + Vector2(3, 26) * k, p + Vector2(27, 26) * k, p + Vector2(15, 4) * k]), C_ANCHOR)
 			"beam":
-				_draw_beam(ir.position + Vector2(3, 26), ir.position + Vector2(27, 4), Sim.Mat.WOOD)
+				_draw_beam(p + Vector2(3, 26) * k, p + Vector2(27, 4) * k, Sim.Mat.WOOD)
 			"steel":
-				_draw_beam(ir.position + Vector2(3, 26), ir.position + Vector2(27, 4), Sim.Mat.STEEL)
+				_draw_beam(p + Vector2(3, 26) * k, p + Vector2(27, 4) * k, Sim.Mat.STEEL)
 			"quake":
 				var pts := PackedVector2Array()
-				for k in 9:
-					pts.append(ir.position + Vector2(k * 3.4, 15 + (12 if k % 2 == 0 else -12) * (1.0 - absf(k - 4) / 5.0)))
-				draw_polyline(pts, C_ACCENT, 2.5)
+				for j in 9:
+					pts.append(p + Vector2(j * 3.4, 15 + (12 if j % 2 == 0 else -12) * (1.0 - absf(j - 4) / 5.0)) * k)
+				draw_polyline(pts, C_ACCENT, 2.0)
 			"height":
-				_dashed(ir.position + Vector2(0, 8), ir.position + Vector2(30, 8), C_OK)
-				draw_line(ir.position + Vector2(15, 28), ir.position + Vector2(15, 10), C_OK, 3.0)
+				_dashed(p + Vector2(0, 8) * k, p + Vector2(30, 8) * k, C_OK)
+				draw_line(p + Vector2(15, 28) * k, p + Vector2(15, 10) * k, C_OK, 2.5)
 			"tries":
-				_text_c(str(MAX_TRIES), ir.get_center() + Vector2(0, 9), 26, C_ACCENT)
-		var ny := _para(row[1], x + icon + 16, y, tw - icon - 16, 21, C_INK)
-		y = maxf(ny, y + icon + 4) + 14
-		if y > bottom:
-			break
-	if y + 60 < bottom:
-		_para("While you draw, a magnifier above your finger shows where the line will land, and LOCK (on by default) snaps it onto nearby joints. Pinch or use + and - to zoom.", x, y + 6, tw, 18, C_MUTED)
+				GTUI.text_in(self, ir, str(MAX_TRIES), GTUI.FS_BODY, C_ACCENT, 0, true)
+		y = GTUI.paragraph(self, x + icon + GTUI.dp(GTUI.SP_M), y, tw - icon - GTUI.dp(GTUI.SP_M), row[1], GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
+	if GTUI.paragraph(self, x, y, tw, TUT_NOTE, GTUI.FS_LABEL, C_MUTED, false, false) < bottom:
+		GTUI.paragraph(self, x, y + GTUI.dp(GTUI.SP_XS), tw, TUT_NOTE, GTUI.FS_LABEL, C_MUTED)
 
 
 func _para(text: String, x: float, y: float, w: float, size: int, col: Color) -> float:
@@ -2246,3 +2173,72 @@ func get_agent_state() -> Dictionary:
 		"archive_open": archive_open, "archive_page": archive_page, "today": today,
 		"share": share_text() if not tries.is_empty() else "",
 	}
+
+
+func _head_h() -> float:
+	return GTUI.target() + GTUI.dp(GTUI.SP_S) + maxf(GTUI.target(), GTUI.line_height(GTUI.FS_CAPTION) + GTUI.line_height(GTUI.FS_HEADING))
+
+
+func _panel_text_h() -> float:
+	return GTUI.line_height(GTUI.FS_BODY) * 2 + GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_S)
+
+
+## Panel button rows for the current phase: [[id, label, primary/on, enabled, kind], ...] per row.
+func _rows(width: float) -> Array:
+	var rows: Array = []
+	match phase:
+		Phase.BUILD:
+			var mats := [["wood", "Wood", build_mat == Sim.Mat.WOOD, true, "tool"], ["steel", "Steel", build_mat == Sim.Mat.STEEL, true, "tool"]]
+			var seg := [["len", "", false, true, "seg"]]
+			if width >= GTUI.dp(340):
+				rows.append(mats + seg)
+			else:
+				rows.append(mats)
+				rows.append(seg)
+			rows.append([["clear", "Clear", false, not design.is_empty(), "button"], ["erase", "Erase", erasing, not design.is_empty() or erasing, "toggle"],
+				["undo", "Undo", false, not history.is_empty(), "button"], ["run", "Start quake", true, not design.is_empty(), "button"]])
+		Phase.RUN:
+			rows.append([["skip", "Fast-forward" if not fast else "Fast-forwarding…", false, not fast, "button"]])
+		Phase.RESULT:
+			rows.append([["finish", "Finish", false, true, "button"], ["again", "Rebuild (%d left)" % (MAX_TRIES - tries.size()), true, true, "button"]])
+		Phase.FINAL:
+			var row := []
+			if date != today:
+				row.append(["today", "Play today's", false, true, "button"])
+			row.append(["share", "Share result", true, true, "button"])
+			rows.append(row)
+	return rows
+
+
+func _dev_card() -> Rect2:
+	var card := GTUI.modal_rect(self, 420, GTUI.modal_height(GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L) + GTUI.target() * 3 + GTUI.dp(GTUI.SP_S) * 2, true, false))
+	var c := GTUI.modal_content(card)
+	c.position.y += GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_L)
+	return c
+
+
+func _tut_rows() -> Array:
+	return [
+		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
+		["beam", "Pick a max piece length (1, 2 or 3 m), then drag a line from an anchor or joint to any dot, at any angle. It's split into equal pieces no longer than that. Only the Erase tool removes pieces."],
+		["steel", "Wood is cheap and light. Steel costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
+		["quake", "Start the quake: today's exact seismogram hits your build. Overloaded beams snap."],
+		["height", "Score = height still standing (attached to an anchor) when the shaking stops."],
+		["tries", "%d tries a day — best counts. Share your result; the link opens the same quake." % MAX_TRIES],
+	]
+
+const TUT_NOTE := "While you draw, a magnifier above your finger shows where the line will land, and Lock (on by default) snaps it onto nearby joints. Pinch or use + and - to zoom."
+
+
+func _tut_content_h(w: float) -> float:
+	var icon := GTUI.dp(20)
+	var h := 0.0
+	for row in _tut_rows():
+		h = GTUI.paragraph(self, 0, h, w - icon - GTUI.dp(GTUI.SP_M), row[1], GTUI.FS_BODY, C_INK, false, false) + GTUI.dp(GTUI.SP_S)
+	return GTUI.paragraph(self, 0, h + GTUI.dp(GTUI.SP_XS), w, TUT_NOTE, GTUI.FS_LABEL, C_MUTED, false, false)
+
+
+func _tut_card() -> Rect2:
+	var vs := get_viewport_rect().size
+	var w := minf(GTUI.dp(540), vs.x - GTUI.dp(GTUI.SP_L) * 2) - GTUI.dp(GTUI.SP_XL) * 2
+	return GTUI.modal_rect(self, 540, GTUI.modal_height(_tut_content_h(w) + GTUI.dp(GTUI.SP_S)))

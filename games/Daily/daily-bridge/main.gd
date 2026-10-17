@@ -132,11 +132,17 @@ var dev_sandbox := false              # after dev day-jumps / instant results: d
 var dev_taps := 0
 var dev_last_tap := -10.0
 var font: Font
-var ui := 1.0                         # UI scale: bigger on narrow (phone) screens
+var ui := 1.0                         # = GTUI.S (canvas px per dp), set in _layout()
+var seg_rect := Rect2()               # piece-length segmented control
 
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_SKY_LOW, "surface": Color("f7f9fb"), "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": Color(C_INK, 0.14), "accent": C_BTN_PRIMARY, "on_accent": Color.WHITE,
+		"success": C_GOOD, "danger": C_BAD, "focus": C_BTN_ON, "scrim": Color(0.05, 0.08, 0.12, 0.5),
+	})
 	_add_key_action("go", [KEY_ENTER, KEY_SPACE])
 	_add_key_action("undo", [KEY_Z, KEY_BACKSPACE])
 	_add_key_action("tool_road", [KEY_1])
@@ -901,63 +907,39 @@ func _short_date(d: String) -> String:
 
 
 func _archive_row_h() -> float:
-	var vs := get_viewport_rect().size
-	return clampf((vs.y - 40.0 - 170.0 * ui) / ARCHIVE_ROWS, 44.0 * ui, 60.0 * ui)
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24.0, 560.0 * ui)
-	var h := 70.0 * ui + ARCHIVE_ROWS * _archive_row_h() + 80.0 * ui
-	return Rect2((vs.x - w) * 0.5, maxf(12.0, (vs.y - h) * 0.5), w, h)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h() - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 480, GTUI.modal_height(content_h))
 
 
 func _archive_buttons() -> void:
-	var c := _archive_card()
+	var card := _archive_card()
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h()
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
-		_btn("day_" + String(days[i]), Rect2(c.position.x + 16, c.position.y + 70 * ui + i * rh, c.size.x - 32, rh - 8), "", false, true, false, "row")
-	var bw := (c.size.x - 32 - 20) / 3.0
-	var by := c.end.y - 66 * ui
-	_btn("arch_newer", Rect2(c.position.x + 16, by, bw, 50 * ui), "< Newer", false, archive_page > 0)
-	_btn("arch_close", Rect2(c.position.x + 26 + bw, by, bw, 50 * ui), "Close", true)
-	_btn("arch_older", Rect2(c.position.x + 36 + bw * 2, by, bw, 50 * ui), "Older >", false, archive_page < archive_pages() - 1)
+		_btn("day_" + String(days[i]), Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target()), "", false, true, false, "row")
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	_btn("arch_newer", pr[0], "Newer", false, archive_page > 0)
+	_btn("arch_older", pr[1], "Older", false, archive_page < archive_pages() - 1)
+	_btn("arch_close", GTUI.modal_close_rect(card), "", false, true, false, "modal")
 
 
 func _draw_archive() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.55))
-	var c := _archive_card()
-	_box(c, Color(0.96, 0.97, 0.98), 16)
-	_text("Past bridges", c.position + Vector2(20, 44 * ui), 24, C_INK)
-	_text("Page %d of %d" % [archive_page + 1, archive_pages()], Vector2(c.position.x, c.position.y + 42 * ui), 14, C_MUTED,
-		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 20)
+	var c := GTUI.modal(self, _archive_card(), "Past bridges", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		if b.kind == "row":
 			var d := String(b.id).substr(4)
-			var r: Rect2 = b.rect
-			_box(r, C_BTN, 10, C_BTN_PRIMARY if d == date and not dev_sandbox else Color(0, 0, 0, 0))
-			var mid := r.get_center().y + 6 * ui
-			_text("#%d" % day_number(d), Vector2(r.position.x + 14, mid), 17, C_BTN_PRIMARY)
-			_text("Today" if d == today else _short_date(d), Vector2(r.position.x + 14 + 62 * ui, mid), 17, C_INK)
 			var res := String(archive_results.get(d, ""))
-			_text(res if res != "" else "Not played", Vector2(r.position.x, mid), 16 if res != "" else 14,
-				C_GOOD if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 14)
-		else:
+			GTUI.list_row(self, String(b.id), b.rect, "#%d" % day_number(d), "Today" if d == today else _short_date(d),
+				res if res != "" else "Not played", d == date and not dev_sandbox, C_GOOD if res != "" else Color(0, 0, 0, 0))
+		elif b.kind != "modal":
 			_draw_button(b)
-
-
-## Calendar glyph for the past-days button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var k := ui
-	var r := Rect2(c.x - 9 * k, c.y - 8 * k, 18 * k, 17 * k)
-	draw_rect(r, col_, false, 1.8 * k)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5 * k), col_)
-	draw_line(Vector2(c.x - 4.5 * k, c.y - 11 * k), Vector2(c.x - 4.5 * k, c.y - 6 * k), col_, 1.8 * k)
-	draw_line(Vector2(c.x + 4.5 * k, c.y - 11 * k), Vector2(c.x + 4.5 * k, c.y - 6 * k), col_, 1.8 * k)
-	for i in 3:
-		draw_rect(Rect2(c.x + (-6.5 + i * 4.5) * k, c.y + 1.5 * k, 3 * k, 3 * k), col_)
 
 
 func share_text() -> String:
@@ -1179,8 +1161,9 @@ func _process(delta: float) -> void:
 		_advance_ideal(8000)
 	if Input.is_action_just_pressed("dev") and dev_mode:
 		dev_open = not dev_open
-	if not tut_open and not dev_open:
-		if Input.is_action_just_pressed("go"):
+	var keys_free := GTUI.focused_id() == ""   # Enter/Space press the focused control instead
+	if not tut_open and not dev_open and not archive_open:
+		if keys_free and Input.is_action_just_pressed("go"):
 			match phase:
 				Phase.BUILD: go()
 				Phase.RUN: fast = not fast
@@ -1200,7 +1183,7 @@ func _process(delta: float) -> void:
 				set_tool(Tool.WOOD)
 			if Input.is_action_just_pressed("tool_erase"):
 				set_tool(Tool.ERASE)
-	elif tut_open and Input.is_action_just_pressed("go"):
+	elif tut_open and keys_free and Input.is_action_just_pressed("go"):
 		close_tutorial()
 	_layout()
 	queue_redraw()
@@ -1346,6 +1329,20 @@ func _beam_at(p: Vector2) -> int:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		return
+	if gt.has("cancel"):
+		if dev_open:
+			dev_open = false
+		elif tut_open:
+			close_tutorial()
+		elif archive_open:
+			archive_open = false
+		_build_buttons()
+		return
 	if _camera_input(ev):
 		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
@@ -1557,7 +1554,7 @@ func _do(id: String) -> void:
 				zoom_reset()
 			else:
 				zoom_at(view_rect.get_center(), 1.0 / 1.5)
-		"tut_close": close_tutorial()
+		"tut_close", "tut_x": close_tutorial()
 		"dev_prev": dev_set_day(shift_date(date, -1))
 		"dev_next": dev_set_day(shift_date(date, 1))
 		"dev_rand": dev_random_day()
@@ -1578,15 +1575,18 @@ func _btn(id: String, r: Rect2, label: String, primary := false, enabled := true
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	ui = clampf(1.0 + (860.0 - vs.x) / 300.0, 1.0, 1.5)
-	var m := 12.0
-	var head_h := 64.0 * ui
+	GTUI.refresh_scale(self)
+	ui = GTUI.S
+	var m := GTUI.dp(GTUI.SP_S)
+	var th := GTUI.target()
+	var head_h := GTUI.dp(GTUI.SP_S) * 2 + maxf(th, GTUI.line_height(GTUI.FS_HEADING) + GTUI.line_height(GTUI.FS_CAPTION) - GTUI.dp(GTUI.SP_XS))
 	head_rect = Rect2(m, m, vs.x - m * 2, head_h)
-	help_rect = Rect2(head_rect.end.x - 46 * ui, head_rect.position.y + (head_h - 40 * ui) * 0.5, 40 * ui, 40 * ui)
-	cal_rect = Rect2(help_rect.position.x - 48 * ui, help_rect.position.y, 40 * ui, 40 * ui)
-	var panel_h := 128.0 * ui
+	var icons := GTUI.icon_row(head_rect.end.x - GTUI.dp(GTUI.SP_S), head_rect.position.y + (head_h - th) / 2.0, ["calendar", "help"])
+	help_rect = icons["help"]
+	cal_rect = icons["calendar"]
+	var panel_h := th * 2 + GTUI.dp(GTUI.SP_S) * 3
 	panel_rect = Rect2(m, vs.y - panel_h - m, vs.x - m * 2, panel_h)
-	view_rect = Rect2(0, head_rect.end.y + 4, vs.x, panel_rect.position.y - head_rect.end.y - 50 * ui)
+	view_rect = Rect2(0, head_rect.end.y + 4, vs.x, panel_rect.position.y - head_rect.end.y - GTUI.dp(GTUI.SP_S) - _budget_h() - GTUI.dp(GTUI.SP_S))
 	var wsize := _world_max() - _world_min()
 	fit_ppm = minf(view_rect.size.x / wsize.x, view_rect.size.y / wsize.y)
 	if zoom <= 1.0001:
@@ -1594,95 +1594,99 @@ func _layout() -> void:
 	ppm = fit_ppm * zoom
 	_clamp_camera()
 	_apply_camera()
-	var ds := 34.0 * ui
+	var ds := GTUI.dp(28)
 	dev_rect = Rect2(view_rect.position.x + 8, view_rect.end.y - ds - 8, ds * 1.6, ds)
 	_build_buttons()
 
 
 func _build_buttons() -> void:
 	buttons.clear()
+	seg_rect = Rect2()
+	var th := GTUI.target()
+	var sp := GTUI.dp(GTUI.SP_S)
 	if tut_open:
-		var card := _tut_card()
-		_btn("tut_close", Rect2(card.position.x + 24, card.end.y - 70 * ui, card.size.x - 48, 50 * ui), "Start building", true)
+		var c := GTUI.modal_content(_tut_card())
+		_btn("tut_close", GTUI.modal_buttons_rect(c), "Start building", true)
+		_btn("tut_x", GTUI.modal_close_rect(_tut_card()), "", false, true, false, "modal")
 		return
 	if archive_open and not dev_open:
 		_archive_buttons()
 		return
 	if dev_open:
-		var card := _dev_card()
-		var y := card.position.y + 92 * ui
-		var bw := (card.size.x - 50) / 2.0
+		var c := GTUI.modal_content(_dev_card())
+		var y := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) * 2 + sp
 		var rows := [["dev_prev", "< Prev day", "dev_next", "Next day >"], ["dev_today", "Today", "dev_rand", "Random day"],
 			["dev_win", "Instant win", "dev_lose", "Instant lose"], ["dev_ref", "Load ideal bridge", "dev_reset", "Reset this day"],
 			["dev_all", "Reset everything", "dev_close", "Close"]]
 		for row in rows:
-			_btn(row[0], Rect2(card.position.x + 20, y, bw, 42 * ui), row[1])
-			_btn(row[2], Rect2(card.position.x + 30 + bw, y, bw, 42 * ui), row[3], row[2] == "dev_close")
-			y += 50 * ui
+			var rr := GTUI.row(Rect2(c.position.x, y, c.size.x, th), 2)
+			_btn(row[0], rr[0], row[1])
+			_btn(row[2], rr[1], row[3], row[2] == "dev_close")
+			y += th + sp
 		return
 	# zoom controls in the view's top-right corner
-	var zs := 40.0 * ui
-	var zx := view_rect.end.x - zs - 10
-	var zy := view_rect.position.y + 8
-	_btn("zoom_in", Rect2(zx, zy, zs, zs), "+", false, zoom < ZOOM_MAX - 0.01, false, "zoom")
-	_btn("zoom_out", Rect2(zx, zy + zs + 6, zs, zs), "−", false, zoom > 1.01, false, "zoom")
+	var zx := view_rect.end.x - th - sp
+	var zy := view_rect.position.y + GTUI.dp(GTUI.SP_XL) + _chip_h()
+	_btn("zoom_in", Rect2(zx, zy, th, th), "+", false, zoom < ZOOM_MAX - 0.01, false, "zoom")
+	_btn("zoom_out", Rect2(zx, zy + th + sp, th, th), "−", false, zoom > 1.01, false, "zoom")
 	if phase == Phase.BUILD:
-		_btn("lock", Rect2(zx - 14 * ui, zy + (zs + 6) * 2, zs + 14 * ui, zs), "LOCK", false, true, auto_lock, "zoom")
-	var r := panel_rect
-	var pad := 10.0
-	var row_h := (r.size.y - pad * 3) / 2.0
-	var y1 := r.position.y + pad
-	var y2 := y1 + row_h + pad
-	var x0 := r.position.x + pad
-	var w := r.size.x - pad * 2
+		var lw := GTUI.text_width("Lock", GTUI.FS_LABEL, true) + GTUI.dp(GTUI.SP_L) * 2
+		_btn("lock", Rect2(view_rect.end.x - lw - sp, zy + (th + sp) * 2, lw, th), "Lock", false, true, auto_lock, "zoom")
+	var r := panel_rect.grow(-sp)
+	var y1 := r.position.y
+	var y2 := r.end.y - th
+	var x0 := r.position.x
+	var w := r.size.x
 	match phase:
 		Phase.BUILD:
-			var bw := (w - pad * 3) / 4.0
-			_btn("road", Rect2(x0, y1, bw, row_h), "Road", false, true, tool == Tool.ROAD)
-			_btn("wood", Rect2(x0 + (bw + pad), y1, bw, row_h), "Wood", false, true, tool == Tool.WOOD)
-			_btn("erase", Rect2(x0 + (bw + pad) * 2, y1, bw, row_h), "Erase", false, true, tool == Tool.ERASE)
-			_btn("undo", Rect2(x0 + (bw + pad) * 3, y1, bw, row_h), "Undo", false, not history.is_empty())
-			var cw := w * 0.17
-			_btn("clear", Rect2(x0, y2, cw, row_h), "Clear", false, not design.is_empty())
-			var sx := x0 + cw + pad
-			var sw := w * 0.46
-			var gap_px := 4.0
-			var pw := (sw - gap_px * (PIECE_LENGTHS.size() - 1)) / PIECE_LENGTHS.size()
+			var top := GTUI.row(Rect2(x0, y1, w, th), 4)
+			_btn("road", top[0], "Road", false, true, tool == Tool.ROAD, "tool")
+			_btn("wood", top[1], "Wood", false, true, tool == Tool.WOOD, "tool")
+			_btn("erase", top[2], "Erase", false, true, tool == Tool.ERASE, "tool")
+			_btn("undo", top[3], "Undo", false, not history.is_empty())
+			var cw := GTUI.text_width("Clear", GTUI.FS_LABEL + 2, true) + GTUI.dp(GTUI.SP_L) * 2
+			_btn("clear", Rect2(x0, y2, cw, th), "Clear", false, not design.is_empty())
+			var sx := x0 + cw + sp
+			var sw := maxf(GTUI.target() * PIECE_LENGTHS.size() + 4, (w - cw - sp * 2) * 0.62)
+			seg_rect = Rect2(sx, y2, sw, th)
+			var pw := (sw - 4) / PIECE_LENGTHS.size()
 			for i in PIECE_LENGTHS.size():
 				var n: int = PIECE_LENGTHS[i]
-				_btn("len%d" % n, Rect2(sx + i * (pw + gap_px), y2, pw, row_h), "%d m" % n, false, tool != Tool.ERASE, piece_len == n)
-			var gx := sx + sw + pad
-			_btn("go", Rect2(gx, y2, x0 + w - gx, row_h), "Go!", true, can_go())
+				# hit areas for the segmented control drawn in _draw_panel()
+				_btn("len%d" % n, Rect2(sx + 2 + i * pw, y2 + 2, pw, th - 4), "%d m" % n, false, tool != Tool.ERASE, piece_len == n, "seg")
+			var gx := sx + sw + sp
+			_btn("go", Rect2(gx, y2, x0 + w - gx, th), "Go!", true, can_go())
 		Phase.RUN:
-			var hw := (w - pad) / 2.0
-			_btn("fast", Rect2(x0, y2, hw, row_h), "Speed: %s" % ("4x" if fast else "1x"), false, true, fast)
-			_btn("skip", Rect2(x0 + hw + pad, y2, hw, row_h), "Skip to end")
+			var rr := GTUI.row(Rect2(x0, y2, w, th), 2)
+			_btn("fast", rr[0], "Speed: %s" % ("4x" if fast else "1x"), false, true, fast, "toggle")
+			_btn("skip", rr[1], "Skip to end")
 		Phase.RESULT:
 			var t: Dictionary = tries.back()
-			var hw := (w - pad) / 2.0
+			var rr := GTUI.row(Rect2(x0, y2, w, th), 2, [1.0, 1.6])
 			if tries_left() > 0:
 				if t.crossed:
-					_btn("repair", Rect2(x0, y2, hw, row_h), "Build cheaper", false)
-					_btn("finish", Rect2(x0 + hw + pad, y2, hw, row_h), "Finish for today", true)
+					_btn("repair", rr[0], "Build cheaper", false)
+					_btn("finish", rr[1], "Finish for today", true)
 				else:
-					_btn("replay", Rect2(x0, y2, hw * 0.7, row_h), "Replay")
-					_btn("repair", Rect2(x0 + hw * 0.7 + pad, y2, w - hw * 0.7 - pad, row_h), "Repair the bridge", true)
+					_btn("replay", rr[0], "Replay")
+					_btn("repair", rr[1], "Repair the bridge", true)
 			else:
-				_btn("replay", Rect2(x0, y2, hw * 0.7, row_h), "Replay")
-				_btn("finish", Rect2(x0 + hw * 0.7 + pad, y2, w - hw * 0.7 - pad, row_h), "See today's result", true)
+				_btn("replay", rr[0], "Replay")
+				_btn("finish", rr[1], "See today's result", true)
 		Phase.FINAL:
-			var tw := (w - pad * 2) / 3.0
+			var rr := GTUI.row(Rect2(x0, y2, w, th), 3)
 			if date != today and not dev_sandbox:
-				_btn("today", Rect2(x0, y2, tw, row_h), "Today's bridge")
+				_btn("today", rr[0], "Today's bridge")
 			else:
-				_btn("replay", Rect2(x0, y2, tw, row_h), "Replay", false, not tries.is_empty() or show_ideal)
-			_btn("ideal", Rect2(x0 + tw + pad, y2, tw, row_h), "Your bridge" if show_ideal else "Ideal bridge", false, true, show_ideal)
-			_btn("share", Rect2(x0 + (tw + pad) * 2, y2, tw, row_h), "Share", true)
+				_btn("replay", rr[0], "Replay", false, not tries.is_empty() or show_ideal)
+			_btn("ideal", rr[1], "Your bridge" if show_ideal else "Ideal bridge", false, true, show_ideal, "toggle")
+			_btn("share", rr[2], "Share", true)
 
 
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
+	GTUI.begin()
 	var vs := get_viewport_rect().size
 	_draw_backdrop(vs)
 	_draw_terrain()
@@ -1702,8 +1706,8 @@ func _draw() -> void:
 	if loupe_active():
 		_draw_loupe()
 	if dev_mode and not dev_open and not tut_open:
-		_box(dev_rect, Color(0.12, 0.16, 0.2, 0.7), 8)
-		_text_c("DEV", dev_rect.get_center(), 13, Color.WHITE)
+		GTUI.box(self, dev_rect, Color(0.12, 0.16, 0.2, 0.7), GTUI.R_CONTROL)
+		GTUI.text_in(self, dev_rect, "DEV", GTUI.FS_CAPTION, Color.WHITE)
 	if toast_t > 0.0 and toast != "":
 		_draw_toast()
 	if tut_open:
@@ -2127,14 +2131,16 @@ func _text_c(s: String, center: Vector2, size: int, col: Color) -> void:
 	draw_string(font, Vector2(center.x - w * 0.5, center.y + fs * 0.35), s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 
 
-## Wrapped text, vertically centred in r.
-func _para_c(s: String, r: Rect2, size: int, col: Color, max_lines := 2) -> void:
-	var fs := int(size * ui)
-	var lines := ceili(font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / maxf(1.0, r.size.x))
-	lines = clampi(lines, 1, max_lines)
-	var lh := fs * 1.25
-	var y := r.get_center().y - lh * lines * 0.5 + fs * 0.95
-	draw_multiline_string(font, Vector2(r.position.x, y), s, HORIZONTAL_ALIGNMENT_LEFT, r.size.x, fs, max_lines, col)
+## Up to two wrapped lines, vertically centred in r (shrinks to LABEL size if needed).
+func _para_c(s: String, r: Rect2, col: Color) -> void:
+	var size := GTUI.FS_BODY
+	if GTUI.wrap_lines(s, size, r.size.x, true).size() > 2:
+		size = GTUI.FS_LABEL
+	var lines := GTUI.wrap_lines(s, size, r.size.x, true)
+	var lh := GTUI.line_height(size)
+	var y := r.get_center().y - lh * mini(lines.size(), 2) / 2.0
+	for i in mini(lines.size(), 2):
+		GTUI.text_in(self, Rect2(r.position.x, y + i * lh, r.size.x, lh), lines[i], size, col, -1, true)
 
 
 func _level_line() -> String:
@@ -2149,37 +2155,35 @@ func _level_line() -> String:
 
 func _draw_header() -> void:
 	var r := head_rect
-	_box(r, C_PANEL, 14)
-	var pad := 14.0 * ui
-	_text("Daily Bridge", r.position + Vector2(pad, r.size.y * 0.47), 24, C_INK)
-	_text("#%d · %s" % [puzzle_no, date], r.position + Vector2(pad, r.size.y * 0.84), 14, C_MUTED)
-	var right := cal_rect.position.x - 12 * ui
-	_text("Attempts left: %d" % tries_left(), Vector2(r.position.x, r.position.y + r.size.y * 0.47), 16, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
-	if target_score > 0:
-		_text("Score to beat: %d" % target_score, Vector2(r.position.x, r.position.y + r.size.y * 0.84), 14, C_BTN_ON, HORIZONTAL_ALIGNMENT_RIGHT, right - r.position.x)
-	_box(help_rect, C_BTN, 20 * ui)
-	_text_c("?", help_rect.get_center(), 22, C_INK)
-	var cal_a := 0.4 if phase == Phase.RUN else 1.0
-	_box(cal_rect, Color(C_BTN, cal_a), 20 * ui)
-	_draw_calendar(cal_rect.get_center() + Vector2(0, 1), Color(C_INK, cal_a))
+	GTUI.panel(self, r)
+	var pad := GTUI.dp(GTUI.SP_M)
+	var lh_t := GTUI.line_height(GTUI.FS_HEADING)
+	var lh_m := GTUI.line_height(GTUI.FS_CAPTION)
+	var ty := r.position.y + (r.size.y - lh_t - lh_m + GTUI.dp(GTUI.SP_XS)) / 2.0
+	var meta := "#%d · %s" % [puzzle_no, _short_date(date)]
 	if date != today and not dev_sandbox:
-		var sub_w := font.get_string_size("#%d · %s" % [puzzle_no, date], HORIZONTAL_ALIGNMENT_LEFT, -1, int(14 * ui)).x
-		_text("PAST DAY", r.position + Vector2(pad + sub_w + 10 * ui, r.size.y * 0.84), 14, C_BTN_PRIMARY)
+		meta += " · past day"
+	meta += " · %d %s left" % [tries_left(), "try" if tries_left() == 1 else "tries"]
+	if target_score > 0:
+		meta += " · beat %d" % target_score
+	var tw := cal_rect.position.x - GTUI.dp(GTUI.SP_M) - r.position.x - pad
+	GTUI.text_in(self, Rect2(r.position.x + pad, ty, tw, lh_t), "Daily Bridge", GTUI.FS_HEADING, C_INK, -1, true)
+	GTUI.text_in(self, Rect2(r.position.x + pad, ty + lh_t - GTUI.dp(GTUI.SP_XS), tw, lh_m), meta, GTUI.FS_CAPTION, C_MUTED, -1)
+	GTUI.icon_button(self, "help", help_rect, "help")
+	GTUI.icon_button(self, "calendar", cal_rect, "calendar", phase != Phase.RUN)
 	# today's job, as a label in the sky
-	var info := _level_line()
-	var fs := int(15 * ui)
-	var w := font.get_string_size(info, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 20 * ui
-	var chip := Rect2(view_rect.position.x + 8, view_rect.position.y + 6, w, fs + 14 * ui)
-	_box(chip, Color(1, 1, 1, 0.7), 10)
-	_text(info, Vector2(chip.position.x + 10 * ui, chip.get_center().y + fs * 0.36), 15, C_INK)
+	var line := _level_line()
+	var w := GTUI.text_width(line, GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_M) * 2
+	var chip := Rect2(view_rect.position.x + GTUI.dp(GTUI.SP_S), view_rect.position.y + GTUI.dp(GTUI.SP_S), minf(w, view_rect.size.x - GTUI.dp(GTUI.SP_L)), _chip_h())
+	GTUI.box(self, chip, Color(1, 1, 1, 0.8), GTUI.R_CONTROL)
+	GTUI.text_in(self, chip.grow_individual(-GTUI.dp(GTUI.SP_M), 0, -GTUI.dp(GTUI.SP_M), 0), line, GTUI.FS_LABEL, C_INK, -1)
 
 
 func _draw_panel() -> void:
 	var r := panel_rect
-	_box(r, C_PANEL, 14)
-	var pad := 10.0
-	var row_h := (r.size.y - pad * 3) / 2.0
-	var line := Rect2(r.position.x + pad, r.position.y + pad, r.size.x - pad * 2, row_h)
+	GTUI.panel(self, r)
+	var sp := GTUI.dp(GTUI.SP_S)
+	var line := Rect2(r.position.x + sp, r.position.y + sp, r.size.x - sp * 2, GTUI.target())
 	match phase:
 		Phase.RUN:
 			_draw_budget(line, BridgeSim.design_cost(sim_design))
@@ -2188,39 +2192,49 @@ func _draw_panel() -> void:
 		Phase.FINAL:
 			_draw_final_line(line)
 		Phase.BUILD:
-			var br := Rect2(r.position.x, r.position.y - 42 * ui, r.size.x, 36 * ui)
-			_box(br, C_PANEL, 10)
-			_draw_budget(br.grow(-6), cost())
-	if archive_open:
+			var br := Rect2(r.position.x, r.position.y - sp - _budget_h(), r.size.x, _budget_h())
+			GTUI.panel(self, br)
+			_draw_budget(br.grow_individual(-sp, 0, -sp, 0), cost())
+	if archive_open or tut_open or dev_open:
 		return
+	if phase == Phase.BUILD and seg_rect.has_area():
+		var labels: Array = []
+		var sel := -1
+		var en := tool != Tool.ERASE
+		for i in PIECE_LENGTHS.size():
+			labels.append("%d m" % PIECE_LENGTHS[i])
+			if piece_len == PIECE_LENGTHS[i]:
+				sel = i
+		GTUI.segmented(self, "len", seg_rect, labels, sel if en else -1, en)
 	for b in buttons:
-		if b.kind != "zoom":
+		if b.kind != "zoom" and b.kind != "seg":
 			_draw_button(b)
 
 
 func _draw_budget(r: Rect2, used: int) -> void:
 	# label · bar (ideal marked) · projected score
+	var F := GTUI.FS_LABEL
 	var lbl := "Material %d · ideal %s" % [used, str(ideal) if ideal > 0 else "…"]
-	var lw := font.get_string_size("Material 888 · ideal 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
+	var lw := GTUI.text_width("Material 888 · ideal 888", F)
 	var sc := "Score %d" % score_for(used) if used > 0 and ideal > 0 else "Score —"
-	var sw := font.get_string_size("Score 888", HORIZONTAL_ALIGNMENT_LEFT, -1, int(16 * ui)).x
-	var cy := r.get_center().y + 6 * ui
-	_text(lbl, Vector2(r.position.x + 6, cy), 16, C_INK)
+	var sw := GTUI.text_width("Score 888", F)
+	GTUI.text_in(self, Rect2(r.position.x, r.position.y, lw, r.size.y), lbl, F, C_INK, -1)
 	var col := C_MUTED
 	if ideal > 0:
 		col = C_GOOD if used <= ideal else (Color("e0a33a") if used <= ideal * 1.5 else C_BAD)
-	_text(sc, Vector2(r.end.x - sw - 6, cy), 16, col if used > 0 else C_MUTED)
-	var bar := Rect2(r.position.x + lw + 16, r.position.y + r.size.y * 0.3, r.size.x - lw - sw - 32, r.size.y * 0.4)
-	_box(bar, Color("d5dde4"), 6)
+	GTUI.text_in(self, Rect2(r.end.x - sw, r.position.y, sw, r.size.y), sc, F, col if used > 0 else C_MUTED, 1)
+	var bh := GTUI.dp(GTUI.SP_S)
+	var bar := Rect2(r.position.x + lw + GTUI.dp(GTUI.SP_M), r.get_center().y - bh / 2.0, r.size.x - lw - sw - GTUI.dp(GTUI.SP_M) * 2, bh)
+	_box(bar, Color("d5dde4"), bh / 2.0)
 	if ideal <= 0:
 		# still working out the ideal: a gentle sweeping shimmer
 		var t := fmod(anim_t * 0.6, 1.0)
-		_box(Rect2(bar.position.x + bar.size.x * t * 0.8, bar.position.y, bar.size.x * 0.2, bar.size.y), Color(1, 1, 1, 0.8), 6)
+		_box(Rect2(bar.position.x + bar.size.x * t * 0.8, bar.position.y, bar.size.x * 0.2, bar.size.y), Color(1, 1, 1, 0.8), bh / 2.0)
 		return
 	var span := ideal * 2.0                  # the bar shows 0 .. 2x ideal; ideal sits in the middle
 	var f := clampf(used / span, 0.0, 1.0)
 	if f > 0.0:
-		_box(Rect2(bar.position, Vector2(maxf(bar.size.y, bar.size.x * f), bar.size.y)), col, 6)
+		_box(Rect2(bar.position, Vector2(maxf(bar.size.y, bar.size.x * f), bar.size.y)), col, bh / 2.0)
 	var tx := bar.position.x + bar.size.x * 0.5
 	draw_line(Vector2(tx, bar.position.y - 4), Vector2(tx, bar.end.y + 4), C_INK, 2.0)
 
@@ -2239,7 +2253,7 @@ func _draw_result_line(r: Rect2, t: Dictionary) -> void:
 		col = C_BAD
 		if tries_left() > 0:
 			msg += " Snapped beams are marked ×."
-	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, col)
+	_para_c(msg, r, col)
 
 
 func _draw_final_line(r: Rect2) -> void:
@@ -2257,83 +2271,58 @@ func _draw_final_line(r: Rect2) -> void:
 			msg = "No crossing today — score 0."
 		if date == today:
 			msg += "  Next bridge in " + _countdown()
-	_para_c(msg, r.grow_individual(-6, 0, -6, 0), 17, col)
+	_para_c(msg, r, col)
 
 
 func _countdown() -> String:
-	var t := Time.get_datetime_dict_from_system(false)
-	var left := 86400 - (int(t.hour) * 3600 + int(t.minute) * 60 + int(t.second))
-	return "%dh %02dm" % [left / 3600, (left % 3600) / 60]
+	return GTUI.countdown()
 
 
 func _draw_button(b: Dictionary) -> void:
 	var r: Rect2 = b.rect
-	if b.id == "lock":
-		var on: bool = b.on
-		_box(r, Color(C_GOOD, 0.92) if on else Color(C_BTN, 0.85), 10)
-		var ink := Color.WHITE if on else C_MUTED
-		_text_c("LOCK", r.get_center() + Vector2(0, -7 * ui), 13, ink)
-		_text_c("ON" if on else "OFF", r.get_center() + Vector2(0, 9 * ui), 12, ink)
-		return
-	var col := C_BTN
-	var ink := C_INK
-	if b.primary:
-		col = C_BTN_PRIMARY
-		ink = Color.WHITE
-	if b.on:
-		col = C_IDEAL if b.id == "ideal" else C_BTN_ON
-		ink = Color.WHITE
-	if not b.enabled:
-		col = col.lerp(Color("cfd6dc"), 0.7)
-		ink = Color(ink, 0.5)
-	if b.kind == "zoom":
-		col = Color(col, 0.85)
-	_box(r, col, 10)
 	var id := String(b.id)
-	if id == "road" or id == "wood":
-		var cy := r.get_center().y
-		var x := r.position.x + 12 * ui
-		var m := BridgeSim.Mat.ROAD if id == "road" else BridgeSim.Mat.WOOD
-		draw_line(Vector2(x, cy), Vector2(x + 18 * ui, cy), C_ROAD if id == "road" else C_WOOD, (7.0 if id == "road" else 5.0) * ui)
-		var price := "%d per m" % int(BridgeSim.COST[m])
-		var tx := x + 26 * ui
-		if r.size.x > 170 * ui:
-			_text("%s · %s" % [String(b.label), price], Vector2(tx, cy + 6 * ui), 16, ink)
+	if b.kind == "zoom":
+		if id == "lock":
+			GTUI.chip(self, id, r, "Lock", b.on)
 		else:
-			_text(String(b.label), Vector2(tx, cy - 1 * ui), 17, ink)
-			_text(price, Vector2(tx, cy + 15 * ui), 12, Color(ink, 0.75))
+			GTUI.icon_button(self, id, r, "plus" if id == "zoom_in" else "minus", b.enabled)
 		return
-	_text_c(String(b.label), r.get_center(), 24 if b.kind == "zoom" else 18, ink)
+	if b.kind == "tool" or b.kind == "toggle":
+		GTUI.chip(self, id, r, "" if id == "road" or id == "wood" else String(b.label), b.on, b.enabled)
+		if id == "road" or id == "wood":
+			var cy := r.get_center().y
+			var x := r.position.x + GTUI.dp(GTUI.SP_M)
+			var m := BridgeSim.Mat.ROAD if id == "road" else BridgeSim.Mat.WOOD
+			var sw := GTUI.dp(14)
+			draw_line(Vector2(x, cy), Vector2(x + sw, cy), C_ROAD if id == "road" else C_WOOD, GTUI.dp(5.0 if id == "road" else 3.5))
+			var price := "%d/m" % int(BridgeSim.COST[m])
+			var tx := x + sw + GTUI.dp(GTUI.SP_S)
+			var tw := r.end.x - tx - GTUI.dp(GTUI.SP_S)
+			if GTUI.text_width("%s · %s" % [String(b.label), price], GTUI.FS_LABEL, true) < tw:
+				GTUI.text_in(self, Rect2(tx, r.position.y, tw, r.size.y), "%s · %s" % [String(b.label), price], GTUI.FS_LABEL, C_INK, -1, b.on)
+			else:
+				var lh := GTUI.line_height(GTUI.FS_CAPTION)
+				GTUI.text_in(self, Rect2(tx, cy - lh, tw, lh), String(b.label), GTUI.FS_LABEL, C_INK, -1, true)
+				GTUI.text_in(self, Rect2(tx, cy, tw, lh), price, GTUI.FS_CAPTION, C_MUTED, -1)
+		return
+	GTUI.button(self, id, r, String(b.label), "primary" if b.primary else "secondary", b.enabled)
 
 
 func _draw_toast() -> void:
-	var vs := get_viewport_rect().size
-	var fs := int(16 * ui)
-	var w := minf(vs.x - 24, font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 40)
-	var h := fs + 22 * ui
-	var r := Rect2((vs.x - w) * 0.5, view_rect.end.y - h - 10, w, h)
-	var c := Color(0.12, 0.16, 0.2, 0.9 * minf(1.0, toast_t * 3.0))
-	_box(r, c, 12)
-	_text_c(toast, r.get_center(), 16, Color(1, 1, 1, c.a / 0.9))
+	GTUI.toast(self, toast, GTUI.toast_alpha(toast_t, 2.0), view_rect.end.y - GTUI.dp(GTUI.SP_S))
 
 
 # ------------------------------------------------------------------ overlays
 
 func _tut_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24, 560 * ui)
-	var h := minf(vs.y - 40, 560 * ui)
-	return Rect2((vs.x - w) * 0.5, (vs.y - h) * 0.5, w, h)
+	return GTUI.modal_rect(self, 520, GTUI.modal_height(_tut_content_h(GTUI.dp(520) - GTUI.dp(GTUI.SP_XL) * 2)))
 
 
 func _draw_tutorial() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0.05, 0.08, 0.12, 0.55))
-	var c := _tut_card()
-	_box(c, Color("fbfaf7"), 18)
-	_text_c("Get the vehicle across", Vector2(c.get_center().x, c.position.y + 36 * ui), 26, C_INK)
-	var ty := c.position.y + 112 * ui
-	var s := minf(34.0 * ui, (c.size.x - 80) / 6.0)
+	var card := _tut_card()
+	var c := GTUI.modal(self, card, "Get the vehicle across", "tut_x")
+	var ty := c.position.y + _tut_art_h() * 0.85
+	var s := minf(_tut_art_h() / 1.6, (c.size.x - 20) / 6.0)
 	var x0 := c.get_center().x - s * 3
 	var deck: Array = []
 	for i in 4:
@@ -2347,22 +2336,14 @@ func _draw_tutorial() -> void:
 		_draw_beam_s(deck[i], deck[i + 1], BridgeSim.Mat.ROAD, s)
 	for i in 4:
 		draw_circle(deck[i], s * 0.16, C_ANCHOR if i == 0 or i == 3 else C_JOINT)
-	var lines := [
-		"Drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than the length you pick (1–4 m). Red joints are anchored to the rock.",
-		"Road is what the vehicle drives on. Wood is lighter and cheaper: brace the road with triangles. Long pieces buckle when squeezed.",
-		"While you draw, a magnifier above your finger shows where the line lands, and LOCK (on by default) snaps it onto nearby joints. Pinch or use + / − to zoom; drag empty space to pan.",
-		"3 attempts a day. Matching today's ideal bridge scores 100; less material scores higher.",
-	]
-	var y := ty + 34 * ui
-	var fs := int(16 * ui)
-	var tw := c.size.x - 44 * ui - 24
-	for l in lines:
-		draw_circle(Vector2(c.position.x + 26 * ui, y + 2), 4 * ui, C_BTN_ON)
-		draw_multiline_string(font, Vector2(c.position.x + 40 * ui, y + 8 * ui), l, HORIZONTAL_ALIGNMENT_LEFT, tw, fs, 4, C_INK)
-		var lines_n := ceili(font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / tw * 1.06)
-		y += lines_n * fs * 1.2 + 12 * ui
+	var y := c.position.y + _tut_art_h() + GTUI.dp(GTUI.SP_L)
+	var tx := c.position.x + GTUI.dp(GTUI.SP_L)
+	for l in TUT_LINES:
+		draw_circle(Vector2(c.position.x + GTUI.dp(4), y + GTUI.line_height(GTUI.FS_BODY) / 2.0), GTUI.dp(3), C_BTN_ON)
+		y = GTUI.paragraph(self, tx, y, c.size.x - GTUI.dp(GTUI.SP_L), l, GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
 	for b in buttons:
-		_draw_button(b)
+		if b.kind != "modal":
+			_draw_button(b)
 
 
 func _draw_beam_s(a: Vector2, b: Vector2, m: int, s: float) -> void:
@@ -2373,21 +2354,17 @@ func _draw_beam_s(a: Vector2, b: Vector2, m: int, s: float) -> void:
 
 
 func _dev_card() -> Rect2:
-	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24, 460 * ui)
-	var h := 92 * ui + 5 * 50 * ui + 10 * ui
-	return Rect2((vs.x - w) * 0.5, (vs.y - h) * 0.5, w, h)
+	var th := GTUI.target()
+	var sp := GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 460, GTUI.modal_height(GTUI.line_height(GTUI.FS_CAPTION) * 2 + sp + 5 * th + 4 * sp, true, false))
 
 
 func _draw_dev() -> void:
-	var vs := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.5))
-	var c := _dev_card()
-	_box(c, Color("fbfaf7"), 16)
-	_text_c("Dev · %s (#%d)" % [date, puzzle_no], Vector2(c.get_center().x, c.position.y + 28 * ui), 20, C_INK)
+	var card := _dev_card()
+	var c := GTUI.modal(self, card, "Dev · %s (#%d)" % [date, puzzle_no])
 	var info := "seed %d · %s · ideal %s%s" % [hash("daily-bridge:v2:" + date), _level_line(),
 		str(ideal) if ideal > 0 else "…", " · not saving" if dev_sandbox else ""]
-	_para_c(info, Rect2(c.position.x + 16, c.position.y + 44 * ui, c.size.x - 32, 40 * ui), 12, C_MUTED)
+	GTUI.paragraph(self, c.position.x, c.position.y, c.size.x, info, GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		_draw_button(b)
 
@@ -2408,3 +2385,31 @@ func get_agent_state() -> Dictionary:
 	if sim != null:
 		st["sim"] = sim.summary()
 	return st
+
+
+func _budget_h() -> float:
+	return GTUI.dp(36)
+
+
+func _chip_h() -> float:
+	return GTUI.line_height(GTUI.FS_LABEL) + GTUI.dp(GTUI.SP_S)
+
+const TUT_LINES := [
+	"Drag from a joint to any dot, at any angle. The line is split into equal pieces no longer than the length you pick (1–4 m). Red joints are anchored to the rock.",
+	"Road is what the vehicle drives on. Wood is lighter and cheaper: brace the road with triangles. Long pieces buckle when squeezed.",
+	"While you draw, a magnifier above your finger shows where the line lands, and Lock (on by default) snaps it onto nearby joints. Pinch or use + / − to zoom; drag empty space to pan.",
+	"3 attempts a day. Matching today's ideal bridge scores 100; less material scores higher.",
+]
+
+
+func _tut_art_h() -> float:
+	return GTUI.dp(64)
+
+
+func _tut_content_h(w: float) -> float:
+	var vs := get_viewport_rect().size
+	w = minf(w, vs.x - GTUI.dp(GTUI.SP_L) * 2 - GTUI.dp(GTUI.SP_XL) * 2)
+	var h := _tut_art_h() + GTUI.dp(GTUI.SP_L)
+	for l in TUT_LINES:
+		h = GTUI.paragraph(self, 0, h, w - GTUI.dp(GTUI.SP_L), l, GTUI.FS_BODY, C_INK, false, false) + GTUI.dp(GTUI.SP_S)
+	return h
