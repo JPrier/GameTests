@@ -71,6 +71,14 @@ var btn_just := false
 
 func _ready() -> void:
 	_ensure_input()
+	# Landscape, letterboxed (keep aspect) on a fixed 960x540 canvas: pin the dp scale rather than
+	# follow the screen, so controls stay comfortably sized without overflowing the canvas.
+	GTUI.setup(self, {
+		"bg": Color("2a1c1b"), "surface": Color("2e2220"), "surface_high": Color("3d2d2a"),
+		"text": Color.WHITE, "text_muted": Color("e8d6c0"), "border": Color(1, 1, 1, 0.14),
+		"accent": Color("8be38b"), "on_accent": Color("10240f"), "success": Color("8be38b"),
+		"danger": Color("ff6a5a"), "focus": Color("ffcf6b"),
+	}, 1.25)
 	rng.randomize()
 	touch_mode = DisplayServer.is_touchscreen_available()
 	_build_stations()
@@ -619,7 +627,8 @@ func _tick_spawning(dt: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	anim_t += delta
-	var confirm := Input.is_action_just_pressed("confirm") or Input.is_action_just_pressed("interact")
+	var keys_free := GTUI.focused_id() == ""   # Enter/Space press the focused control instead
+	var confirm := keys_free and (Input.is_action_just_pressed("confirm") or Input.is_action_just_pressed("interact"))
 	match phase:
 		Phase.TITLE:
 			if confirm:
@@ -700,6 +709,14 @@ func _release_touch() -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		_tap(gt.pos)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventScreenTouch or ev is InputEventScreenDrag:
 		touch_mode = true
 		_handle_touch(make_input_local(ev))
@@ -821,6 +838,7 @@ func _heart(c: Vector2, r: float, color: Color) -> void:
 
 
 func _draw() -> void:
+	GTUI.begin()
 	_draw_room()
 	for s in stations:
 		_draw_station(s)
@@ -1119,8 +1137,8 @@ func _draw_title() -> void:
 		_text(Vector2(480, 382), "Left thumb: move  ·  Right thumb: grab / place / serve (hold to chop)", 17, Color("cccccc"))
 	else:
 		_text(Vector2(480, 382), "WASD / Arrows to move  ·  E / Space to grab, place, serve  ·  hold E to chop", 16, Color("cccccc"))
-	if int(anim_t * 2) % 2 == 0:
-		_text(Vector2(480, 440), "Tap to open your doors" if touch_mode else "Press Enter to open your doors", 26, Color("8be38b"))
+	_cta("start", "Open your doors", 420.0)
+	_text(Vector2(480, 500), "or tap anywhere" if touch_mode else "or press Enter", GTUI.fs(GTUI.FS_LABEL), Color("cccccc"), false)
 
 
 func _draw_shop() -> void:
@@ -1139,11 +1157,13 @@ func _draw_shop() -> void:
 		var r := Rect2(x0 + i * (cw + gap), 192, cw, 250)
 		card_rects.append(r)
 		var kc: Color = KIND_COLOR[u.kind]
-		var hover := r.has_point(mouse) and not touch_mode
-		draw_rect(Rect2(r.position + Vector2(4, 6), r.size), Color(0, 0, 0, 0.4))
-		draw_rect(r, Color("2e2220") if not hover else Color("3d2d2a"))
-		draw_rect(Rect2(r.position, Vector2(r.size.x, 34)), kc)
-		draw_rect(r, kc if not hover else Color.WHITE, false, 3.0)
+		var id := "offer:%d" % i
+		GTUI.register(id, r, end_t >= 0.4)
+		var hover := (r.has_point(mouse) and not touch_mode) or GTUI.focused_id() == id
+		GTUI.box(self, r, Color("2e2220") if not hover else Color("3d2d2a"), GTUI.R_PANEL, kc if not hover else Color.WHITE, 2.0)
+		var head := Rect2(r.position + Vector2(2, 2), Vector2(r.size.x - 4, 32))
+		draw_rect(head, kc)   # the upgrade kind colour band is the card's identity
+		GTUI.focus_ring(self, id, r, GTUI.R_PANEL)
 		_text(Vector2(r.get_center().x, r.position.y + 23), u.kind.to_upper(), 15, Color(0.1, 0.08, 0.06), false)
 		_text(Vector2(r.get_center().x, r.position.y + 76), u.name, 24, Color.WHITE)
 		draw_multiline_string(_font(), r.position + Vector2(16, 114), u.desc, HORIZONTAL_ALIGNMENT_CENTER, cw - 32, 18, 5, Color("e0d4c4"))
@@ -1168,5 +1188,12 @@ func _draw_end(won: bool) -> void:
 		owned.append(u.name + ("" if upgrades[id] == 1 else " x%d" % upgrades[id]))
 	if not owned.is_empty():
 		draw_multiline_string(_font(), Vector2(130, 320), "Upgrades: " + ", ".join(owned), HORIZONTAL_ALIGNMENT_CENTER, 700, 16, 3, Color("aaaaaa"))
-	if end_t > 1.0 and int(anim_t * 2) % 2 == 0:
-		_text(Vector2(480, 430), "Tap to start a new run" if touch_mode else "Press Enter to start a new run", 24, Color("8be38b"))
+	if end_t > 1.0:
+		_cta("restart", "Start a new run", 410.0)
+
+
+## Primary call-to-action button centred on the canvas (title and end screens).
+func _cta(id: String, label: String, y: float) -> void:
+	var w := GTUI.text_width(label, GTUI.FS_BODY + 2, true) + GTUI.dp(GTUI.SP_2XL) * 2
+	var r := Rect2((VIEW.x - w) / 2.0, y, w, GTUI.target())
+	GTUI.button(self, id, r, label, "primary", true, GTUI.FS_BODY + 2)
