@@ -336,13 +336,14 @@ static func text(ci: CanvasItem, pos: Vector2, s: String, size_dp: int, col: Col
 	ci.draw_string(f, pos + Vector2(0, f.get_ascent(px)), s, HORIZONTAL_ALIGNMENT_LEFT, max_w, px, col)
 
 
-## One line inside `r`, vertically centred. align: -1 left, 0 centre, 1 right. Shrinks to fit (down to CAPTION).
-static func text_in(ci: CanvasItem, r: Rect2, s: String, size_dp: int, col: Color, align := 0, bold := false) -> void:
+## One line inside `r`, vertically centred. align: -1 left, 0 centre, 1 right. Shrinks to fit (down to min_dp,
+## CAPTION by default; game-art labels may pass a smaller minimum).
+static func text_in(ci: CanvasItem, r: Rect2, s: String, size_dp: int, col: Color, align := 0, bold := false, min_dp := FS_CAPTION) -> void:
 	if s == "" or r.size.y <= 0.0:
 		return
 	var f: Font = font_bold if bold else font
 	var px := fs(size_dp)
-	var min_px := fs(FS_CAPTION)
+	var min_px := mini(fs(min_dp), px)
 	while px > min_px and f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x > r.size.x:
 		px -= 1
 	var w := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
@@ -434,6 +435,12 @@ static func modal(ci: CanvasItem, card: Rect2, title := "", close_id := "", alph
 	return content
 
 
+## Just the full-screen scrim, starting an overlay layer, for a game-shaped overlay card the game draws itself.
+static func scrim(ci: CanvasItem, alpha := 1.0) -> void:
+	_layer += 1
+	ci.draw_rect(Rect2(Vector2.ZERO, view_size(ci)), Color(c("scrim"), c("scrim").a * alpha))
+
+
 ## Rect of the close button GTUI.modal() draws for `card` (for hit-testing before drawing).
 static func modal_close_rect(card: Rect2) -> Rect2:
 	var th := target()
@@ -476,7 +483,8 @@ static func modal_buttons_rect(content: Rect2) -> Rect2:
 
 # ------------------------------------------------------------------ controls
 
-## variant: "primary" (one per view), "secondary", "quiet" (no fill), "danger".
+## variant: "primary" (one per view), "secondary", "quiet" (no fill), "danger", "success"
+## (danger/success are for a game's semantic verdict actions, e.g. Flag / Clear).
 static func button(ci: CanvasItem, id: String, r: Rect2, label: String, variant := "secondary", enabled := true, size_dp := FS_LABEL + 2) -> void:
 	register(id, r, enabled)
 	var fill := Color(0, 0, 0, 0)
@@ -489,6 +497,9 @@ static func button(ci: CanvasItem, id: String, r: Rect2, label: String, variant 
 		"danger":
 			fill = c("danger")
 			ink = ink_on(c("danger"))
+		"success":
+			fill = c("success")
+			ink = ink_on(c("success"))
 		"quiet":
 			edge = Color(0, 0, 0, 0)
 		_:
