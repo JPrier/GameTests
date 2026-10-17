@@ -117,9 +117,13 @@ var dd_clip: Control
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_CARD, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": C_LINE, "accent": C_ACCENT, "on_accent": C_BG,
+		"success": C_HIT, "danger": C_MID, "focus": C_ACCENT, "scrim": Color(0, 0, 0, 0.6),
+	})
 	_add_key_action("confirm", [KEY_ENTER, KEY_KP_ENTER])
 	_add_key_action("erase", [KEY_BACKSPACE])
-	_add_key_action("switch_slot", [KEY_TAB])
 	_add_key_action("dev_toggle", [KEY_QUOTELEFT])
 	_add_key_action("back", [KEY_ESCAPE])
 	_load_data()
@@ -1097,8 +1101,6 @@ func _unhandled_input(ev: InputEvent) -> void:
 			_flash("ENTER")
 		else:
 			share()
-	elif ev.is_action_pressed("switch_slot"):
-		select_slot(1 - slot)
 	elif key.unicode > 0 and not key.echo:
 		var ch := String.chr(key.unicode)
 		type_char(ch)
@@ -1110,6 +1112,19 @@ func _flash(id: String) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		# Tab onto a FROM/TO field makes it the one you type into
+		var f := GTUI.focused_id()
+		if f == "slot0" or f == "slot1":
+			select_slot(int(f.substr(4)))
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventMouseButton:
 		var p: Vector2 = make_input_local(ev).position
 		var in_list := dropdown_visible() and dd_list_rect.has_point(p)
@@ -1206,7 +1221,7 @@ func _do(id: String) -> void:
 		"arch_older": archive_shift(1)
 		"arch_close": archive_open = false
 		"today": pick_day(today)
-		"help_close": help_open = false
+		"help_close", "help_x": help_open = false
 		"dev_prev": dev_shift(-1)
 		"dev_next": dev_shift(1)
 		"dev_m30": dev_shift(-30)
@@ -1229,9 +1244,9 @@ func _btn(id: String, r: Rect2, label: String, style := "", enabled := true) -> 
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24.0, 520.0)
+	var w := minf(vs.x - GTUI.dp(GTUI.SP_L) * 2, 520.0)
 	col = Rect2((vs.x - w) * 0.5, 0, w, vs.y)
-	title_rect = Rect2(col.position.x, 0, 280, 52)
+	title_rect = Rect2(col.position.x, 0, 280, GTUI.dp(GTUI.SP_S) + GTUI.target())
 	buttons.clear()
 	if dev_open:
 		_layout_dev(vs)
@@ -1240,35 +1255,42 @@ func _layout() -> void:
 		_layout_archive(vs)
 		return
 	if help_open:
-		_btn("help_close", _help_card(vs).grow(-0), "", "none")
+		var card := _help_card(vs)
+		_btn("help_close", GTUI.modal_buttons_rect(GTUI.modal_content(card)), "Got it", "primary")
+		_btn("help_x", GTUI.modal_close_rect(card), "", "modal")
 		return
-	_btn("help", Rect2(col.end.x - 36, 10, 36, 36), "?", "ghost")
-	_btn("archive", Rect2(col.end.x - 80, 10, 36, 36), "", "ghost")
-	var bottom := vs.y - 10.0
+	var icons := GTUI.icon_row(col.end.x, GTUI.dp(GTUI.SP_S), ["archive", "help"])
+	_btn("help", icons["help"], "?", "icon")
+	_btn("archive", icons["archive"], "", "icon")
+	var bottom := vs.y - GTUI.dp(GTUI.SP_S)
+	var th := GTUI.target()
 	if phase == Phase.PLAYING:
-		var key_h := clampf((vs.y - 560.0) / 4.0, 36.0, 46.0)
+		var key_h := maxf(th, clampf((vs.y - 560.0) / 4.0, 36.0, 46.0))
 		var kb_h := key_h * 3 + 12
-		var top := bottom - kb_h - 6 - 34 - 6 - 44
+		var top := bottom - kb_h - GTUI.dp(GTUI.SP_S) - GTUI.line_height(GTUI.FS_LABEL) - GTUI.dp(GTUI.SP_S) - _slot_h()
 		input_rect = Rect2(col.position.x, top, col.size.x, bottom - top)
 		_layout_input(key_h)
 	else:
-		var h := 214.0
+		var h := _end_h()
 		input_rect = Rect2(col.position.x, bottom - h, col.size.x, h)
-		var bw := input_rect.size.x - 28
+		var row := Rect2(input_rect.position.x + GTUI.dp(GTUI.SP_L), input_rect.end.y - GTUI.dp(GTUI.SP_L) - th, input_rect.size.x - GTUI.dp(GTUI.SP_L) * 2, th)
 		if date != today:
-			bw = (bw - 10) * 0.5
-			_btn("today", Rect2(input_rect.position.x + 24 + bw, input_rect.end.y - 60, bw, 46), "Today's flight", "accent")
-		_btn("share", Rect2(input_rect.position.x + 14, input_rect.end.y - 60, bw, 46), "Share result", "accent")
+			var rr := GTUI.row(row, 2)
+			_btn("today", rr[0], "Today's flight", "secondary")
+			_btn("share", rr[1], "Share result", "primary")
+		else:
+			_btn("share", row, "Share result", "primary")
 	var rows := guesses.size()
 	var row_h := 24.0
 	list_rect = Rect2(col.position.x, input_rect.position.y - 8 - rows * row_h, col.size.x, rows * row_h)
-	var clue_h := 38.0 * 2 + (58.0 if clues_revealed() > 2 else 38.0) + 12
+	var clue_h := CLUE_H * 2 + (CLUE_H + 20 if clues_revealed() > 2 else CLUE_H) + 12
 	clue_rect = Rect2(col.position.x, list_rect.position.y - (8 if rows > 0 else 0) - clue_h, col.size.x, clue_h)
-	var map_top := 78.0
+	var map_top := _head_h() + GTUI.dp(GTUI.SP_S)
 	map_rect = Rect2(col.position.x, map_top, col.size.x, maxf(110.0, clue_rect.position.y - 8 - map_top))
 	_layout_dropdown(vs)
 
 
+const CLUE_H := 40.0
 const DD_TOP := 54.0
 const DD_HEAD := 30.0
 const DD_CODE_W := 58.0
@@ -1318,12 +1340,13 @@ func _wrap_h(s: String, size: int, width: float) -> float:
 
 func _layout_input(key_h: float) -> void:
 	var r := input_rect
-	var go_w := 62.0
+	var go_w := maxf(62.0, GTUI.dp(64))
+	var sh := _slot_h()
 	var sw := (r.size.x - go_w - 8 - 22) * 0.5
-	_btn("slot0", Rect2(r.position.x, r.position.y, sw, 44), "", "slot", not solved(0))
-	_btn("slot1", Rect2(r.position.x + sw + 22, r.position.y, sw, 44), "", "slot", not solved(1))
-	_btn("go", Rect2(r.end.x - go_w, r.position.y, go_w, 44), "GO", "primary", ready_to_guess())
-	var ky := r.position.y + 90
+	_btn("slot0", Rect2(r.position.x, r.position.y, sw, sh), "", "slot", not solved(0))
+	_btn("slot1", Rect2(r.position.x + sw + 22, r.position.y, sw, sh), "", "slot", not solved(1))
+	_btn("go", Rect2(r.end.x - go_w, r.position.y, go_w, sh), "Go", "primary", ready_to_guess())
+	var ky := r.position.y + sh + GTUI.dp(GTUI.SP_S) * 2 + GTUI.line_height(GTUI.FS_LABEL)
 	var gap := 4.0
 	var kw := (r.size.x - gap * 9) / 10.0
 	for ri in KEY_ROWS.size():
@@ -1332,7 +1355,7 @@ func _layout_input(key_h: float) -> void:
 		var x := r.position.x + (r.size.x - (row.length() * kw + (row.length() - 1) * gap)) * 0.5
 		if ri == 2:
 			var wide := kw * 1.5 + gap * 0.5
-			_btn("k_ENTER", Rect2(r.position.x, y, wide, key_h), "ENTER", "key_wide")
+			_btn("k_ENTER", Rect2(r.position.x, y, wide, key_h), "Enter", "key_wide")
 			x = r.position.x + wide + gap
 			for ch in row:
 				_btn("k_" + ch, Rect2(x, y, kw, key_h), ch, "key")
@@ -1345,30 +1368,34 @@ func _layout_input(key_h: float) -> void:
 
 
 func _archive_card(vs: Vector2) -> Rect2:
-	var w := minf(col.size.x, 420.0)
-	return Rect2((vs.x - w) * 0.5, 64, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h(vs) - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 440, GTUI.modal_height(content_h))
 
 
-func _archive_row_h(vs: Vector2) -> float:
-	return clampf((vs.y - 64 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+func _archive_row_h(_vs: Vector2) -> float:
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _layout_archive(vs: Vector2) -> void:
-	var c := _archive_card(vs)
+	var card := _archive_card(vs)
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h(vs)
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
-		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "row")
-	var bw := (c.size.x - 24 - 16) / 3.0
-	var by := c.end.y - 58
-	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "", archive_page > 0)
-	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close")
-	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "", archive_page < archive_pages() - 1)
+		_btn("day_" + String(days[i]), Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target()), "", "row")
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	_btn("arch_newer", pr[0], "Newer", "secondary", archive_page > 0)
+	_btn("arch_older", pr[1], "Older", "secondary", archive_page < archive_pages() - 1)
+	_btn("arch_close", GTUI.modal_close_rect(card), "", "modal")
 
 
 func _help_card(vs: Vector2) -> Rect2:
-	var w := minf(col.size.x, 400.0)
-	return Rect2((vs.x - w) * 0.5, 90, w, 360)
+	var w := minf(GTUI.dp(440), vs.x - GTUI.dp(GTUI.SP_L) * 2) - GTUI.dp(GTUI.SP_XL) * 2
+	var h := 0.0
+	for p in HELP_PARAS:
+		h = GTUI.paragraph(self, 0, h, w, p, GTUI.FS_BODY, C_INK, false, false) + GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 440, GTUI.modal_height(h))
 
 
 func _dev_card(vs: Vector2) -> Rect2:
@@ -1410,6 +1437,7 @@ func _sync_dev_edit() -> void:
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
+	GTUI.begin()
 	var vs := get_viewport_rect().size
 	if map_rect.size.x <= 0.0:
 		_layout()
@@ -1440,12 +1468,8 @@ func _draw() -> void:
 	if dev_reveal and dev_mode and not dev_open:
 		_text(Vector2(col.position.x, 74), "answer %s - %s" % [route.f, route.t], 11, C_ACCENT)
 	if toast_t > 0.0 and toast != "":
-		var a := clampf(toast_t / 0.3, 0.0, 1.0)
-		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 32
-		var ty := _dev_card(vs).end.y + 12 if dev_open else (dd_rect.position.y - 2 if dropdown_visible() else map_rect.position.y + 10)
-		var tr := Rect2((vs.x - tw) * 0.5, ty, tw, 34)
-		draw_rect(tr, Color(C_ACCENT, 0.95 * a))
-		_text(Vector2(tr.position.x, tr.position.y + 22), toast, 14, Color(C_BG, a), HORIZONTAL_ALIGNMENT_CENTER, tr.size.x)
+		var by := _dev_card(vs).end.y + GTUI.target() + 12 if dev_open else (dd_rect.position.y + GTUI.target() if dropdown_visible() else map_rect.position.y + GTUI.dp(GTUI.SP_M) + GTUI.target())
+		GTUI.toast(self, toast, clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0), by)
 
 
 func _text(pos: Vector2, s: String, size: int, c: Color, align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0) -> void:
@@ -1479,13 +1503,19 @@ func _outline_rect(r: Rect2, c: Color, rad := 8.0, wdt := 2) -> void:
 
 func _draw_header() -> void:
 	var x := col.position.x
-	_draw_plane(Vector2(x + 12, 28), deg_to_rad(45.0), 11.0, C_ACCENT)
-	_text(Vector2(x + 30, 37), "FLIGHTLE", 26, C_INK)
-	var tw := font.get_string_size("FLIGHTLE", HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x
-	var sub := "#%d · %s" % [puzzle_no, date]
-	if x + 38 + tw + font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x > col.end.x - 88:
+	var th := GTUI.target()
+	var y0 := GTUI.dp(GTUI.SP_S)
+	var px := GTUI.fs(GTUI.FS_HEADING)
+	var base := y0 + (th + font.get_ascent(px) - font.get_descent(px)) / 2.0
+	# the plane + all-caps wordmark are Flightle's own logo
+	_draw_plane(Vector2(x + 12, base - px * 0.36), deg_to_rad(45.0), 11.0, C_ACCENT)
+	_text(Vector2(x + 30, base), "FLIGHTLE", px, C_INK)
+	var tw := font.get_string_size("FLIGHTLE", HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+	var sub := "#%d · %s" % [puzzle_no, _pretty_date(date)]
+	var room := col.end.x - th * 2 - GTUI.dp(GTUI.SP_L) - (x + 38 + tw)
+	if GTUI.text_width(sub, GTUI.FS_LABEL) > room:
 		sub = "#%d" % puzzle_no
-	_text(Vector2(x + 38 + tw, 37), sub, 13, C_MUTED)
+	GTUI.text_in(self, Rect2(x + 38 + tw, y0, room, th), sub, GTUI.FS_LABEL, C_MUTED, -1)
 	var goal := "Name both airports of this flight · %d tries" % MAX_GUESSES
 	if phase == Phase.PLAYING and guesses.size() > 0:
 		goal = "Guess %d of %d · each miss unlocks a clue" % [guesses.size() + 1, MAX_GUESSES]
@@ -1493,14 +1523,10 @@ func _draw_header() -> void:
 		goal = "Today's flight, revealed" if date == today else "Past flight, revealed"
 	if date != today and phase == Phase.PLAYING:
 		goal = "Past flight · %s" % _pretty_date(date)
-	_text(Vector2(x, 66), goal, 14, C_ACCENT if date != today and phase == Phase.PLAYING else C_MUTED)
+	GTUI.text_in(self, Rect2(x, y0 + th, col.size.x, GTUI.line_height(GTUI.FS_LABEL)), goal, GTUI.FS_LABEL, C_ACCENT if date != today and phase == Phase.PLAYING else C_MUTED, -1)
 	for b in buttons:
-		if String(b.id) == "help":
-			_outline_rect(b.rect, C_DIM, 18.0, 2)
-			_text(Vector2(b.rect.position.x, b.rect.position.y + 25), "?", 18, C_INK, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
-		elif String(b.id) == "archive":
-			_outline_rect(b.rect, C_DIM, 18.0, 2)
-			_draw_calendar(b.rect.get_center(), C_INK)
+		if String(b.style) == "icon":
+			GTUI.icon_button(self, String(b.id), b.rect, "help" if String(b.id) == "help" else "calendar")
 
 
 func _to_screen(km: Vector2, scale: float) -> Vector2:
@@ -1693,28 +1719,29 @@ func _draw_clues() -> void:
 	var r := clue_rect
 	var revealed := clues_revealed()
 	var hw := (r.size.x - 6) * 0.5
-	var alt_h := 58.0 if revealed > 2 else 38.0
-	var rects := [Rect2(r.position.x, r.position.y, hw, 38), Rect2(r.position.x + hw + 6, r.position.y, hw, 38),
-		Rect2(r.position.x, r.position.y + 44, r.size.x, alt_h),
-		Rect2(r.position.x, r.position.y + 50 + alt_h, hw, 38), Rect2(r.position.x + hw + 6, r.position.y + 50 + alt_h, hw, 38)]
+	var alt_h := CLUE_H + 20 if revealed > 2 else CLUE_H
+	var rects := [Rect2(r.position.x, r.position.y, hw, CLUE_H), Rect2(r.position.x + hw + 6, r.position.y, hw, CLUE_H),
+		Rect2(r.position.x, r.position.y + CLUE_H + 6, r.size.x, alt_h),
+		Rect2(r.position.x, r.position.y + CLUE_H + 12 + alt_h, hw, CLUE_H), Rect2(r.position.x + hw + 6, r.position.y + CLUE_H + 12 + alt_h, hw, CLUE_H)]
+	var cap := GTUI.line_height(GTUI.FS_CAPTION)
 	for i in CLUES.size():
 		var cr: Rect2 = rects[i]
 		var open := i < revealed
 		var bg := C_CARD
 		if open and i == clue_flash and clue_flash_t > 0.0:
 			bg = C_CARD.lerp(C_ACCENT.darkened(0.45), clue_flash_t)
-		_round_rect(cr, bg if open else C_BG.lerp(C_CARD, 0.45), 8.0)
+		GTUI.box(self, cr, bg if open else C_BG.lerp(C_CARD, 0.45), GTUI.R_CONTROL, Color(0, 0, 0, 0) if open else C_LINE)
+		var tr := Rect2(cr.position.x + 10, cr.position.y + 3, cr.size.x - 20, cap)
+		GTUI.text_in(self, tr, String(CLUES[i].label).to_upper(), GTUI.FS_CAPTION, C_MUTED if open else C_DIM, -1)
+		var vr := Rect2(cr.position.x + 10, tr.end.y - 2, cr.size.x - 20, CLUE_H - cap - 2)
 		if not open:
-			_outline_rect(cr, C_LINE, 8.0, 1)
-		_text(Vector2(cr.position.x + 10, cr.position.y + 14), String(CLUES[i].label), 9, C_MUTED if open else C_DIM)
-		if not open:
-			_text(Vector2(cr.position.x + 10, cr.position.y + 31), "unlocks after miss %d" % (i + 1), 12, C_DIM)
+			GTUI.text_in(self, vr, "unlocks after miss %d" % (i + 1), GTUI.FS_CAPTION, C_DIM, -1)
 			continue
 		if String(CLUES[i].id) == "altitude":
-			_text(Vector2(cr.position.x + 10, cr.position.y + 31), _fit(altitude_text(), 13, cr.size.x * 0.5 - 14), 13, C_INK)
+			GTUI.text_in(self, Rect2(vr.position, Vector2(cr.size.x * 0.5 - 14, vr.size.y)), altitude_text(), GTUI.FS_LABEL, C_INK, -1)
 			_draw_profile(Rect2(cr.position.x + cr.size.x * 0.5, cr.position.y + 8, cr.size.x * 0.5 - 10, cr.size.y - 16))
 		else:
-			_text(Vector2(cr.position.x + 10, cr.position.y + 31), _fit(clue_value(i), 14, cr.size.x - 20), 14, C_INK)
+			GTUI.text_in(self, vr, _fit(clue_value(i), GTUI.fs(GTUI.FS_LABEL), vr.size.x), GTUI.FS_LABEL, C_INK, -1)
 
 
 func _draw_profile(r: Rect2) -> void:
@@ -1777,12 +1804,16 @@ func _draw_input() -> void:
 			"slot":
 				var i := 0 if id == "slot0" else 1
 				var lock := solved(i)
-				_round_rect(r, C_CARD, 8.0)
+				GTUI.register(id, r, not lock)
+				var edge := C_LINE
 				if lock:
-					_outline_rect(r, C_HIT, 8.0, 2)
+					edge = C_HIT
 				elif slot == i:
-					_outline_rect(r, C_ACCENT, 8.0, 2)
-				_text(Vector2(r.position.x + 9, r.position.y + 13), "FROM" if i == 0 else "TO", 9, C_MUTED)
+					edge = C_ACCENT
+				GTUI.box(self, r, C_CARD, GTUI.R_CONTROL, edge, GTUI.FOCUS_WIDTH if (lock or slot == i) else GTUI.BORDER)
+				var cap := GTUI.line_height(GTUI.FS_CAPTION)
+				var top := r.position.y + (r.size.y - cap - GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_XS)) / 2.0
+				GTUI.text_in(self, Rect2(r.position.x + 9, top, r.size.x - 18, cap), "FROM" if i == 0 else "TO", GTUI.FS_CAPTION, C_MUTED, -1)
 				var main := ""
 				var sub := ""
 				var color := C_INK
@@ -1796,41 +1827,41 @@ func _draw_input() -> void:
 				elif String(texts[i]) != "":
 					main = String(texts[i])
 				var avail := r.size.x - 20
-				var fs := 16
+				var fs := GTUI.fs(GTUI.FS_BODY)
 				while fs > 11 and main != "" and font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > avail:
 					fs -= 1
 				# like a text field, a still-too-long entry shows its newest characters
 				while main.length() > 1 and font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > avail:
 					main = main.substr(1)
 				var mw := font.get_string_size(main, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x if main != "" else 0.0
+				var base := top + cap - GTUI.dp(GTUI.SP_XS) + (GTUI.line_height(GTUI.FS_BODY) + font.get_ascent(fs) - font.get_descent(fs)) / 2.0
 				if main == "":
-					_text(Vector2(r.position.x + 9, r.position.y + 34), "search airports", 13, C_DIM)
+					_text(Vector2(r.position.x + 9, base), "search airports", GTUI.fs(GTUI.FS_LABEL), C_DIM)
 				else:
-					_text(Vector2(r.position.x + 9, r.position.y + 35), main, fs, color)
-					if sub != "" and font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x <= r.size.x - mw - 24:
-						_text(Vector2(r.position.x + 15 + mw, r.position.y + 34), sub, 11, C_MUTED)
+					_text(Vector2(r.position.x + 9, base), main, fs, color)
+					if sub != "" and font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, GTUI.fs(GTUI.FS_CAPTION)).x <= r.size.x - mw - 24:
+						_text(Vector2(r.position.x + 15 + mw, base), sub, GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 				if slot == i and not lock and picks[i] == "" and fmod(anim_t, 1.0) < 0.55:
 					var cx := r.position.x + 10 + mw
-					draw_line(Vector2(cx, r.position.y + 20), Vector2(cx, r.position.y + 38), C_ACCENT, 2.0)
+					draw_line(Vector2(cx, base - fs * 0.85), Vector2(cx, base + 2), C_ACCENT, 2.0)
 				if i == 0:
 					_draw_plane(Vector2(r.end.x + 11, r.get_center().y), PI * 0.5, 7.0, C_DIM)
+				GTUI.focus_ring(self, id, r)
 			"primary":
-				var c := C_ACCENT if b.enabled else C_BTN
-				if flash > 0.0:
-					c = c.lightened(0.3 * flash)
-				_round_rect(r, c, 8.0)
-				_text(Vector2(r.position.x, r.position.y + r.size.y * 0.5 + 6), String(b.label), 16,
-					C_BG if b.enabled else C_DIM, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+				GTUI.button(self, id, r, String(b.label), "primary", b.enabled)
 			"key", "key_wide":
+				GTUI.register(id, r, true, true)
 				var kc := C_KEY.lerp(C_ACCENT, 0.55 * flash)
-				_round_rect(r, kc, 6.0)
+				if GTUI.is_pressed(id, r):
+					kc = kc.lightened(0.16)
+				elif GTUI.is_hover(id):
+					kc = kc.lightened(0.08)
+				GTUI.box(self, r, kc, GTUI.R_CONTROL)
 				if id == "k_DEL":
 					_draw_arrow(r.get_center(), PI, 8.0, C_INK)
 					draw_line(r.get_center() + Vector2(-2, 0), r.get_center() + Vector2(10, 0), C_INK, 3.0)
 				else:
-					var fs := 11 if String(b.style) == "key_wide" else 17
-					_text(Vector2(r.position.x, r.position.y + r.size.y * 0.5 + fs * 0.36), String(b.label), fs, C_INK,
-						HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+					GTUI.text_in(self, r, String(b.label), GTUI.FS_CAPTION if String(b.style) == "key_wide" else GTUI.FS_BODY + 2, C_INK, 0, String(b.style) == "key")
 	var hint := ""
 	if not current_suggestions().is_empty():
 		hint = "Tap an airport, or Enter picks the top one"
@@ -1838,23 +1869,21 @@ func _draw_input() -> void:
 		if not solved(slot) and picks[slot] == "" and String(texts[slot]) != "":
 			hint = "No match. Try a city, country, airport name or code"
 		elif ready_to_guess():
-			hint = "Tap GO or press Enter"
+			hint = "Tap Go or press Enter"
 		elif not solved(slot) and picks[slot] == "":
 			hint = "Type the %s city, country, airport or code" % ("departure" if slot == 0 else "arrival")
 	if hint != "":
-		_text(Vector2(input_rect.position.x, input_rect.position.y + 72), hint, 13, C_MUTED,
-			HORIZONTAL_ALIGNMENT_CENTER, input_rect.size.x)
+		GTUI.text_in(self, Rect2(input_rect.position.x, input_rect.position.y + _slot_h() + GTUI.dp(GTUI.SP_S), input_rect.size.x, GTUI.line_height(GTUI.FS_LABEL)), hint, GTUI.FS_LABEL, C_MUTED)
 
 
 func _draw_dropdown() -> void:
 	var r := dd_rect
 	draw_rect(Rect2(0, r.position.y - 4, get_viewport_rect().size.x, r.size.y + 8), Color(C_BG, 0.85))
-	_round_rect(r, C_CARD, 12.0)
-	_outline_rect(r, C_LINE, 12.0, 1)
+	GTUI.box(self, r, C_CARD, GTUI.R_PANEL, C_LINE)
 	var n := current_suggestions().size()
-	var head := "%s · %s" % ["DEPARTURE" if slot == 0 else "ARRIVAL",
+	var head := "%s · %s" % ["Departure" if slot == 0 else "Arrival",
 		("%d+ matches, keep typing to narrow" % n) if n >= MAX_MATCHES else ("1 match" if n == 1 else "%d matches" % n)]
-	_text(Vector2(r.position.x + DD_PAD + 2, r.position.y + 20), head, 11, C_MUTED)
+	GTUI.text_in(self, Rect2(r.position.x + DD_PAD + 2, r.position.y, r.size.x - DD_PAD * 2, DD_HEAD), head, GTUI.FS_CAPTION, C_MUTED, -1)
 	draw_line(Vector2(r.position.x, dd_list_rect.position.y), Vector2(r.end.x, dd_list_rect.position.y), C_LINE, 1.0)
 
 
@@ -1893,103 +1922,63 @@ func _draw_dropdown_rows() -> void:
 
 func _draw_end() -> void:
 	var r := input_rect
-	_round_rect(r, C_CARD, 12.0)
+	GTUI.panel(self, r)
+	var pad := GTUI.dp(GTUI.SP_L)
+	var x := r.position.x + pad
+	var w := r.size.x - pad * 2
+	var y := r.position.y + pad
 	var won := phase == Phase.WON
 	var head := "Landed it in %d/%d!" % [guesses.size(), MAX_GUESSES] if won else "Missed it. The flight was:"
-	_text(Vector2(r.position.x + 14, r.position.y + 28), head, 18, C_HIT if won else C_MID)
+	GTUI.text_in(self, Rect2(x, y, w, GTUI.line_height(GTUI.FS_BODY)), head, GTUI.FS_BODY, C_HIT if won else C_MID, -1, true)
+	y += GTUI.line_height(GTUI.FS_BODY)
 	var f := airport(String(route.f))
 	var t := airport(String(route.t))
-	var fw := font.get_string_size(String(route.f), HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
-	_text(Vector2(r.position.x + 14, r.position.y + 56), String(route.f), 20, C_INK)
-	_draw_plane(Vector2(r.position.x + 30 + fw, r.position.y + 49), PI * 0.5, 8.0, C_ACCENT)
-	_text(Vector2(r.position.x + 46 + fw, r.position.y + 56), String(route.t), 20, C_INK)
-	_text(Vector2(r.position.x + 14, r.position.y + 76),
-		_fit("%s to %s" % [f.city, t.city], 13, r.size.x - 28), 13, C_MUTED)
-	_text(Vector2(r.position.x + 14, r.position.y + 98),
-		_fit("%s · %s" % [route.al, route.ac], 13, r.size.x - 28), 13, C_INK)
-	_text(Vector2(r.position.x + 14, r.position.y + 117),
-		_fit("%s km · about %s · departs %s" % [thousands(int(route.km)), duration_text(int(route.min)), route.dep], 13, r.size.x - 28), 13, C_MUTED)
-	_text(Vector2(r.position.x, r.end.y - 68), next_puzzle_text(), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+	var fw := GTUI.text_width(String(route.f), GTUI.FS_TITLE, true)
+	var lt := GTUI.line_height(GTUI.FS_TITLE)
+	GTUI.text_in(self, Rect2(x, y, fw + 2, lt), String(route.f), GTUI.FS_TITLE, C_INK, -1, true)
+	_draw_plane(Vector2(x + fw + 16, y + lt / 2.0), PI * 0.5, 8.0, C_ACCENT)
+	GTUI.text_in(self, Rect2(x + fw + 32, y, w - fw - 32, lt), String(route.t), GTUI.FS_TITLE, C_INK, -1, true)
+	y += lt
+	var lh := GTUI.line_height(GTUI.FS_LABEL)
+	GTUI.text_in(self, Rect2(x, y, w, lh), _fit("%s to %s" % [f.city, t.city], GTUI.fs(GTUI.FS_LABEL), w), GTUI.FS_LABEL, C_MUTED, -1)
+	y += lh
+	GTUI.text_in(self, Rect2(x, y, w, lh), _fit("%s · %s" % [route.al, route.ac], GTUI.fs(GTUI.FS_LABEL), w), GTUI.FS_LABEL, C_INK, -1)
+	y += lh
+	GTUI.text_in(self, Rect2(x, y, w, lh), _fit("%s km · about %s · departs %s" % [thousands(int(route.km)), duration_text(int(route.min)), route.dep], GTUI.fs(GTUI.FS_LABEL), w), GTUI.FS_LABEL, C_MUTED, -1)
+	y += lh
+	GTUI.text_in(self, Rect2(x, y, w, lh), next_puzzle_text(), GTUI.FS_CAPTION, C_MUTED, -1)
 	for b in buttons:
 		if String(b.id) == "share" or String(b.id) == "today":
-			var c := C_ACCENT if String(b.id) == "share" else C_BTN
-			c = c.lightened(0.3 * float(key_flash.get(String(b.id), 0.0)))
-			_round_rect(b.rect, c, 10.0)
-			_text(Vector2(b.rect.position.x, b.rect.position.y + 29), String(b.label), 17,
-				C_BG if String(b.id) == "share" else C_INK, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
-
-
-## Small calendar glyph for the past-days button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var r := Rect2(c.x - 8, c.y - 7, 16, 15)
-	draw_rect(r, col_, false, 1.6)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 4), col_)
-	draw_line(Vector2(c.x - 4, c.y - 10), Vector2(c.x - 4, c.y - 5), col_, 1.6)
-	draw_line(Vector2(c.x + 4, c.y - 10), Vector2(c.x + 4, c.y - 5), col_, 1.6)
-	for i in 3:
-		draw_rect(Rect2(c.x - 5.5 + i * 4, c.y + 1, 2.5, 2.5), col_)
+			GTUI.button(self, String(b.id), b.rect, String(b.label), String(b.style), true)
 
 
 func _draw_archive(vs: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
-	var c := _archive_card(vs)
-	_round_rect(c, C_CARD_HI, 14.0)
-	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past flights", 20, C_INK)
-	var pg := "Page %d of %d" % [archive_page + 1, archive_pages()]
-	_text(Vector2(c.position.x, c.position.y + 34), pg, 12, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	var c := GTUI.modal(self, _archive_card(vs), "Past flights", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		var id := String(b.id)
-		var hl := float(key_flash.get(id, 0.0))
 		if id.begins_with("day_"):
 			var d := id.substr(4)
-			var r: Rect2 = b.rect
-			_round_rect(r, C_CARD.lightened(0.15 * hl), 8.0)
-			if d == date:
-				_outline_rect(r, C_ACCENT, 8.0, 2)
-			var mid := r.position.y + r.size.y * 0.5 + 6
-			_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
-			var name := "Today" if d == today else _pretty_date(d)
-			_text(Vector2(r.position.x + 64, mid), name, 15, C_INK)
 			var res := String(archive_results.get(d, ""))
-			var rc := C_DIM
+			var rc := Color(0, 0, 0, 0)
 			if res.begins_with("X"):
 				rc = C_MID
 			elif res != "":
 				rc = C_HIT
-			_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12, rc,
-				HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
-		elif id.begins_with("arch_"):
-			var en: bool = b.enabled
-			_round_rect(b.rect, (C_BTN if en else C_CARD).lightened(0.25 * hl), 8.0)
-			_text(Vector2(b.rect.position.x, b.rect.position.y + b.rect.size.y * 0.5 + 5), String(b.label), 14,
-				C_INK if en else C_DIM, HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
+			GTUI.list_row(self, id, b.rect, "#%d" % day_number(d), "Today" if d == today else _pretty_date(d), res if res != "" else "Not played", d == date, rc)
+		elif id.begins_with("arch_") and String(b.style) != "modal":
+			GTUI.button(self, id, b.rect, String(b.label), "secondary", b.enabled)
 
 
 func _draw_help(vs: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
-	var c := _help_card(vs)
-	_round_rect(c, C_CARD_HI, 14.0)
-	var x := c.position.x + 18
-	var y := c.position.y + 36
-	_text(Vector2(x, y), "How to play", 20, C_INK)
-	var lines := [
-		"A real flight route is drawn with the airports",
-		"hidden. The plane flies from DEP to ARR, north up.",
-		"",
-		"Guess both airports: type a city or 3-letter code.",
-		"Each end gets its distance and a direction arrow",
-		"toward the real airport. A correct end locks in.",
-		"",
-		"Every miss unlocks a clue: airline, aircraft,",
-		"altitude profile, distance, departure time.",
-		"",
-		"Green = right · yellow < 300 km · orange < 1,500 km",
-		"Blue = right airport, wrong end.",
-		"A new flight every day at 00:00 UTC.",
-	]
-	for i in lines.size():
-		_text(Vector2(x, y + 30 + i * 20), String(lines[i]), 13, C_MUTED if String(lines[i]) != "" else C_MUTED)
-	_text(Vector2(c.position.x, c.end.y - 14), "Tap anywhere to close", 11, C_DIM, HORIZONTAL_ALIGNMENT_CENTER, c.size.x)
+	var card := _help_card(vs)
+	var c := GTUI.modal(self, card, "How to play", "help_x")
+	var y := c.position.y
+	for p in HELP_PARAS:
+		y = GTUI.paragraph(self, c.position.x, y, c.size.x, p, GTUI.FS_BODY, C_INK) + GTUI.dp(GTUI.SP_S)
+	for b in buttons:
+		if String(b.id) == "help_close":
+			GTUI.button(self, "help_close", b.rect, "Got it", "primary")
 
 
 func _draw_dev(vs: Vector2) -> void:
@@ -2014,3 +2003,23 @@ func _draw_dev(vs: Vector2) -> void:
 		_round_rect(b.rect, C_BTN.lightened(0.25 * float(key_flash.get(String(b.id), 0.0))), 8.0)
 		_text(Vector2(b.rect.position.x, b.rect.position.y + b.rect.size.y * 0.5 + 5), String(b.label), 13, C_INK,
 			HORIZONTAL_ALIGNMENT_CENTER, b.rect.size.x)
+
+
+func _head_h() -> float:
+	return GTUI.dp(GTUI.SP_S) + GTUI.target() + GTUI.line_height(GTUI.FS_LABEL)
+
+
+func _slot_h() -> float:
+	return maxf(GTUI.target(), GTUI.line_height(GTUI.FS_CAPTION) + GTUI.line_height(GTUI.FS_BODY) + GTUI.dp(GTUI.SP_XS))
+
+
+func _end_h() -> float:
+	return GTUI.dp(GTUI.SP_L) * 2 + GTUI.line_height(GTUI.FS_BODY) + GTUI.line_height(GTUI.FS_TITLE) + GTUI.line_height(GTUI.FS_LABEL) * 4 + GTUI.dp(GTUI.SP_M) + GTUI.target()
+
+const HELP_PARAS := [
+	"A real flight route is drawn with the airports hidden. The plane flies from DEP to ARR, north up.",
+	"Guess both airports: type a city or 3-letter code. Each end gets its distance and a direction arrow toward the real airport. A correct end locks in.",
+	"Every miss unlocks a clue: airline, aircraft, altitude profile, distance, departure time.",
+	"Green = right · yellow < 300 km · orange < 1,500 km. Blue = right airport, wrong end.",
+	"A new flight every day at 00:00 UTC.",
+]

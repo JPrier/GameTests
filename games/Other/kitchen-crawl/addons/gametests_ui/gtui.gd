@@ -189,6 +189,8 @@ static func begin(ci: CanvasItem = null) -> void:
 
 ## Registers a tappable rect so it gets hover/press/focus treatment and is checked by the target-size test.
 ## Product controls drawn with GTUI register themselves; call this for custom-drawn controls.
+## compact = an on-screen keyboard key: may be narrower (TARGET_COMPACT) and is skipped by Tab, since a
+## physical keyboard already types those keys.
 static func register(id: String, rect: Rect2, enabled := true, compact := false) -> void:
 	_targets.append({"id": id, "rect": rect, "layer": _layer, "enabled": enabled, "compact": compact})
 
@@ -261,19 +263,19 @@ static func tap_events(pos: Vector2) -> Array:
 	return out
 
 
-static func _active_targets() -> Array:
+static func _active_targets(keyboard := false) -> Array:
 	var top := 0
 	for t in _last:
 		top = maxi(top, int(t.layer))
 	var out: Array = []
 	for t in _last:
-		if int(t.layer) == top and t.enabled:
+		if int(t.layer) == top and t.enabled and not (keyboard and t.compact):
 			out.append(t)
 	return out
 
 
 static func _move_focus(step: int) -> void:
-	var ts := _active_targets()
+	var ts := _active_targets(true)
 	if ts.is_empty():
 		return
 	var idx := -1
