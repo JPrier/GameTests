@@ -85,6 +85,11 @@ var archive_results: Dictionary = {}
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	GTUI.setup(self, {
+		"bg": C_BG, "surface": C_CARD, "surface_high": C_BTN, "text": C_INK, "text_muted": C_MUTED,
+		"border": Color(C_INK, 0.1), "accent": C_ACCENT, "on_accent": Color("1a1405"),
+		"success": C_UP, "danger": C_DOWN, "focus": C_ACCENT, "scrim": Color(0, 0, 0, 0.6),
+	})
 	_add_key_action("left", [KEY_LEFT, KEY_A])
 	_add_key_action("right", [KEY_RIGHT, KEY_D])
 	_add_key_action("confirm", [KEY_ENTER, KEY_SPACE, KEY_KP_ENTER])
@@ -838,6 +843,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 	var key := ev as InputEventKey
 	if key == null or not key.pressed:
 		return
+	if GTUI.focused_id() != "" and ev.is_action("confirm"):
+		return   # Enter/Space press the focused control instead
 	if key.echo and not (ev.is_action("left") or ev.is_action("right")):
 		return
 	if ev.is_action_pressed("dev_toggle", true) and dev_mode:
@@ -876,6 +883,15 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 
 func _input(ev: InputEvent) -> void:
+	var gt := GTUI.handle_input(make_input_local(ev))
+	if gt.has("activate"):
+		for e in GTUI.tap_events(gt.pos):
+			_input(e)
+		get_viewport().set_input_as_handled()
+		return
+	if gt.has("consumed"):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = make_input_local(ev).position
 		if ev.pressed:
@@ -955,7 +971,7 @@ func _btn(id: String, r: Rect2, label: String, style := "", enabled := true) -> 
 
 func _layout() -> void:
 	var vs := get_viewport_rect().size
-	var w := minf(vs.x - 24.0, 560.0)
+	var w := minf(vs.x - GTUI.dp(GTUI.SP_L) * 2, 560.0)
 	col = Rect2((vs.x - w) * 0.5, 0, w, vs.y)
 	title_rect = Rect2(col.position.x, 0, 260, 66)
 	buttons.clear()
@@ -972,7 +988,8 @@ func _layout() -> void:
 		Screen.UD: _layout_ud(vs)
 		Screen.YEAR_END, Screen.UD_END: _layout_end(vs)
 	if screen != Screen.MENU:
-		_btn("menu", Rect2(col.end.x - 74, 12, 74, 36), "Menu", "ghost")
+		var mw := GTUI.text_width("Menu", GTUI.FS_LABEL + 2, true) + GTUI.dp(GTUI.SP_L) * 2
+		_btn("menu", Rect2(col.end.x - mw, GTUI.dp(GTUI.SP_S), mw, GTUI.target()), "Menu", "ghost")
 
 
 func _menu_cards(vs: Vector2) -> Array:
@@ -986,39 +1003,44 @@ func _layout_menu(vs: Vector2) -> void:
 	var cards := _menu_cards(vs)
 	var a: Rect2 = cards[0]
 	var b: Rect2 = cards[1]
-	_btn("play_year", Rect2(a.position.x + 16, a.end.y - 62, a.size.x - 32, 46),
+	var th := GTUI.target()
+	var pad := GTUI.dp(GTUI.SP_L)
+	_btn("play_year", Rect2(a.position.x + pad, a.end.y - pad - th, a.size.x - pad * 2, th),
 		"See results" if year_done() else ("Continue" if year_guesses.size() > 0 else "Play"), "primary")
-	_btn("play_ud", Rect2(b.position.x + 16, b.end.y - 62, b.size.x - 32, 46),
+	_btn("play_ud", Rect2(b.position.x + pad, b.end.y - pad - th, b.size.x - pad * 2, th),
 		"See results" if ud_done() else ("Continue" if ud_bets.size() > 0 else "Play"), "primary")
-	_btn("archive", Rect2(col.end.x - 44, 12, 44, 42), "", "icon")
+	var icons := GTUI.icon_row(col.end.x, GTUI.dp(GTUI.SP_S), ["archive"])
+	_btn("archive", icons["archive"], "", "icon")
+	var row := Rect2(col.position.x, b.end.y + GTUI.dp(GTUI.SP_L), col.size.x, th)
 	if date != today:
-		var hw := (col.size.x - 12) * 0.5
-		_btn("share", Rect2(col.position.x, b.end.y + 16, hw, 46), "Share results", "accent", year_done() or ud_done())
-		_btn("today", Rect2(col.position.x + hw + 12, b.end.y + 16, hw, 46), "Today's game", "primary")
+		var rr := GTUI.row(row, 2)
+		_btn("share", rr[0], "Share results", "", year_done() or ud_done())
+		_btn("today", rr[1], "Today's game", "")
 	elif year_done() or ud_done():
-		_btn("share", Rect2(col.position.x, b.end.y + 16, col.size.x, 46), "Share today's results", "accent")
+		_btn("share", row, "Share today's results", "")
 
 
-func _archive_row_h(vs: Vector2) -> float:
-	return clampf((vs.y - 64 - 58 - 70 - 16) / ARCHIVE_ROWS, 40.0, 50.0)
+func _archive_row_h(_vs: Vector2) -> float:
+	return GTUI.target() + GTUI.dp(GTUI.SP_S)
 
 
 func _archive_card(vs: Vector2) -> Rect2:
-	var w := minf(col.size.x, 440.0)
-	return Rect2((vs.x - w) * 0.5, 64, w, 58 + ARCHIVE_ROWS * _archive_row_h(vs) + 70)
+	var content_h := GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S) + ARCHIVE_ROWS * _archive_row_h(vs) - GTUI.dp(GTUI.SP_S)
+	return GTUI.modal_rect(self, 440, GTUI.modal_height(content_h))
 
 
 func _layout_archive(vs: Vector2) -> void:
-	var c := _archive_card(vs)
+	var card := _archive_card(vs)
+	var c := GTUI.modal_content(card)
 	var rh := _archive_row_h(vs)
+	var y0 := c.position.y + GTUI.line_height(GTUI.FS_CAPTION) + GTUI.dp(GTUI.SP_S)
 	var days := archive_page_days(archive_page)
 	for i in days.size():
-		_btn("day_" + String(days[i]), Rect2(c.position.x + 12, c.position.y + 58 + i * rh, c.size.x - 24, rh - 6), "", "arch_row")
-	var bw := (c.size.x - 24 - 16) / 3.0
-	var by := c.end.y - 58
-	_btn("arch_newer", Rect2(c.position.x + 12, by, bw, 44), "< Newer", "", archive_page > 0)
-	_btn("arch_close", Rect2(c.position.x + 20 + bw, by, bw, 44), "Close")
-	_btn("arch_older", Rect2(c.position.x + 28 + bw * 2, by, bw, 44), "Older >", "", archive_page < archive_pages() - 1)
+		_btn("day_" + String(days[i]), Rect2(c.position.x, y0 + i * rh, c.size.x, GTUI.target()), "", "arch_row")
+	var pr := GTUI.row(GTUI.modal_buttons_rect(c), 2)
+	_btn("arch_newer", pr[0], "Newer", "", archive_page > 0)
+	_btn("arch_older", pr[1], "Older", "", archive_page < archive_pages() - 1)
+	_btn("arch_close", GTUI.modal_close_rect(card), "", "arch_row")
 
 
 func _content_rects(vs: Vector2, bottom_h: float) -> Dictionary:
@@ -1037,39 +1059,42 @@ func _content_rects(vs: Vector2, bottom_h: float) -> Dictionary:
 func _layout_year(vs: Vector2) -> void:
 	var r := _content_rects(vs, 200.0)
 	var b: Rect2 = r.bottom
+	var th := GTUI.target()
 	if revealed:
-		_btn("next", Rect2(b.position.x, b.end.y - 54, b.size.x, 54),
+		_btn("next", Rect2(b.position.x, b.end.y - th, b.size.x, th),
 			"See results" if year_i >= ROUNDS - 1 else "Next chart", "primary")
 		return
-	slider_rect = Rect2(b.position.x + 64, b.position.y + 100, b.size.x - 128, 8)
-	_btn("minus", Rect2(b.position.x, b.position.y + 80, 48, 48), "-")
-	_btn("plus", Rect2(b.end.x - 48, b.position.y + 80, 48, 48), "+")
-	_btn("lock", Rect2(b.position.x, b.end.y - 54, b.size.x, 54), "Lock in %d" % cur_guess, "primary")
+	slider_rect = Rect2(b.position.x + th + GTUI.dp(GTUI.SP_L), b.position.y + 100, b.size.x - (th + GTUI.dp(GTUI.SP_L)) * 2, 8)
+	_btn("minus", Rect2(b.position.x, b.position.y + 104 - th / 2.0, th, th), "-")
+	_btn("plus", Rect2(b.end.x - th, b.position.y + 104 - th / 2.0, th, th), "+")
+	_btn("lock", Rect2(b.position.x, b.end.y - th, b.size.x, th), "Lock in %d" % cur_guess, "primary")
 
 
 func _layout_ud(vs: Vector2) -> void:
 	var r := _content_rects(vs, 200.0)
 	var b: Rect2 = r.bottom
+	var th := GTUI.target()
 	if revealed:
-		_btn("next", Rect2(b.position.x, b.end.y - 54, b.size.x, 54),
+		_btn("next", Rect2(b.position.x, b.end.y - th, b.size.x, th),
 			"See results" if ud_i >= ROUNDS - 1 else "Next stock", "primary")
 		return
-	slider_rect = Rect2(b.position.x + 60, b.position.y + 60, b.size.x - 120, 8)
-	_btn("stake_minus", Rect2(b.position.x, b.position.y + 40, 44, 44), "-")
-	_btn("stake_plus", Rect2(b.end.x - 44, b.position.y + 40, 44, 44), "+")
-	var hw := (b.size.x - 12) * 0.5
-	_btn("down", Rect2(b.position.x, b.end.y - 70, hw, 70), "Down", "down")
-	_btn("up", Rect2(b.position.x + hw + 12, b.end.y - 70, hw, 70), "Up", "up")
+	slider_rect = Rect2(b.position.x + th + GTUI.dp(GTUI.SP_L), b.position.y + 60, b.size.x - (th + GTUI.dp(GTUI.SP_L)) * 2, 8)
+	_btn("stake_minus", Rect2(b.position.x, b.position.y + 64 - th / 2.0, th, th), "-")
+	_btn("stake_plus", Rect2(b.end.x - th, b.position.y + 64 - th / 2.0, th, th), "+")
+	var rr := GTUI.row(Rect2(b.position.x, b.end.y - 70, b.size.x, 70), 2)
+	_btn("down", rr[0], "Down", "down")
+	_btn("up", rr[1], "Up", "up")
 
 
 func _layout_end(vs: Vector2) -> void:
-	var y := vs.y - 12
+	var th := GTUI.target()
+	var y := vs.y - GTUI.dp(GTUI.SP_L)
 	var other_done := ud_done() if screen == Screen.YEAR_END else year_done()
 	var other_id := "play_ud" if screen == Screen.YEAR_END else "play_year"
 	var other_label := ("Up or Down" if screen == Screen.YEAR_END else "Guess the Year") + (" results" if other_done else "")
-	var hw := (col.size.x - 12) * 0.5
-	_btn("share", Rect2(col.position.x, y - 54, hw, 54), "Share", "accent")
-	_btn(other_id, Rect2(col.position.x + hw + 12, y - 54, hw, 54), other_label, "primary")
+	var rr := GTUI.row(Rect2(col.position.x, y - th, col.size.x, th), 2)
+	_btn(other_id, rr[0], other_label, "")
+	_btn("share", rr[1], "Share", "primary")
 
 
 func _dev_card(vs: Vector2) -> Rect2:
@@ -1101,14 +1126,13 @@ func _text_c(r: Rect2, y: float, s: String, size: int, color := C_INK) -> void:
 
 
 func _round_rect(r: Rect2, color: Color, radius := 12.0) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = color
-	sb.set_corner_radius_all(int(radius))
-	sb.anti_aliasing = true
-	draw_style_box(sb, r)
+	# product surfaces snap to the shared radii; small art marks (slider track) keep theirs
+	var rad := radius if radius <= 4.0 else (GTUI.R_PANEL if radius >= 14.0 else GTUI.R_CONTROL)
+	GTUI.box(self, r, color, rad)
 
 
 func _draw() -> void:
+	GTUI.begin()
 	var vs := get_viewport_rect().size
 	draw_rect(Rect2(Vector2.ZERO, vs), C_BG)
 	_draw_header()
@@ -1118,76 +1142,54 @@ func _draw() -> void:
 		Screen.UD: _draw_ud(vs)
 		Screen.YEAR_END: _draw_year_end(vs)
 		Screen.UD_END: _draw_ud_end(vs)
+	if slider_rect.has_area() and not (dev_open or archive_open):
+		GTUI.register("slider", slider_rect.grow_individual(0, 18, 0, 18))
+	if not (dev_open or archive_open):
+		for b in buttons:
+			if String(b.style) == "icon":
+				GTUI.icon_button(self, String(b.id), b.rect, "calendar")
+			elif String(b.style) != "arch_row":
+				_draw_button(b)
 	if dev_open:
 		_draw_dev(vs)
 	if archive_open:
 		_draw_archive(vs)
-	for b in buttons:
-		if String(b.style) == "icon":
-			_round_rect(b.rect, Color(1, 1, 1, 0.06), 12)
-			_draw_calendar(b.rect.get_center(), C_INK)
-		elif String(b.style) != "arch_row":
-			_draw_button(b)
 	if toast_t > 0.0 and toast != "":
-		var a := clampf(toast_t / 0.3, 0.0, 1.0)
-		var tw := font.get_string_size(toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 36
-		var tr := Rect2((vs.x - tw) * 0.5, vs.y * 0.42, tw, 44)
-		_round_rect(tr, Color(0.05, 0.08, 0.13, 0.92 * a), 22)
-		_text_c(tr, tr.position.y + 29, toast, 18, Color(C_INK, a))
+		var bottom := vs.y - 200.0 - GTUI.dp(GTUI.SP_L) if screen == Screen.YEAR or screen == Screen.UD else vs.y - GTUI.target() - GTUI.dp(GTUI.SP_XL)
+		GTUI.toast(self, toast, clampf(toast_t / GTUI.T_NORMAL, 0.0, 1.0), bottom)
 
 
 func _draw_header() -> void:
 	var x := col.position.x
-	draw_rect(Rect2(x, 22, 6, 18), C_UP)
-	draw_rect(Rect2(x + 9, 16, 6, 24), C_DOWN)
-	draw_rect(Rect2(x + 18, 12, 6, 28), C_ACCENT)
-	_text(Vector2(x + 34, 38), "TICKER TIME", 24, C_INK)
-	if screen == Screen.MENU:
-		var sub := "#%d · %s%s" % [puzzle_no, _pretty_date(date), "  [dev]" if dev_mode else ""]
-		_text(Vector2(x + 34, 56), sub, 14, C_MUTED)
+	var th := GTUI.target()
+	var y0 := GTUI.dp(GTUI.SP_S)
+	var lt := GTUI.line_height(GTUI.FS_TITLE)
+	var lm := GTUI.line_height(GTUI.FS_CAPTION)
+	var show_meta := screen == Screen.MENU
+	var ty := y0 + (th - lt - (lm if show_meta else 0.0)) / 2.0
+	# the three bars + spaced capitals are Ticker Time's logo
+	draw_rect(Rect2(x, ty + 10, 6, 18), C_UP)
+	draw_rect(Rect2(x + 9, ty + 4, 6, 24), C_DOWN)
+	draw_rect(Rect2(x + 18, ty, 6, 28), C_ACCENT)
+	GTUI.text_in(self, Rect2(x + 34, ty, 220, lt), "TICKER TIME", GTUI.FS_TITLE, C_INK, -1, true)
+	if show_meta:
+		var sub := "#%d · %s%s" % [puzzle_no, _pretty_date(date), " · dev" if dev_mode else ""]
 		if date != today:
-			var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-			_text(Vector2(x + 34 + sw + 8, 56), "PAST DAY", 14, C_ACCENT)
-
-
-## Small calendar glyph for the past-days button.
-func _draw_calendar(c: Vector2, col_: Color) -> void:
-	var r := Rect2(c.x - 9, c.y - 8, 18, 17)
-	draw_rect(r, col_, false, 1.8)
-	draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 5), col_)
-	draw_line(Vector2(c.x - 4.5, c.y - 11), Vector2(c.x - 4.5, c.y - 6), col_, 1.8)
-	draw_line(Vector2(c.x + 4.5, c.y - 11), Vector2(c.x + 4.5, c.y - 6), col_, 1.8)
-	for i in 3:
-		draw_rect(Rect2(c.x - 6.5 + i * 4.5, c.y + 1.5, 3, 3), col_)
+			sub += " · past day"
+		GTUI.text_in(self, Rect2(x + 34, ty + lt, col.size.x - 34 - th - 8, lm), sub, GTUI.FS_CAPTION, C_MUTED if date == today else C_ACCENT, -1)
 
 
 func _draw_archive(vs: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
-	var c := _archive_card(vs)
-	_round_rect(c, C_CARD_HI, 16)
-	_text(Vector2(c.position.x + 18, c.position.y + 34), "Past days", 20, C_INK)
-	_text(Vector2(c.position.x, c.position.y + 34), "Page %d of %d" % [archive_page + 1, archive_pages()], 12, C_MUTED,
-		HORIZONTAL_ALIGNMENT_RIGHT, c.size.x - 18)
+	var c := GTUI.modal(self, _archive_card(vs), "Past days", "arch_close")
+	GTUI.text(self, c.position, "Page %d of %d" % [archive_page + 1, archive_pages()], GTUI.FS_CAPTION, C_MUTED)
 	for b in buttons:
 		var id := String(b.id)
-		if not id.begins_with("day_"):
-			continue
-		var d := id.substr(4)
-		var r: Rect2 = b.rect
-		_round_rect(r, C_CARD, 10)
-		if d == date:
-			var sb := StyleBoxFlat.new()
-			sb.bg_color = Color(0, 0, 0, 0)
-			sb.border_color = C_ACCENT
-			sb.set_border_width_all(2)
-			sb.set_corner_radius_all(10)
-			draw_style_box(sb, r)
-		var mid := r.position.y + r.size.y * 0.5 + 6
-		_text(Vector2(r.position.x + 12, mid), "#%d" % day_number(d), 16, C_ACCENT)
-		_text(Vector2(r.position.x + 64, mid), "Today" if d == today else _short_date(d), 15, C_INK)
-		var res := String(archive_results.get(d, ""))
-		_text(Vector2(r.position.x, mid), res if res != "" else "Not played", 14 if res != "" else 12,
-			C_UP if res != "" else C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12)
+		if id.begins_with("day_"):
+			var d := id.substr(4)
+			var res := String(archive_results.get(d, ""))
+			GTUI.list_row(self, id, b.rect, "#%d" % day_number(d), "Today" if d == today else _short_date(d), res if res != "" else "Not played", d == date, C_UP if res != "" else Color(0, 0, 0, 0))
+		elif id == "arch_newer" or id == "arch_older":
+			_draw_button(b)
 
 
 func _pretty_date(d: String) -> String:
@@ -1200,65 +1202,57 @@ func _pretty_date(d: String) -> String:
 func _draw_button(b: Dictionary) -> void:
 	var r: Rect2 = b.rect
 	var style := String(b.style)
-	var bg := C_BTN
-	var fg := C_INK
+	var id := String(b.id)
 	match style:
-		"primary": bg = Color("2f6fdc")
-		"accent": bg = C_ACCENT; fg = Color("1a1405")
-		"on": bg = C_BTN_ON
-		"ghost": bg = Color(1, 1, 1, 0.06); fg = C_MUTED
-		"up": bg = C_UP; fg = Color("06240f")
-		"down": bg = C_DOWN; fg = Color("2b0509")
-	if not b.enabled:
-		bg = Color(bg, 0.35)
-		fg = Color(fg, 0.45)
-	_round_rect(r, bg, 12)
-	var size := 20 if r.size.y >= 50 else 17
-	if style == "up" or style == "down":
-		var cx := r.get_center().x - 34
-		var cy := r.get_center().y
-		var s := 11.0
-		var tri: PackedVector2Array
-		if style == "up":
-			tri = PackedVector2Array([Vector2(cx, cy - s), Vector2(cx + s, cy + s * 0.7), Vector2(cx - s, cy + s * 0.7)])
-		else:
-			tri = PackedVector2Array([Vector2(cx, cy + s), Vector2(cx + s, cy - s * 0.7), Vector2(cx - s, cy - s * 0.7)])
-		draw_colored_polygon(tri, fg)
-		_text(Vector2(cx + 20, cy + 9), String(b.label).to_upper(), 24, fg)
-		return
-	if String(b.label) == "-" or String(b.label) == "+":
-		var c := r.get_center()
-		draw_line(c - Vector2(9, 0), c + Vector2(9, 0), fg, 3)
-		if String(b.label) == "+":
-			draw_line(c - Vector2(0, 9), c + Vector2(0, 9), fg, 3)
-		return
-	_text_c(r, r.get_center().y + size * 0.36, String(b.label), size, fg)
+		"primary":
+			GTUI.button(self, id, r, String(b.label), "primary", b.enabled)
+		"up", "down":
+			# the bet buttons carry the market colours and an arrow (game semantics)
+			GTUI.button(self, id, r, "", "success" if style == "up" else "danger", b.enabled)
+			var fg := GTUI.ink_on(C_UP if style == "up" else C_DOWN)
+			var label := String(b.label)
+			var lw := GTUI.text_width(label, GTUI.FS_TITLE, true)
+			var s := GTUI.dp(9)
+			var cx := r.get_center().x - (lw + s * 2 + GTUI.dp(GTUI.SP_S)) / 2.0 + s
+			var cy := r.get_center().y
+			var tri: PackedVector2Array
+			if style == "up":
+				tri = PackedVector2Array([Vector2(cx, cy - s), Vector2(cx + s, cy + s * 0.7), Vector2(cx - s, cy + s * 0.7)])
+			else:
+				tri = PackedVector2Array([Vector2(cx, cy + s), Vector2(cx + s, cy - s * 0.7), Vector2(cx - s, cy - s * 0.7)])
+			draw_colored_polygon(tri, fg)
+			GTUI.text_in(self, Rect2(cx + s + GTUI.dp(GTUI.SP_S), r.position.y, lw + 2, r.size.y), label, GTUI.FS_TITLE, fg, -1, true)
+		_:
+			if String(b.label) == "-" or String(b.label) == "+":
+				GTUI.icon_button(self, id, r, "minus" if String(b.label) == "-" else "plus", b.enabled)
+			else:
+				GTUI.button(self, id, r, String(b.label), "secondary", b.enabled)
 
 
 func _draw_menu(vs: Vector2) -> void:
 	var x := col.position.x
 	var cards := _menu_cards(vs)
 	var ty: float = cards[0].position.y - 50
-	_text(Vector2(x, ty), "Real stock charts, 1995 to today.", 17, C_MUTED)
-	_text(Vector2(x, ty + 24), "A new game every day, the same for everyone.", 17, C_MUTED)
+	_text(Vector2(x, ty), "Real stock charts, 1995 to today.", GTUI.fs(GTUI.FS_BODY), C_MUTED)
+	_text(Vector2(x, ty + 24), "A new game every day, the same for everyone.", GTUI.fs(GTUI.FS_BODY), C_MUTED)
 	var a: Rect2 = cards[0]
 	var b: Rect2 = cards[1]
 	_round_rect(a, C_CARD, 16)
 	_round_rect(b, C_CARD, 16)
-	_text(a.position + Vector2(18, 38), "Guess the Year", 24)
-	_text(a.position + Vector2(18, 66), "5 charts. Name the year each one shows.", 16, C_MUTED)
+	_text(a.position + Vector2(18, 38), "Guess the Year", GTUI.fs(GTUI.FS_TITLE))
+	_text(a.position + Vector2(18, 66), "5 charts. Name the year each one shows.", GTUI.fs(GTUI.FS_BODY), C_MUTED)
 	var status := "%d / %d points" % [year_score(), ROUNDS * 100] if year_guesses.size() > 0 else "Closest year wins the most points"
-	_text(a.position + Vector2(18, 94), status, 16, C_ACCENT if year_guesses.size() > 0 else C_MUTED)
+	_text(a.position + Vector2(18, 94), status, GTUI.fs(GTUI.FS_BODY), C_ACCENT if year_guesses.size() > 0 else C_MUTED)
 	_draw_progress_dots(Rect2(a.end.x - 112, a.position.y + 22, 96, 20), year_guesses.size(), true)
 	_draw_walk(Rect2(a.end.x - 150, a.position.y + 50, 132, 48), 7, C_UP)
-	_text(b.position + Vector2(18, 38), "Up or Down", 24)
-	_text(b.position + Vector2(18, 66), "Start with $1,000. Bet on the next month.", 16, C_MUTED)
+	_text(b.position + Vector2(18, 38), "Up or Down", GTUI.fs(GTUI.FS_TITLE))
+	_text(b.position + Vector2(18, 66), "Start with $1,000. Bet on the next month.", GTUI.fs(GTUI.FS_BODY), C_MUTED)
 	var c := cash()
 	var st2 := "%s (%s)" % [money(c), pct(c / START_CASH - 1.0)] if ud_bets.size() > 0 else "5 stocks. Slide your bet, call the move."
-	_text(b.position + Vector2(18, 94), st2, 16, (C_UP if c >= START_CASH else C_DOWN) if ud_bets.size() > 0 else C_MUTED)
+	_text(b.position + Vector2(18, 94), st2, GTUI.fs(GTUI.FS_BODY), (C_UP if c >= START_CASH else C_DOWN) if ud_bets.size() > 0 else C_MUTED)
 	_draw_progress_dots(Rect2(b.end.x - 112, b.position.y + 22, 96, 20), ud_bets.size(), false)
 	_draw_walk(Rect2(b.end.x - 150, b.position.y + 50, 132, 48), 11, C_LINE)
-	_text_c(Rect2(0, 0, vs.x, 0), vs.y - 14, "Weekly closes, split-adjusted. Not investment advice.", 12, Color(C_MUTED, 0.7))
+	_text_c(Rect2(0, 0, vs.x, 0), vs.y - 14, "Weekly closes, split-adjusted. Not investment advice.", GTUI.fs(GTUI.FS_CAPTION), Color(C_MUTED, 0.7))
 
 
 ## A decorative random-walk line (not real data).
@@ -1303,12 +1297,12 @@ func _draw_year(vs: Vector2) -> void:
 	var si := int(rnd.stock)
 	var actual := int(rnd.year)
 	var pr: Rect2 = r.progress
-	_text(pr.position + Vector2(0, 18), "GUESS THE YEAR  %d/%d" % [year_i + 1, ROUNDS], 15, C_MUTED)
+	_text(pr.position + Vector2(0, 18), "GUESS THE YEAR  %d/%d" % [year_i + 1, ROUNDS], GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	_draw_progress_dots(Rect2(pr.end.x - 200, pr.position.y + 2, 96, 20), year_guesses.size(), true, year_i)
-	_text(Vector2(pr.end.x - 90, pr.position.y + 18), "%d pts" % year_score(), 15, C_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT, 90)
+	_text(Vector2(pr.end.x - 90, pr.position.y + 18), "%d pts" % year_score(), GTUI.fs(GTUI.FS_LABEL), C_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT, 90)
 	var info: Rect2 = r.info
-	_text(info.position + Vector2(0, 38), String(stocks[si].t), 36, C_INK)
-	_text(info.position + Vector2(0, 66), String(stocks[si].n), 18, C_MUTED)
+	_text(info.position + Vector2(0, 38), String(stocks[si].t), GTUI.fs(GTUI.FS_DISPLAY), C_INK)
+	_text(info.position + Vector2(0, 66), String(stocks[si].n), GTUI.fs(GTUI.FS_BODY), C_MUTED)
 	var yr := year_range(actual)
 	var vals := series(si, yr.x, yr.y)
 	var labels: Array = []
@@ -1318,7 +1312,7 @@ func _draw_year(vs: Vector2) -> void:
 	var col_line := C_UP if vals[-1] >= vals[0] else C_DOWN
 	_draw_chart(r.chart, vals, [], labels, col_line, 1.0)
 	if revealed or dev_reveal:
-		_text(r.chart.position + Vector2(16, 40), "%d" % actual, 30, Color(C_ACCENT, 0.9 if revealed else 0.45))
+		_text(r.chart.position + Vector2(16, 40), "%d" % actual, GTUI.fs(GTUI.FS_HEADING), Color(C_ACCENT, 0.9 if revealed else 0.45))
 	var b: Rect2 = r.bottom
 	if revealed:
 		var g := int(year_guesses[year_i])
@@ -1326,22 +1320,22 @@ func _draw_year(vs: Vector2) -> void:
 		var t := ease(reveal_t, 0.4)
 		var c := year_mark_color(year_i)
 		_round_rect(Rect2(b.position.x, b.position.y, b.size.x, 120), C_CARD, 14)
-		_text_c(b, b.position.y + 48, "It was %d" % actual, 30, C_INK)
+		_text_c(b, b.position.y + 48, "It was %d" % actual, GTUI.fs(GTUI.FS_HEADING), C_INK)
 		var diff := absi(g - actual)
 		var what := "Exact!" if diff == 0 else ("You said %d, off by %d year%s" % [g, diff, "" if diff == 1 else "s"])
-		_text_c(b, b.position.y + 78, what, 17, C_MUTED)
-		_text_c(b, b.position.y + 108, "+%d points" % int(round(pts * t)), 20, c)
+		_text_c(b, b.position.y + 78, what, GTUI.fs(GTUI.FS_BODY), C_MUTED)
+		_text_c(b, b.position.y + 108, "+%d points" % int(round(pts * t)), GTUI.fs(GTUI.FS_TITLE), c)
 	else:
 		var s := 1.0 + bump_t * 0.08
 		_text_c(b, b.position.y + 50, "%d" % cur_guess, int(48 * s), C_ACCENT)
-		_text_c(b, b.position.y + 72, "drag, tap or use arrow keys", 13, C_MUTED)
+		_text_c(b, b.position.y + 72, "drag, tap or use arrow keys", GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 		var sr := slider_rect
 		_round_rect(sr, Color(1, 1, 1, 0.12), 4)
 		for y in range(YEAR_MIN, YEAR_MAX + 1, 5):
 			var tx := sr.position.x + sr.size.x * (y - YEAR_MIN) / float(YEAR_MAX - YEAR_MIN)
 			draw_line(Vector2(tx, sr.end.y + 4), Vector2(tx, sr.end.y + 9), C_MUTED, 1)
 			if (y - YEAR_MIN) % 10 == 0 or y == YEAR_MAX:
-				_text(Vector2(tx - 30, sr.end.y + 24), str(y), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 60)
+				_text(Vector2(tx - 30, sr.end.y + 24), str(y), GTUI.fs(GTUI.FS_CAPTION), C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 60)
 		var kx := sr.position.x + sr.size.x * (cur_guess - YEAR_MIN) / float(YEAR_MAX - YEAR_MIN)
 		draw_circle(Vector2(kx, sr.get_center().y), 13, C_ACCENT)
 		draw_circle(Vector2(kx, sr.get_center().y), 5, C_BG)
@@ -1357,22 +1351,22 @@ func _draw_ud(vs: Vector2) -> void:
 	var results := ud_results()
 	var shown_cash := START_CASH if ud_i == 0 else float(results[ud_i - 1].after)
 	var pr: Rect2 = r.progress
-	_text(pr.position + Vector2(0, 18), "UP OR DOWN  %d/%d" % [ud_i + 1, ROUNDS], 15, C_MUTED)
+	_text(pr.position + Vector2(0, 18), "UP OR DOWN  %d/%d" % [ud_i + 1, ROUNDS], GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	_draw_progress_dots(Rect2(pr.end.x - 220, pr.position.y + 2, 96, 20), ud_bets.size(), false, ud_i)
 	var res: Dictionary = {}
 	if revealed:
 		res = results[ud_i]
 		shown_cash = lerpf(float(res.before), float(res.after), ease(reveal_t, 0.4))
-	_text(Vector2(pr.end.x - 110, pr.position.y + 18), money(shown_cash), 16, C_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT, 110)
+	_text(Vector2(pr.end.x - 110, pr.position.y + 18), money(shown_cash), GTUI.fs(GTUI.FS_BODY), C_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT, 110)
 	var info: Rect2 = r.info
-	_text(info.position + Vector2(0, 38), String(stocks[si].t), 36, C_INK)
+	_text(info.position + Vector2(0, 38), String(stocks[si].t), GTUI.fs(GTUI.FS_DISPLAY), C_INK)
 	if revealed or dev_reveal:
 		var d0 := week_date(e - LOOKBACK + 1)
 		var d1 := week_date(e + AHEAD)
 		_text(info.position + Vector2(0, 66), "%s · %s %d to %s %d" % [stocks[si].n, MONTHS[int(d0.month) - 1], int(d0.year),
 			MONTHS[int(d1.month) - 1], int(d1.year)], 16, C_MUTED)
 	else:
-		_text(info.position + Vector2(0, 66), "%s · last 12 months" % stocks[si].n, 16, C_MUTED)
+		_text(info.position + Vector2(0, 66), "%s · last 12 months" % stocks[si].n, GTUI.fs(GTUI.FS_BODY), C_MUTED)
 	var hist := series(si, e - LOOKBACK + 1, e)
 	var fut: Array = []
 	if revealed or dev_reveal:
@@ -1385,16 +1379,16 @@ func _draw_ud(vs: Vector2) -> void:
 		var up := ret > 0
 		_round_rect(Rect2(b.position.x, b.position.y, b.size.x, 120), C_CARD, 14)
 		var bet: Dictionary = ud_bets[ud_i]
-		_text_c(b, b.position.y + 44, "%s %s in a month" % [("Up" if up else "Down"), pct(absf(ret), false)], 28, C_UP if up else C_DOWN)
-		_text_c(b, b.position.y + 74, "You bet %s %s" % [money(float(res.amount)), "up" if int(bet.dir) > 0 else "down"], 17, C_MUTED)
+		_text_c(b, b.position.y + 44, "%s %s in a month" % [("Up" if up else "Down"), pct(absf(ret), false)], GTUI.fs(GTUI.FS_HEADING), C_UP if up else C_DOWN)
+		_text_c(b, b.position.y + 74, "You bet %s %s" % [money(float(res.amount)), "up" if int(bet.dir) > 0 else "down"], GTUI.fs(GTUI.FS_BODY), C_MUTED)
 		var pnl := float(res.pnl) * ease(reveal_t, 0.4)
-		_text_c(b, b.position.y + 106, ("You made %s" if res.pnl >= 0 else "You lost %s") % money(absf(pnl)), 20,
+		_text_c(b, b.position.y + 106, ("You made %s" if res.pnl >= 0 else "You lost %s") % money(absf(pnl)), GTUI.fs(GTUI.FS_TITLE),
 			C_UP if float(res.pnl) >= 0 else C_DOWN)
 	else:
 		var amt := snappedf(shown_cash * stake, 0.01)
 		var sz := int(22 * (1.0 + bump_t * 0.06))
 		_text(b.position + Vector2(0, 26), "Bet %s" % money(amt), sz, C_ACCENT)
-		_text(Vector2(b.end.x - 200, b.position.y + 26), "%s of %s" % [stake_label(stake), money(shown_cash)], 15, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 200)
+		_text(Vector2(b.end.x - 200, b.position.y + 26), "%s of %s" % [stake_label(stake), money(shown_cash)], GTUI.fs(GTUI.FS_LABEL), C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 200)
 		var sr := slider_rect
 		var kx := sr.position.x + sr.size.x * (stake - STAKE_MIN) / (1.0 - STAKE_MIN)
 		_round_rect(sr, Color(1, 1, 1, 0.12), 4)
@@ -1402,7 +1396,7 @@ func _draw_ud(vs: Vector2) -> void:
 		for f in [0.25, 0.5, 0.75, 1.0]:
 			var tx: float = sr.position.x + sr.size.x * (float(f) - STAKE_MIN) / (1.0 - STAKE_MIN)
 			draw_line(Vector2(tx, sr.end.y + 4), Vector2(tx, sr.end.y + 9), C_MUTED, 1)
-			_text(Vector2(tx - 30, sr.end.y + 24), stake_label(float(f)), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 60)
+			_text(Vector2(tx - 30, sr.end.y + 24), stake_label(float(f)), GTUI.fs(GTUI.FS_CAPTION), C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 60)
 		draw_circle(Vector2(kx, sr.get_center().y), 13, C_ACCENT)
 		draw_circle(Vector2(kx, sr.get_center().y), 5, C_BG)
 
@@ -1429,18 +1423,18 @@ func _draw_chart(r: Rect2, values: Array, future: Array, labels: Array, line_col
 	for v in ticks:
 		var y := plot.end.y - (float(v) - lo) / (hi - lo) * plot.size.y
 		draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), C_GRID, 1)
-		_text(Vector2(plot.end.x + 6, y + 5), _price_label(float(v)), 12, C_MUTED)
+		_text(Vector2(plot.end.x + 6, y + 5), _price_label(float(v)), GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 	for l in labels:
 		var t := float(l[0])
 		var x := plot.position.x + t * hist_w
 		if t < -0.001 or t > 1.001:
 			continue
 		if t < 0.05:
-			_text(Vector2(plot.position.x, r.end.y - 10), String(l[1]), 12, C_MUTED)
+			_text(Vector2(plot.position.x, r.end.y - 10), String(l[1]), GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 		elif t > 0.95 and n_future > 0:
-			_text(Vector2(x - 84, r.end.y - 10), String(l[1]), 12, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 80)
+			_text(Vector2(x - 84, r.end.y - 10), String(l[1]), GTUI.fs(GTUI.FS_CAPTION), C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 80)
 		else:
-			_text(Vector2(x - 40, r.end.y - 10), String(l[1]), 12, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 80)
+			_text(Vector2(x - 40, r.end.y - 10), String(l[1]), GTUI.fs(GTUI.FS_CAPTION), C_MUTED, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	var to_pt := func(i: float, v: float) -> Vector2:
 		var x := plot.position.x + minf(i, nh) / nh * hist_w
 		if i > nh:
@@ -1454,7 +1448,7 @@ func _draw_chart(r: Rect2, values: Array, future: Array, labels: Array, line_col
 		draw_dashed_line(Vector2(qx, plot.position.y), Vector2(qx, plot.end.y), Color(1, 1, 1, 0.25), 1.5, 5)
 		if future.is_empty():
 			_text_c(qr, qr.get_center().y + 14, "?", 40, Color(1, 1, 1, 0.3))
-		_text_c(qr, r.end.y - 10, "+1 month", 12, C_MUTED)
+		_text_c(qr, r.end.y - 10, "+1 month", GTUI.fs(GTUI.FS_CAPTION), C_MUTED)
 	var pts := PackedVector2Array()
 	for i in values.size():
 		pts.append(to_pt.call(float(i), float(values[i])))
@@ -1512,9 +1506,9 @@ func _price_label(v: float) -> String:
 
 func _draw_year_end(vs: Vector2) -> void:
 	var x := col.position.x
-	_text(Vector2(x, 92), "GUESS THE YEAR · #%d" % puzzle_no, 15, C_MUTED)
-	_text(Vector2(x, 140), "%d" % year_score(), 52, C_ACCENT)
-	_text(Vector2(x + font.get_string_size("%d" % year_score(), HORIZONTAL_ALIGNMENT_LEFT, -1, 52).x + 10, 140),
+	_text(Vector2(x, 92), "GUESS THE YEAR · #%d" % puzzle_no, GTUI.fs(GTUI.FS_LABEL), C_MUTED)
+	_text(Vector2(x, 140), "%d" % year_score(), GTUI.fs(GTUI.FS_DISPLAY), C_ACCENT)
+	_text(Vector2(x + font.get_string_size("%d" % year_score(), HORIZONTAL_ALIGNMENT_LEFT, -1, GTUI.fs(GTUI.FS_DISPLAY)).x + 10, 140),
 		"/ %d points" % (ROUNDS * 100), 20, C_MUTED)
 	var y := 170.0
 	var rh := minf(64.0, (vs.y - y - 90) / ROUNDS)
@@ -1524,11 +1518,11 @@ func _draw_year_end(vs: Vector2) -> void:
 		var rnd: Dictionary = year_rounds[i]
 		var si := int(rnd.stock)
 		draw_circle(Vector2(rr.position.x + 20, rr.get_center().y), 7, year_mark_color(i) if i < year_guesses.size() else C_GRID)
-		_text(Vector2(rr.position.x + 38, rr.get_center().y - 2), String(stocks[si].t), 18)
-		_text(Vector2(rr.position.x + 38, rr.get_center().y + 17), String(stocks[si].n), 13, C_MUTED, HORIZONTAL_ALIGNMENT_LEFT, rr.size.x * 0.45)
+		_text(Vector2(rr.position.x + 38, rr.get_center().y - 2), String(stocks[si].t), GTUI.fs(GTUI.FS_BODY))
+		_text(Vector2(rr.position.x + 38, rr.get_center().y + 17), String(stocks[si].n), GTUI.fs(GTUI.FS_LABEL), C_MUTED, HORIZONTAL_ALIGNMENT_LEFT, rr.size.x * 0.45)
 		_draw_spark(Rect2(rr.position.x + rr.size.x * 0.5, rr.position.y + 8, rr.size.x * 0.18, rr.size.y - 16), si, year_range(int(rnd.year)))
 		if i < year_guesses.size():
-			_text(Vector2(rr.end.x - 154, rr.get_center().y - 2), "%d" % int(rnd.year), 18, C_INK, HORIZONTAL_ALIGNMENT_RIGHT, 140)
+			_text(Vector2(rr.end.x - 154, rr.get_center().y - 2), "%d" % int(rnd.year), GTUI.fs(GTUI.FS_BODY), C_INK, HORIZONTAL_ALIGNMENT_RIGHT, 140)
 			_text(Vector2(rr.end.x - 154, rr.get_center().y + 17), "you %d · +%d" % [int(year_guesses[i]), year_points(int(year_guesses[i]), int(rnd.year))],
 				13, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 140)
 
@@ -1546,9 +1540,9 @@ func _draw_spark(r: Rect2, si: int, rng: Vector2i) -> void:
 func _draw_ud_end(vs: Vector2) -> void:
 	var x := col.position.x
 	var c := cash()
-	_text(Vector2(x, 92), "UP OR DOWN · #%d" % puzzle_no, 15, C_MUTED)
-	_text(Vector2(x, 140), money(c), 48, C_UP if c >= START_CASH else C_DOWN)
-	_text(Vector2(x, 166), "%s from $1,000 · perfect calls all-in: %s" % [pct(c / START_CASH - 1.0), money(best_possible_cash())], 14, C_MUTED)
+	_text(Vector2(x, 92), "UP OR DOWN · #%d" % puzzle_no, GTUI.fs(GTUI.FS_LABEL), C_MUTED)
+	_text(Vector2(x, 140), money(c), GTUI.fs(GTUI.FS_DISPLAY), C_UP if c >= START_CASH else C_DOWN)
+	_text(Vector2(x, 166), "%s from $1,000 · perfect calls all-in: %s" % [pct(c / START_CASH - 1.0), money(best_possible_cash())], GTUI.fs(GTUI.FS_LABEL), C_MUTED)
 	var y := 182.0
 	var rh := minf(64.0, (vs.y - y - 90) / ROUNDS)
 	var results := ud_results()
@@ -1562,12 +1556,12 @@ func _draw_ud_end(vs: Vector2) -> void:
 		var ret := ud_return(rnd)
 		var right: bool = i < results.size() and results[i].right
 		draw_circle(Vector2(rr.position.x + 20, rr.get_center().y), 7, (C_UP if right else C_DOWN) if i < results.size() else C_GRID)
-		_text(Vector2(rr.position.x + 38, rr.get_center().y - 2), "%s  %s" % [stocks[si].t, pct(ret)], 18)
+		_text(Vector2(rr.position.x + 38, rr.get_center().y - 2), "%s  %s" % [stocks[si].t, pct(ret)], GTUI.fs(GTUI.FS_BODY))
 		_text(Vector2(rr.position.x + 38, rr.get_center().y + 17), "%s · %s %d" % [stocks[si].n, MONTHS[int(d1.month) - 1], int(d1.year)],
 			13, C_MUTED, HORIZONTAL_ALIGNMENT_LEFT, rr.size.x * 0.6)
 		if i < results.size():
 			var res: Dictionary = results[i]
-			_text(Vector2(rr.end.x - 154, rr.get_center().y - 2), money(float(res.pnl), true), 18, C_UP if float(res.pnl) >= 0 else C_DOWN, HORIZONTAL_ALIGNMENT_RIGHT, 140)
+			_text(Vector2(rr.end.x - 154, rr.get_center().y - 2), money(float(res.pnl), true), GTUI.fs(GTUI.FS_BODY), C_UP if float(res.pnl) >= 0 else C_DOWN, HORIZONTAL_ALIGNMENT_RIGHT, 140)
 			_text(Vector2(rr.end.x - 154, rr.get_center().y + 17), "%s · %s" % ["up" if int(ud_bets[i].dir) > 0 else "down", stake_label(float(ud_bets[i].frac))],
 				13, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, 140)
 
