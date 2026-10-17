@@ -1,5 +1,6 @@
 extends RefCounted
-## Today's earthquake: a seeded ground-motion record shared by every player.
+## LEGACY (generator v1, quakes before the v2 cutover). Kept unchanged so old days replay
+## exactly as they were played. Today's earthquake: a seeded ground-motion record.
 ## offset(t) gives the ground displacement (metres) t seconds into the shaking.
 ## Built as a few sinusoids in acceleration space under an envelope (ramp, strong
 ## shaking, decay), then scaled so its peak ground acceleration matches the magnitude.
@@ -17,6 +18,8 @@ var hx: Array = []             # horizontal components: [amp, omega, phase]
 var hy: Array = []             # vertical components
 var scale := 1.0
 var trace := PackedFloat32Array()   # horizontal accel samples (normalised -1..1) for the seismograph
+var trace_v := PackedFloat32Array() # (v2 only) vertical trace; empty for legacy quakes
+var archetype := ""                 # (v2 only)
 
 
 func make(seed_text: String) -> void:
