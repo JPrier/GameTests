@@ -20,9 +20,9 @@ Per game (all optional except where noted):
   homepage/thumbnail.png      card image, 16:9 (1280x720 recommended); .jpg/.webp also work.
                               Without one the card shows the title on the game's boot colour.
 
-Played-today badge: when a run ends a game may store
+Played-today status: when a run ends a game may store
   localStorage["gametests:<slug>:<YYYY-MM-DD>"] = JSON.stringify({"result": "<short result>"})
-and the home page shows "Played" (plus the result) on that card for that day.
+and the home page shows "Played today" (plus the result) on that game for that day.
 """
 import hashlib
 import html
@@ -147,21 +147,21 @@ def card(g):
     if g["thumb"]:
         art = f'<img src="{e(g["thumb"])}" alt="" loading="lazy" decoding="async">'
     else:
+        # No thumbnail: the game's boot colour, flat, with its name. No gradients.
         ink = "#1d1514" if is_light(g["colour"]) else "#f3e9dc"
-        art = (f'<div class="fallback" style="--c:{g["colour"]};--k:{ink}">'
-               f'<span>{e(g["title"])}</span></div>')
+        art = f'<span class="fallback" style="--c:{g["colour"]};--k:{ink}">{e(g["title"])}</span>'
     num = '<span class="num" hidden></span>' if g["daily"] else ""
-    badge = '<span class="badge" hidden></span>' if g["daily"] else ""
+    status = '<span class="status" hidden></span>' if g["daily"] else ""
     attrs = (f' data-slug="{e(g["slug"])}" data-start="{e(g["start"])}" data-clock="{g["clock"]}"'
              if g["daily"] else "")
-    return (f'<a class="card" href="./{e(g["slug"])}/"{attrs}>'
-            f'<div class="art">{art}{badge}</div>'
-            f'<div class="body"><div class="row"><h3>{e(g["title"])}</h3>{num}</div>'
-            f'<p>{e(g["tagline"])}</p><span class="result" hidden></span></div></a>')
+    return (f'<li><a class="game" href="./{e(g["slug"])}/"{attrs}>'
+            f'<span class="art">{art}</span>'
+            f'<span class="info"><span class="line"><span class="title">{e(g["title"])}</span>{num}</span>'
+            f'<span class="tag">{e(g["tagline"])}</span>{status}</span></a></li>')
 
 
 def grid(gs):
-    return f'<div class="grid">{"".join(card(g) for g in gs)}</div>'
+    return f'<ul class="games">{"".join(card(g) for g in gs)}</ul>'
 
 
 sections = []
@@ -172,7 +172,7 @@ for top in sorted({g["category"][0] for g in games}, key=section_key):
     for sub in sorted({g["category"][1:] for g in in_top if len(g["category"]) > 1},
                       key=lambda c: [x.lower() for x in c]):
         gs = [g for g in in_top if g["category"][1:] == sub]
-        parts.append(f'<div class="group"><h3 class="sub">{e(" / ".join(label(x) for x in sub))}</h3>{grid(gs)}</div>')
+        parts.append(f'<div class="group"><h3>{e(" / ".join(label(x) for x in sub))}</h3>{grid(gs)}</div>')
     sections.append(f'<section><h2>{e(label(top))}</h2>{"".join(parts)}</section>')
 sections_html = "\n".join(sections) or '<p class="empty">No games yet.</p>'
 
@@ -183,45 +183,46 @@ page = f"""<!doctype html>
 <meta name="description" content="A handful of small browser games with a new puzzle every day.">
 <meta name="theme-color" content="#1d1514">
 <style>
-:root{{--bg:#1d1514;--card:#2a1f1d;--line:#45322d;--ink:#f3e9dc;--muted:#c2b09e;--accent:#ffcf6b;--ok:#8fd694}}
+/* GameTests homepage. Tokens match ui/VISUAL_GUIDE.md: spacing 4/8/12/16/24/32/48, radii 6/8, 1px borders. */
+:root{{--bg:#1d1514;--surface:#261c1a;--line:#3d2d28;--ink:#f3e9dc;--muted:#bba893;--accent:#ffcf6b;--ok:#8fd694;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--r-control:6px;--r-panel:8px}}
 *{{box-sizing:border-box}}
-body{{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}}
-main{{max-width:960px;margin:0 auto;padding:40px 16px 64px}}
-header{{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;margin-bottom:28px}}
-h1{{margin:0;font-size:clamp(1.8rem,5vw,2.4rem);letter-spacing:-.02em;color:var(--accent)}}
+body{{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}}
+main{{max-width:1040px;margin:0 auto;padding:var(--s7) var(--s5) var(--s7)}}
+header{{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--s1) var(--s4);padding-bottom:var(--s4);border-bottom:1px solid var(--line)}}
+h1{{margin:0;font-size:2rem;line-height:1.2;font-weight:700;letter-spacing:-.01em;color:var(--accent)}}
 .today{{margin:0;color:var(--muted);font-variant-numeric:tabular-nums}}
 .today b{{color:var(--ink);font-weight:600}}
-h2{{margin:0 0 14px;font-size:.8rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}}
-section+section{{margin-top:40px}}
-.grid{{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}}
-.card{{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;color:inherit;text-decoration:none;transition:transform .15s,border-color .15s}}
-.card:hover,.card:focus-visible{{border-color:var(--accent);transform:translateY(-2px);outline:none}}
-.art{{position:relative;aspect-ratio:16/9;background:#000}}
+section{{margin-top:var(--s6)}}
+h2{{margin:0 0 var(--s2);font-size:.75rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}}
+.group{{margin-top:var(--s5)}}
+.group h3{{margin:0 0 var(--s2);font-size:.875rem;font-weight:600;color:var(--ink)}}
+.games{{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));column-gap:var(--s6)}}
+.games li{{border-top:1px solid var(--line)}}
+.game{{display:flex;gap:var(--s4);align-items:flex-start;padding:var(--s4) var(--s2);margin:0 calc(var(--s2) * -1);border-radius:var(--r-panel);color:inherit;text-decoration:none;transition:background-color .1s}}
+.game:hover{{background:var(--surface)}}
+.game:focus-visible{{outline:2px solid var(--accent);outline-offset:-2px}}
+.art{{flex:0 0 160px;aspect-ratio:16/9;border-radius:var(--r-control);overflow:hidden;background:var(--surface);border:1px solid var(--line)}}
 .art img{{display:block;width:100%;height:100%;object-fit:cover}}
-.fallback{{display:grid;place-items:center;height:100%;padding:16px;background:radial-gradient(120% 90% at 30% 20%,color-mix(in srgb,var(--c) 70%,#fff) 0%,var(--c) 55%,color-mix(in srgb,var(--c) 70%,#000) 100%)}}
-.fallback span{{color:var(--k);font-weight:800;font-size:clamp(1.5rem,6vw,2rem);letter-spacing:-.02em;text-align:center;line-height:1.1}}
-.badge{{position:absolute;top:10px;left:10px;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:700;background:var(--accent);color:#1d1514;box-shadow:0 1px 4px #0006}}
-.badge.done{{background:var(--ok)}}
-.body{{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px;flex:1}}
-.row{{display:flex;align-items:baseline;justify-content:space-between;gap:8px}}
-.card h3{{margin:0;font-size:1.15rem}}
-.grid+.group,.group+.group{{margin-top:28px}}
-.sub{{margin:0 0 10px;font-size:1rem;font-weight:600;color:var(--ink)}}
-.num{{color:var(--muted);font-size:.9rem;font-variant-numeric:tabular-nums;white-space:nowrap}}
-.card p{{margin:0;color:var(--muted);font-size:.93rem}}
-.result{{margin-top:auto;padding-top:6px;color:var(--ok);font-size:.9rem;font-weight:600}}
+.fallback{{display:flex;align-items:flex-end;height:100%;padding:var(--s2);background:var(--c);color:var(--k);font-weight:700;font-size:.875rem;line-height:1.2}}
+.info{{display:flex;flex-direction:column;gap:var(--s1);min-width:0;flex:1}}
+.line{{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s2)}}
+.title{{font-size:1.0625rem;font-weight:600;line-height:1.3}}
+.num{{color:var(--muted);font-size:.8125rem;font-variant-numeric:tabular-nums;white-space:nowrap}}
+.tag{{color:var(--muted);font-size:.9375rem;line-height:1.45}}
+.status{{font-size:.8125rem;font-weight:600;color:var(--accent)}}
+.status.done{{color:var(--ok)}}
 .empty{{color:var(--muted)}}
 @media (max-width:600px){{
-  main{{padding-top:28px}}
-  .grid{{gap:12px}}
-  .card{{flex-direction:row}}
-  .art{{flex:0 0 38%;aspect-ratio:auto;min-height:118px}}
-  .fallback span{{font-size:1.05rem}}
-  .badge{{top:6px;left:6px;padding:2px 8px;font-size:.7rem}}
-  .body{{padding:12px 14px;gap:4px}}
-  .card h3{{font-size:1.05rem}}
-  .card p{{font-size:.88rem;line-height:1.4}}
+  main{{padding:var(--s6) var(--s4) var(--s7)}}
+  h1{{font-size:1.625rem}}
+  .games{{grid-template-columns:1fr}}
+  .game{{gap:var(--s3);padding:var(--s3) var(--s2)}}
+  .art{{flex-basis:104px}}
+  .fallback{{font-size:.75rem;padding:var(--s1) var(--s2)}}
+  .tag{{font-size:.875rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
 }}
+@media (prefers-reduced-motion:reduce){{.game{{transition:none}}}}
 </style></head>
 <body><main>
 <header><h1>Daily Games</h1><p class="today" id="today"></p></header>
@@ -237,17 +238,17 @@ section+section{{margin-top:40px}}
   }};
   var dayNum=function(start,d){{return Math.round((Date.parse(d)-Date.parse(start))/864e5)+1}};
   var store=null;try{{store=window.localStorage}}catch(e){{}}
-  var cards=document.querySelectorAll(".card[data-slug]"),played=0;
+  var cards=document.querySelectorAll(".game[data-slug]"),played=0;
   cards.forEach(function(c){{
     var d=day[c.dataset.clock]||day.utc,n=dayNum(c.dataset.start,d);
-    var num=c.querySelector(".num"),badge=c.querySelector(".badge"),res=c.querySelector(".result");
+    var num=c.querySelector(".num"),st=c.querySelector(".status");
     if(n>=1){{num.textContent="#"+n;num.hidden=false}}
     var rec=null;
     try{{rec=store&&store.getItem("gametests:"+c.dataset.slug+":"+d)}}catch(e){{}}
     if(rec){{
-      played++;badge.textContent="Played ✓";badge.classList.add("done");badge.hidden=false;
-      try{{var r=JSON.parse(rec).result;if(r){{res.textContent=r;res.hidden=false}}}}catch(e){{}}
-    }}else if(n===1){{badge.textContent="New";badge.hidden=false}}
+      played++;var r="";try{{r=JSON.parse(rec).result||""}}catch(e){{}}
+      st.textContent="Played today"+(r?" · "+r:"");st.classList.add("done");st.hidden=false;
+    }}else if(n===1){{st.textContent="New today";st.hidden=false}}
   }});
   var label=now.toLocaleDateString(undefined,{{weekday:"long",month:"long",day:"numeric"}});
   var t=document.getElementById("today");
