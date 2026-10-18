@@ -1,0 +1,12 @@
+[package]
+name = "crowd_core"
+description = "Deterministic crowd simulation core (no engine dependencies)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+libm = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "crowd_cli"
+description = "Headless harness: run scenarios, verify replays, benchmarks and strategy experiments."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "crowd"
+path = "src/main.rs"
+
+[dependencies]
+crowd_core = { path = "../core" }
+serde_json = { workspace = true }

@@ -1,0 +1,6485 @@
+{
+  "best_by_seed": [
+    {
+      "best": "wait_signs",
+      "margin": 0,
+      "seed_index": 0
+    },
+    {
+      "best": "reactive",
+      "margin": 27,
+      "seed_index": 1
+    },
+    {
+      "best": "expert",
+      "margin": 1,
+      "seed_index": 2
+    },
+    {
+      "best": "pen_and_meter",
+      "margin": 15,
+      "seed_index": 3
+    },
+    {
+      "best": "pen_and_meter",
+      "margin": 3,
+      "seed_index": 4
+    },
+    {
+      "best": "signs_and_meter",
+      "margin": 0,
+      "seed_index": 5
+    }
+  ],
+  "runs": [
+    {
+      "report": {
+        "avg_journey": 139.36192321777344,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:06",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -72.1498031616211,
+            "value": "1:12",
+            "why": "South Walkway for 1:06"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -390.99688720703125,
+            "value": "0:39",
+            "why": "South Walkway for 0:38"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 188.63783264160156,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 39.09968948364258,
+        "ended_at": 406.3500061035156,
+        "heavy_seconds": 72.1498031616211,
+        "max_wait": 126.2031021118164,
+        "outcome": "won",
+        "peak_density": 4.406045436859131,
+        "satisfaction": 94.31891632080078,
+        "score": 725,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -391 pts (South Walkway for 0:38)",
+          "Heavy congestion: -72 pts (South Walkway for 1:06)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.31891632080078,
+      "seed": 20261018,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 147.7456512451172,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:15",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -123.60294342041016,
+            "value": "2:03",
+            "why": "South Walkway for 1:33"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -626.4932861328125,
+            "value": "1:02",
+            "why": "South Walkway for 0:57"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 182.96603393554688,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 62.649330139160156,
+        "ended_at": 431.70001220703125,
+        "heavy_seconds": 123.60294342041016,
+        "max_wait": 135.80368041992188,
+        "outcome": "won",
+        "peak_density": 4.338578224182129,
+        "satisfaction": 91.48301696777344,
+        "score": 433,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -626 pts (South Walkway for 0:57)",
+          "Heavy congestion: -124 pts (South Walkway for 1:33)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 91.48301696777344,
+      "seed": 20268937,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 147.13009643554688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:10",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -103.55171966552734,
+            "value": "1:43",
+            "why": "South Walkway for 1:25"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -762.00048828125,
+            "value": "1:16",
+            "why": "South Walkway for 0:55"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 182.70938110351562,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 76.2000503540039,
+        "ended_at": 421.45001220703125,
+        "heavy_seconds": 103.55171966552734,
+        "max_wait": 130.15333557128906,
+        "outcome": "won",
+        "peak_density": 4.26350736618042,
+        "satisfaction": 91.35469055175781,
+        "score": 317,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -762 pts (South Walkway for 0:55)",
+          "Heavy congestion: -104 pts (South Walkway for 1:25)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 91.35469055175781,
+      "seed": 20276856,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 143.80809020996094,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:58",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -103.25170135498047,
+            "value": "1:43",
+            "why": "South Walkway for 1:28"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -519.4949340820312,
+            "value": "0:51",
+            "why": "South Walkway for 0:47, first at 3:55 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 185.697265625,
+            "value": "93%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 51.949493408203125,
+        "ended_at": 422.8500061035156,
+        "heavy_seconds": 103.25170135498047,
+        "max_wait": 118.35262298583984,
+        "outcome": "won",
+        "peak_density": 4.679540634155273,
+        "satisfaction": 92.8486328125,
+        "score": 563,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -519 pts (South Walkway for 0:47, first at 3:55 after the incident at 2:20)",
+          "Heavy congestion: -103 pts (South Walkway for 1:28)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 92.8486328125,
+      "seed": 20284775,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 143.21603393554688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:16",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -96.45128631591797,
+            "value": "1:36",
+            "why": "South Walkway for 1:23"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -602.99365234375,
+            "value": "1:00",
+            "why": "South Walkway for 1:00"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 186.7509307861328,
+            "value": "93%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 60.29936599731445,
+        "ended_at": 425.3500061035156,
+        "heavy_seconds": 96.45128631591797,
+        "max_wait": 136.50372314453125,
+        "outcome": "won",
+        "peak_density": 4.355532646179199,
+        "satisfaction": 93.3754653930664,
+        "score": 487,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -603 pts (South Walkway for 1:00)",
+          "Heavy congestion: -96 pts (South Walkway for 1:23)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.3754653930664,
+      "seed": 20292694,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 134.49371337890625,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:58",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -52.449485778808594,
+            "value": "0:52",
+            "why": "South Walkway for 0:49"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -248.4990692138672,
+            "value": "0:24",
+            "why": "South Walkway for 0:24, first at 4:32 after the incident at 2:46"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.93943786621094,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 24.84990692138672,
+        "ended_at": 409.6499938964844,
+        "heavy_seconds": 52.449485778808594,
+        "max_wait": 118.5526351928711,
+        "outcome": "won",
+        "peak_density": 3.925657272338867,
+        "satisfaction": 95.96971893310547,
+        "score": 891,
+        "stars": 2,
+        "top_losses": [
+          "Dangerous crowding: -248 pts (South Walkway for 0:24, first at 4:32 after the incident at 2:46)",
+          "Heavy congestion: -52 pts (South Walkway for 0:49)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.96971893310547,
+      "seed": 20300613,
+      "strategy": "none"
+    },
+    {
+      "report": {
+        "avg_journey": 138.6848907470703,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:18",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:17",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -58.79938888549805,
+            "value": "0:58",
+            "why": "Station Ramp for 0:56"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.91140747070312,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 0.0,
+        "ended_at": 394.8500061035156,
+        "heavy_seconds": 58.79938888549805,
+        "max_wait": 137.30377197265625,
+        "outcome": "won",
+        "peak_density": 2.9970765113830566,
+        "satisfaction": 96.45570373535156,
+        "score": 1124,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -59 pts (Station Ramp for 0:56)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.45570373535156,
+      "seed": 20261018,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 147.07354736328125,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:22",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -90.10089874267578,
+            "value": "1:30",
+            "why": "Station Ramp for 1:27"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -144.5003662109375,
+            "value": "0:14",
+            "why": "Station Ramp for 0:14, first at 4:28 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 188.8800811767578,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 14.450037002563477,
+        "ended_at": 423.3999938964844,
+        "heavy_seconds": 90.10089874267578,
+        "max_wait": 142.55409240722656,
+        "outcome": "won",
+        "peak_density": 3.4913175106048584,
+        "satisfaction": 94.4400405883789,
+        "score": 944,
+        "stars": 2,
+        "top_losses": [
+          "Dangerous crowding: -145 pts (Station Ramp for 0:14, first at 4:28 after the incident at 2:15)",
+          "Heavy congestion: -90 pts (Station Ramp for 1:27)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.4400405883789,
+      "seed": 20268937,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 147.57594299316406,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:22",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -91.05095672607422,
+            "value": "1:31",
+            "why": "Station Ramp for 1:24"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -225.99942016601562,
+            "value": "0:22",
+            "why": "Station Ramp for 0:22, first at 4:38 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 188.04812622070312,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 22.59994125366211,
+        "ended_at": 426.75,
+        "heavy_seconds": 91.05095672607422,
+        "max_wait": 142.3540802001953,
+        "outcome": "won",
+        "peak_density": 3.6010687351226807,
+        "satisfaction": 94.02406311035156,
+        "score": 861,
+        "stars": 2,
+        "top_losses": [
+          "Dangerous crowding: -226 pts (Station Ramp for 0:22, first at 4:38 after the incident at 2:12)",
+          "Heavy congestion: -91 pts (Station Ramp for 1:24)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.02406311035156,
+      "seed": 20276856,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 143.52076721191406,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -14.7054443359375,
+            "value": "2:44",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -94.35115814208984,
+            "value": "1:34",
+            "why": "Station Ramp for 1:22"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.32186889648438,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 0.0,
+        "ended_at": 412.3999938964844,
+        "heavy_seconds": 94.35115814208984,
+        "max_wait": 164.7054443359375,
+        "outcome": "won",
+        "peak_density": 3.089648723602295,
+        "satisfaction": 95.16093444824219,
+        "score": 1071,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -94 pts (Station Ramp for 1:22)",
+          "Longest wait: -15 pts (most waiting happened in Station North Hall)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.16093444824219,
+      "seed": 20284775,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 142.96926879882812,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:22",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -22.255905151367188,
+            "value": "2:52",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -92.9510726928711,
+            "value": "1:32",
+            "why": "Station Ramp for 1:32"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -23.499988555908203,
+            "value": "0:02",
+            "why": "Station Ramp for 0:02, first at 4:13 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.7625274658203,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 2.349998950958252,
+        "ended_at": 415.45001220703125,
+        "heavy_seconds": 92.9510726928711,
+        "max_wait": 172.2559051513672,
+        "outcome": "won",
+        "peak_density": 3.2880711555480957,
+        "satisfaction": 94.88126373291016,
+        "score": 1041,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -93 pts (Station Ramp for 1:32)",
+          "Dangerous crowding: -23 pts (Station Ramp for 0:02, first at 4:13 after the incident at 2:31)",
+          "Longest wait: -22 pts (most waiting happened in Station North Hall)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.88126373291016,
+      "seed": 20292694,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 134.1802215576172,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:55",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -68.79959869384766,
+            "value": "1:08",
+            "why": "Station Ramp for 1:04"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 193.19659423828125,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 0.0,
+        "ended_at": 401.5500183105469,
+        "heavy_seconds": 68.79959869384766,
+        "max_wait": 115.15242767333984,
+        "outcome": "won",
+        "peak_density": 3.066143035888672,
+        "satisfaction": 96.59829711914062,
+        "score": 1114,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -69 pts (Station Ramp for 1:04)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.59829711914062,
+      "seed": 20300613,
+      "strategy": "wait_signs"
+    },
+    {
+      "report": {
+        "avg_journey": 121.99327087402344,
+        "completed": 757,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:01",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:03",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -117.70258331298828,
+            "value": "1:57",
+            "why": "South Walkway for 1:57"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:22"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -729.0,
+            "value": "243",
+            "why": "243 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 180.99765014648438,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 311.8999938964844,
+        "heavy_seconds": 117.70258331298828,
+        "max_wait": 123.7529525756836,
+        "outcome": "failed_danger",
+        "peak_density": 4.768375396728516,
+        "satisfaction": 90.49882507324219,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:22)",
+          "Still on site: -729 pts (243 people had not left when the run ended)",
+          "Heavy congestion: -118 pts (South Walkway for 1:57)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.49882507324219,
+      "seed": 20261018,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 116.0715560913086,
+        "completed": 591,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "1:56",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:57",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -91.4009780883789,
+            "value": "1:31",
+            "why": "South Walkway for 1:31"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:30"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -1227.0,
+            "value": "409",
+            "why": "409 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 181.06983947753906,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 278.0,
+        "heavy_seconds": 91.4009780883789,
+        "max_wait": 117.85259246826172,
+        "outcome": "failed_danger",
+        "peak_density": 5.095416069030762,
+        "satisfaction": 90.53491973876953,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Still on site: -1227 pts (409 people had not left when the run ended)",
+          "Dangerous crowding: -900 pts (South Walkway for 1:30)",
+          "Heavy congestion: -91 pts (South Walkway for 1:31)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.53491973876953,
+      "seed": 20268937,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 150.92453002929688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -1.84906005859375,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:22",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -150.20455932617188,
+            "value": "2:30",
+            "why": "South Walkway for 1:58"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -850.5059204101562,
+            "value": "1:25",
+            "why": "South Walkway for 1:18"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 178.7848663330078,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 85.05059051513672,
+        "ended_at": 452.3500061035156,
+        "heavy_seconds": 150.20455932617188,
+        "max_wait": 142.45408630371094,
+        "outcome": "won",
+        "peak_density": 4.488002777099609,
+        "satisfaction": 89.3924331665039,
+        "score": 166,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -851 pts (South Walkway for 1:18)",
+          "Heavy congestion: -150 pts (South Walkway for 1:58)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.3924331665039,
+      "seed": 20276856,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 115.28873443603516,
+        "completed": 617,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "1:55",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:07",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -95.0011978149414,
+            "value": "1:35",
+            "why": "South Walkway for 1:31"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:30"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -1149.0,
+            "value": "383",
+            "why": "383 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 181.2430419921875,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 278.25,
+        "heavy_seconds": 95.0011978149414,
+        "max_wait": 127.8031997680664,
+        "outcome": "failed_danger",
+        "peak_density": 4.998119831085205,
+        "satisfaction": 90.62152099609375,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Still on site: -1149 pts (383 people had not left when the run ended)",
+          "Dangerous crowding: -900 pts (South Walkway for 1:30)",
+          "Heavy congestion: -95 pts (South Walkway for 1:31)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.62152099609375,
+      "seed": 20284775,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 149.21371459960938,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:29",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:13",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -168.60568237304688,
+            "value": "2:48",
+            "why": "South Walkway for 1:55"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -896.0086669921875,
+            "value": "1:29",
+            "why": "South Walkway for 1:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.44480895996094,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 89.60086822509766,
+        "ended_at": 457.3000183105469,
+        "heavy_seconds": 168.60568237304688,
+        "max_wait": 133.65354919433594,
+        "outcome": "won",
+        "peak_density": 4.627758026123047,
+        "satisfaction": 89.72240447998047,
+        "score": 105,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -896 pts (South Walkway for 1:20)",
+          "Heavy congestion: -169 pts (South Walkway for 1:55)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.72240447998047,
+      "seed": 20292694,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 141.5071258544922,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:21",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:24",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -134.45359802246094,
+            "value": "2:14",
+            "why": "South Walkway for 1:41"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -654.4939575195312,
+            "value": "1:05",
+            "why": "South Walkway for 1:05, first at 4:48 after the incident at 2:46"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.0,
+            "value": "$50",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 181.78257751464844,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 50.0,
+        "danger_seconds": 65.44939422607422,
+        "ended_at": 437.5500183105469,
+        "heavy_seconds": 134.45359802246094,
+        "max_wait": 144.45420837402344,
+        "outcome": "won",
+        "peak_density": 4.481081485748291,
+        "satisfaction": 90.89128875732422,
+        "score": 383,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -654 pts (South Walkway for 1:05, first at 4:48 after the incident at 2:46)",
+          "Heavy congestion: -134 pts (South Walkway for 1:41)",
+          "Operating cost: -10 pts"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.89128875732422,
+      "seed": 20300613,
+      "strategy": "divert_south"
+    },
+    {
+      "report": {
+        "avg_journey": 139.90965270996094,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:06",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -96.1512680053711,
+            "value": "1:36",
+            "why": "South Walkway for 1:12"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -365.9972839355469,
+            "value": "0:36",
+            "why": "South Walkway for 0:36"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -8.049911499023438,
+            "value": "$40",
+            "why": "gate staff $40"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.63197326660156,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 40.24955749511719,
+        "danger_seconds": 36.599727630615234,
+        "ended_at": 410.0500183105469,
+        "heavy_seconds": 96.1512680053711,
+        "max_wait": 126.6031265258789,
+        "outcome": "won",
+        "peak_density": 4.354702949523926,
+        "satisfaction": 94.81598663330078,
+        "score": 719,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -366 pts (South Walkway for 0:36)",
+          "Heavy congestion: -96 pts (South Walkway for 1:12)",
+          "Operating cost: -8 pts (gate staff $40)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.81598663330078,
+      "seed": 20261018,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 147.709228515625,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:21",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -111.90222930908203,
+            "value": "1:51",
+            "why": "South Walkway for 1:25"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -569.494140625,
+            "value": "0:56",
+            "why": "South Walkway for 0:56"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -9.799884796142578,
+            "value": "$49",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 185.07728576660156,
+            "value": "93%",
+            "why": ""
+          }
+        ],
+        "cost": 48.99942398071289,
+        "danger_seconds": 56.94941711425781,
+        "ended_at": 429.6499938964844,
+        "heavy_seconds": 111.90222930908203,
+        "max_wait": 141.30401611328125,
+        "outcome": "won",
+        "peak_density": 4.6253275871276855,
+        "satisfaction": 92.53864288330078,
+        "score": 494,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -569 pts (South Walkway for 0:56)",
+          "Heavy congestion: -112 pts (South Walkway for 1:25)",
+          "Operating cost: -10 pts (gate staff $49)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 92.53864288330078,
+      "seed": 20268937,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 146.63992309570312,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:26",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:04",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -80.45030975341797,
+            "value": "1:20",
+            "why": "South Walkway for 1:19"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -503.49517822265625,
+            "value": "0:50",
+            "why": "South Walkway for 0:50"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.456542015075684,
+            "value": "$52",
+            "why": "gate staff $52"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 187.85791015625,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 52.28270721435547,
+        "danger_seconds": 50.349517822265625,
+        "ended_at": 423.5500183105469,
+        "heavy_seconds": 80.45030975341797,
+        "max_wait": 124.35298919677734,
+        "outcome": "won",
+        "peak_density": 4.103184223175049,
+        "satisfaction": 93.928955078125,
+        "score": 593,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -503 pts (South Walkway for 0:50)",
+          "Heavy congestion: -80 pts (South Walkway for 1:19)",
+          "Operating cost: -10 pts (gate staff $52)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.928955078125,
+      "seed": 20276856,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 144.22097778320312,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:24",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:03",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -105.25182342529297,
+            "value": "1:45",
+            "why": "South Walkway for 1:25"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -440.49615478515625,
+            "value": "0:44",
+            "why": "South Walkway for 0:44, first at 4:03 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -8.959897994995117,
+            "value": "$45",
+            "why": "gate staff $45"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 187.65829467773438,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 44.79948806762695,
+        "danger_seconds": 44.04961395263672,
+        "ended_at": 421.6499938964844,
+        "heavy_seconds": 105.25182342529297,
+        "max_wait": 123.95296478271484,
+        "outcome": "won",
+        "peak_density": 4.184823036193848,
+        "satisfaction": 93.82914733886719,
+        "score": 633,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -440 pts (South Walkway for 0:44, first at 4:03 after the incident at 2:20)",
+          "Heavy congestion: -105 pts (South Walkway for 1:25)",
+          "Operating cost: -9 pts (gate staff $45)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.82914733886719,
+      "seed": 20284775,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 143.33758544921875,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:15",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -92.65105438232422,
+            "value": "1:32",
+            "why": "South Walkway for 1:16"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -586.493896484375,
+            "value": "0:58",
+            "why": "South Walkway for 0:58"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -9.726552963256836,
+            "value": "$49",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 187.66677856445312,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 48.63276290893555,
+        "danger_seconds": 58.649391174316406,
+        "ended_at": 422.45001220703125,
+        "heavy_seconds": 92.65105438232422,
+        "max_wait": 135.9036865234375,
+        "outcome": "won",
+        "peak_density": 4.133759498596191,
+        "satisfaction": 93.83338928222656,
+        "score": 499,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -586 pts (South Walkway for 0:58)",
+          "Heavy congestion: -93 pts (South Walkway for 1:16)",
+          "Operating cost: -10 pts (gate staff $49)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.83338928222656,
+      "seed": 20292694,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 134.3763885498047,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:53",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -57.64940643310547,
+            "value": "0:57",
+            "why": "South Walkway for 0:53"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -227.9993896484375,
+            "value": "0:22",
+            "why": "South Walkway for 0:22, first at 4:26 after the incident at 2:46"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -7.589918613433838,
+            "value": "$38",
+            "why": "gate staff $38"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.78724670410156,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 37.94959259033203,
+        "danger_seconds": 22.799938201904297,
+        "ended_at": 407.0500183105469,
+        "heavy_seconds": 57.64940643310547,
+        "max_wait": 113.70233917236328,
+        "outcome": "won",
+        "peak_density": 4.101640224456787,
+        "satisfaction": 96.39362335205078,
+        "score": 900,
+        "stars": 2,
+        "top_losses": [
+          "Dangerous crowding: -228 pts (South Walkway for 0:22, first at 4:26 after the incident at 2:46)",
+          "Heavy congestion: -58 pts (South Walkway for 0:53)",
+          "Operating cost: -8 pts (gate staff $38)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.39362335205078,
+      "seed": 20300613,
+      "strategy": "meter_north"
+    },
+    {
+      "report": {
+        "avg_journey": 148.16973876953125,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -161.4552459716797,
+            "value": "2:41",
+            "why": "Station Ramp for 2:09"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -891.5084228515625,
+            "value": "1:29",
+            "why": "South Junction for 1:26, first at 4:18 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 177.68495178222656,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 89.15084075927734,
+        "ended_at": 452.1499938964844,
+        "heavy_seconds": 161.4552459716797,
+        "max_wait": 140.50396728515625,
+        "outcome": "won",
+        "peak_density": 4.248771667480469,
+        "satisfaction": 88.84247589111328,
+        "score": 125,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -892 pts (South Junction for 1:26, first at 4:18 after the incident at 2:31)",
+          "Heavy congestion: -161 pts (Station Ramp for 2:09)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 88.84247589111328,
+      "seed": 20261018,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 154.4871826171875,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -8.974365234375,
+            "value": "2:34",
+            "why": "0:04 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -26.956192016601562,
+            "value": "2:56",
+            "why": "most waiting happened in Station Ramp"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -172.305908203125,
+            "value": "2:52",
+            "why": "Station Ramp for 2:32"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -572.994140625,
+            "value": "0:57",
+            "why": "South Junction for 0:45, first at 4:55 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 177.44915771484375,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 57.29941177368164,
+        "ended_at": 455.3999938964844,
+        "heavy_seconds": 172.305908203125,
+        "max_wait": 176.95619201660156,
+        "outcome": "won",
+        "peak_density": 3.9708824157714844,
+        "satisfaction": 88.72457885742188,
+        "score": 396,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -573 pts (South Junction for 0:45, first at 4:55 after the incident at 2:15)",
+          "Heavy congestion: -172 pts (Station Ramp for 2:32)",
+          "Longest wait: -27 pts (most waiting happened in Station Ramp)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 88.72457885742188,
+      "seed": 20268937,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 131.13906860351562,
+        "completed": 806,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:11",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -137.9538116455078,
+            "value": "2:17",
+            "why": "South Junction for 2:13"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Junction for 1:11, first at 4:09 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -582.0,
+            "value": "194",
+            "why": "194 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 180.00924682617188,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 342.75,
+        "heavy_seconds": 137.9538116455078,
+        "max_wait": 139.5539093017578,
+        "outcome": "failed_danger",
+        "peak_density": 4.066287040710449,
+        "satisfaction": 90.00462341308594,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Junction for 1:11, first at 4:09 after the incident at 2:12)",
+          "Still on site: -582 pts (194 people had not left when the run ended)",
+          "Heavy congestion: -138 pts (South Junction for 2:13)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.00462341308594,
+      "seed": 20276856,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 150.61798095703125,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -1.2359619140625,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -29.256332397460938,
+            "value": "2:59",
+            "why": "most waiting happened in Station Ramp"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -159.65513610839844,
+            "value": "2:39",
+            "why": "Station Ramp for 2:11"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -599.4937133789062,
+            "value": "0:59",
+            "why": "South Junction for 0:54, first at 4:17 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 178.99168395996094,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 59.949371337890625,
+        "ended_at": 448.45001220703125,
+        "heavy_seconds": 159.65513610839844,
+        "max_wait": 179.25633239746094,
+        "outcome": "won",
+        "peak_density": 4.091724395751953,
+        "satisfaction": 89.49584197998047,
+        "score": 389,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -599 pts (South Junction for 0:54, first at 4:17 after the incident at 2:20)",
+          "Heavy congestion: -160 pts (Station Ramp for 2:11)",
+          "Longest wait: -29 pts (most waiting happened in Station Ramp)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.49584197998047,
+      "seed": 20284775,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 144.8797607421875,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:24",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -12.205291748046875,
+            "value": "2:42",
+            "why": "most waiting happened in Station Ramp"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -146.05430603027344,
+            "value": "2:26",
+            "why": "Station Ramp for 2:06"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -83.50013732910156,
+            "value": "0:08",
+            "why": "Station Ramp for 0:07, first at 5:05 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 186.57200622558594,
+            "value": "93%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 8.350013732910156,
+        "ended_at": 447.0,
+        "heavy_seconds": 146.05430603027344,
+        "max_wait": 162.20529174804688,
+        "outcome": "won",
+        "peak_density": 3.976167678833008,
+        "satisfaction": 93.28600311279297,
+        "score": 945,
+        "stars": 2,
+        "top_losses": [
+          "Heavy congestion: -146 pts (Station Ramp for 2:06)",
+          "Dangerous crowding: -84 pts (Station Ramp for 0:07, first at 5:05 after the incident at 2:31)",
+          "Longest wait: -12 pts (most waiting happened in Station Ramp)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.28600311279297,
+      "seed": 20292694,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 142.3280792236328,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:22",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -39.05693054199219,
+            "value": "3:09",
+            "why": "most waiting happened in Station Ramp"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -137.30377197265625,
+            "value": "2:17",
+            "why": "Station Ramp for 1:55"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -676.4953002929688,
+            "value": "1:07",
+            "why": "South Junction for 0:59, first at 4:34 after the incident at 2:46"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -0.0,
+            "value": "$0",
+            "why": ""
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 180.77325439453125,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 0.0,
+        "danger_seconds": 67.64952850341797,
+        "ended_at": 448.5500183105469,
+        "heavy_seconds": 137.30377197265625,
+        "max_wait": 189.0569305419922,
+        "outcome": "won",
+        "peak_density": 4.283935546875,
+        "satisfaction": 90.38662719726562,
+        "score": 328,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -676 pts (South Junction for 0:59, first at 4:34 after the incident at 2:46)",
+          "Heavy congestion: -137 pts (Station Ramp for 1:55)",
+          "Longest wait: -39 pts (most waiting happened in Station Ramp)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.38662719726562,
+      "seed": 20300613,
+      "strategy": "close_north"
+    },
+    {
+      "report": {
+        "avg_journey": 138.82305908203125,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:18",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -51.34950256347656,
+            "value": "0:51",
+            "why": "Station Ramp for 0:51"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -18.049911499023438,
+            "value": "$90",
+            "why": "gate staff $40"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 193.45887756347656,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 90.24955749511719,
+        "danger_seconds": 0.0,
+        "ended_at": 399.0,
+        "heavy_seconds": 51.34950256347656,
+        "max_wait": 139.1538848876953,
+        "outcome": "won",
+        "peak_density": 3.332864761352539,
+        "satisfaction": 96.72943878173828,
+        "score": 1124,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -51 pts (Station Ramp for 0:51)",
+          "Operating cost: -18 pts (gate staff $40)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.72943878173828,
+      "seed": 20261018,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 147.0631866455078,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -95.3512191772461,
+            "value": "1:35",
+            "why": "Station Ramp for 1:35"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -17.9999942779541,
+            "value": "0:01",
+            "why": "Station Ramp for 0:01, first at 4:37 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -19.799884796142578,
+            "value": "$99",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.74954223632812,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 98.99942016601562,
+        "danger_seconds": 1.7999993562698364,
+        "ended_at": 422.8500061035156,
+        "heavy_seconds": 95.3512191772461,
+        "max_wait": 140.7039794921875,
+        "outcome": "won",
+        "peak_density": 3.335744619369507,
+        "satisfaction": 94.87477111816406,
+        "score": 1057,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -95 pts (Station Ramp for 1:35)",
+          "Operating cost: -20 pts (gate staff $49)",
+          "Dangerous crowding: -18 pts (Station Ramp for 0:01, first at 4:37 after the incident at 2:15)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.87477111816406,
+      "seed": 20268937,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 147.32171630859375,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -83.85051727294922,
+            "value": "1:23",
+            "why": "Station Ramp for 1:22"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -20.456541061401367,
+            "value": "$102",
+            "why": "gate staff $52"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.08863830566406,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 102.28270721435547,
+        "danger_seconds": 0.0,
+        "ended_at": 417.20001220703125,
+        "heavy_seconds": 83.85051727294922,
+        "max_wait": 147.5543975830078,
+        "outcome": "won",
+        "peak_density": 3.2426366806030273,
+        "satisfaction": 95.04431915283203,
+        "score": 1086,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -84 pts (Station Ramp for 1:22)",
+          "Operating cost: -20 pts (gate staff $52)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.04431915283203,
+      "seed": 20276856,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 143.40042114257812,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -28.10626220703125,
+            "value": "2:58",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -71.94979095458984,
+            "value": "1:11",
+            "why": "Station Ramp for 1:10"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -18.959897994995117,
+            "value": "$95",
+            "why": "gate staff $45"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.61996459960938,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 94.79948425292969,
+        "danger_seconds": 0.0,
+        "ended_at": 403.3500061035156,
+        "heavy_seconds": 71.94979095458984,
+        "max_wait": 178.10626220703125,
+        "outcome": "won",
+        "peak_density": 3.1537513732910156,
+        "satisfaction": 95.80998229980469,
+        "score": 1073,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -72 pts (Station Ramp for 1:10)",
+          "Longest wait: -28 pts (most waiting happened in Station North Hall)",
+          "Operating cost: -19 pts (gate staff $45)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.80998229980469,
+      "seed": 20284775,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 143.09515380859375,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -8.90509033203125,
+            "value": "2:38",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -55.299442291259766,
+            "value": "0:55",
+            "why": "Station Ramp for 0:54"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -19.726552963256836,
+            "value": "$99",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.07608032226562,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 98.63276672363281,
+        "danger_seconds": 0.0,
+        "ended_at": 412.1499938964844,
+        "heavy_seconds": 55.299442291259766,
+        "max_wait": 158.90509033203125,
+        "outcome": "won",
+        "peak_density": 3.1457722187042236,
+        "satisfaction": 95.53804016113281,
+        "score": 1107,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -55 pts (Station Ramp for 0:54)",
+          "Operating cost: -20 pts (gate staff $49)",
+          "Longest wait: -9 pts (most waiting happened in Station North Hall)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.53804016113281,
+      "seed": 20292694,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 134.10052490234375,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:57",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -44.29961013793945,
+            "value": "0:44",
+            "why": "Station Ramp for 0:44"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -17.58991813659668,
+            "value": "$88",
+            "why": "gate staff $38"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 194.33062744140625,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 87.94959259033203,
+        "danger_seconds": 0.0,
+        "ended_at": 409.1000061035156,
+        "heavy_seconds": 44.29961013793945,
+        "max_wait": 117.8025894165039,
+        "outcome": "won",
+        "peak_density": 3.0807394981384277,
+        "satisfaction": 97.16531372070312,
+        "score": 1132,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -44 pts (Station Ramp for 0:44)",
+          "Operating cost: -18 pts (gate staff $38)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 97.16531372070312,
+      "seed": 20300613,
+      "strategy": "signs_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 146.20858764648438,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:26",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:55",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -140.45396423339844,
+            "value": "2:20",
+            "why": "South Walkway for 1:35"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -797.0026245117188,
+            "value": "1:19",
+            "why": "South Walkway for 0:58"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -18.049911499023438,
+            "value": "$90",
+            "why": "gate staff $40"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.95669555664062,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 90.24955749511719,
+        "danger_seconds": 79.70026397705078,
+        "ended_at": 446.20001220703125,
+        "heavy_seconds": 140.45396423339844,
+        "max_wait": 115.65245819091797,
+        "outcome": "won",
+        "peak_density": 4.500820636749268,
+        "satisfaction": 89.97834777832031,
+        "score": 224,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -797 pts (South Walkway for 0:58)",
+          "Heavy congestion: -140 pts (South Walkway for 1:35)",
+          "Operating cost: -18 pts (gate staff $40)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.97834777832031,
+      "seed": 20261018,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 123.6834487915039,
+        "completed": 687,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:03",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:07",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -106.05187225341797,
+            "value": "1:46",
+            "why": "South Walkway for 1:46"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:29, first at 3:25 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -19.799884796142578,
+            "value": "$99",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -939.0,
+            "value": "313",
+            "why": "313 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 178.86038208007812,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 98.99942016601562,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 311.3000183105469,
+        "heavy_seconds": 106.05187225341797,
+        "max_wait": 127.7531967163086,
+        "outcome": "failed_danger",
+        "peak_density": 5.227055549621582,
+        "satisfaction": 89.43019104003906,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Still on site: -939 pts (313 people had not left when the run ended)",
+          "Dangerous crowding: -900 pts (South Walkway for 1:29, first at 3:25 after the incident at 2:15)",
+          "Heavy congestion: -106 pts (South Walkway for 1:46)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.43019104003906,
+      "seed": 20268937,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 130.87049865722656,
+        "completed": 775,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:10",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:06",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -114.50238800048828,
+            "value": "1:54",
+            "why": "South Walkway for 1:48"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:16"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -20.456541061401367,
+            "value": "$102",
+            "why": "gate staff $52"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -675.0,
+            "value": "225",
+            "why": "225 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.3258056640625,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 102.28270721435547,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 338.20001220703125,
+        "heavy_seconds": 114.50238800048828,
+        "max_wait": 126.70313262939453,
+        "outcome": "failed_danger",
+        "peak_density": 5.186221599578857,
+        "satisfaction": 89.66290283203125,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:16)",
+          "Still on site: -675 pts (225 people had not left when the run ended)",
+          "Heavy congestion: -115 pts (South Walkway for 1:48)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.66290283203125,
+      "seed": 20276856,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 149.5853729248047,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:29",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -139.00387573242188,
+            "value": "2:19",
+            "why": "South Walkway for 1:36"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -841.50537109375,
+            "value": "1:24",
+            "why": "South Walkway for 0:59"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -18.959897994995117,
+            "value": "$95",
+            "why": "gate staff $45"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.01968383789062,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 94.79948425292969,
+        "danger_seconds": 84.1505355834961,
+        "ended_at": 452.70001220703125,
+        "heavy_seconds": 139.00387573242188,
+        "max_wait": 140.10394287109375,
+        "outcome": "won",
+        "peak_density": 4.731509685516357,
+        "satisfaction": 89.50984191894531,
+        "score": 180,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -842 pts (South Walkway for 0:59)",
+          "Heavy congestion: -139 pts (South Walkway for 1:36)",
+          "Operating cost: -19 pts (gate staff $45)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.50984191894531,
+      "seed": 20284775,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 148.13687133789062,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:17",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -140.40396118164062,
+            "value": "2:20",
+            "why": "South Walkway for 1:47"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -809.50341796875,
+            "value": "1:20",
+            "why": "South Walkway for 1:19, first at 3:45 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -19.726552963256836,
+            "value": "$99",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.10009765625,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 98.63276672363281,
+        "danger_seconds": 80.9503402709961,
+        "ended_at": 452.6499938964844,
+        "heavy_seconds": 140.40396118164062,
+        "max_wait": 137.00375366210938,
+        "outcome": "won",
+        "peak_density": 4.78774881362915,
+        "satisfaction": 89.550048828125,
+        "score": 209,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -810 pts (South Walkway for 1:19, first at 3:45 after the incident at 2:31)",
+          "Heavy congestion: -140 pts (South Walkway for 1:47)",
+          "Operating cost: -20 pts (gate staff $49)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.550048828125,
+      "seed": 20292694,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 139.81126403808594,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:03",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -114.35237884521484,
+            "value": "1:54",
+            "why": "South Walkway for 1:27"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -501.9952087402344,
+            "value": "0:50",
+            "why": "South Walkway for 0:50"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -17.58991813659668,
+            "value": "$88",
+            "why": "gate staff $38"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 185.6236572265625,
+            "value": "93%",
+            "why": ""
+          }
+        ],
+        "cost": 87.94959259033203,
+        "danger_seconds": 50.199520111083984,
+        "ended_at": 431.3000183105469,
+        "heavy_seconds": 114.35237884521484,
+        "max_wait": 123.85295867919922,
+        "outcome": "won",
+        "peak_density": 4.730399131774902,
+        "satisfaction": 92.81182861328125,
+        "score": 552,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -502 pts (South Walkway for 0:50)",
+          "Heavy congestion: -114 pts (South Walkway for 1:27)",
+          "Operating cost: -18 pts (gate staff $38)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 92.81182861328125,
+      "seed": 20300613,
+      "strategy": "north_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 128.69615173339844,
+        "completed": 815,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:08",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:58",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -119.60269927978516,
+            "value": "1:59",
+            "why": "South Walkway for 1:35"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:04, first at 3:39 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -8.049911499023438,
+            "value": "$40",
+            "why": "gate staff $40"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -555.0,
+            "value": "185",
+            "why": "185 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 181.20396423339844,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 40.24955749511719,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 339.0,
+        "heavy_seconds": 119.60269927978516,
+        "max_wait": 118.90265655517578,
+        "outcome": "failed_danger",
+        "peak_density": 5.226675510406494,
+        "satisfaction": 90.60198211669922,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:04, first at 3:39 after the incident at 2:31)",
+          "Still on site: -555 pts (185 people had not left when the run ended)",
+          "Heavy congestion: -120 pts (South Walkway for 1:35)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.60198211669922,
+      "seed": 20261018,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 120.05233001708984,
+        "completed": 637,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:00",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:59",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -92.50104522705078,
+            "value": "1:32",
+            "why": "South Walkway for 1:30"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:30, first at 3:24 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -9.799884796142578,
+            "value": "$49",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -1089.0,
+            "value": "363",
+            "why": "363 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 178.52174377441406,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 48.99942398071289,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 294.6499938964844,
+        "heavy_seconds": 92.50104522705078,
+        "max_wait": 119.90271759033203,
+        "outcome": "failed_danger",
+        "peak_density": 5.242944717407227,
+        "satisfaction": 89.26087188720703,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Still on site: -1089 pts (363 people had not left when the run ended)",
+          "Dangerous crowding: -900 pts (South Walkway for 1:30, first at 3:24 after the incident at 2:15)",
+          "Heavy congestion: -93 pts (South Walkway for 1:30)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.26087188720703,
+      "seed": 20268937,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 127.10980987548828,
+        "completed": 751,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:07",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:07",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -109.20206451416016,
+            "value": "1:49",
+            "why": "South Walkway for 1:49"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:22, first at 5:06 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -10.456542015075684,
+            "value": "$52",
+            "why": "gate staff $52"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -747.0,
+            "value": "249",
+            "why": "249 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 177.83309936523438,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 52.28270721435547,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 329.1000061035156,
+        "heavy_seconds": 109.20206451416016,
+        "max_wait": 127.85320281982422,
+        "outcome": "failed_danger",
+        "peak_density": 5.255988121032715,
+        "satisfaction": 88.91654968261719,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:22, first at 5:06 after the incident at 2:12)",
+          "Still on site: -747 pts (249 people had not left when the run ended)",
+          "Heavy congestion: -109 pts (South Walkway for 1:49)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 88.91654968261719,
+      "seed": 20276856,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 129.13006591796875,
+        "completed": 779,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:09",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:18",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -122.2028579711914,
+            "value": "2:02",
+            "why": "South Walkway for 1:51"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:15, first at 4:49 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -8.959897994995117,
+            "value": "$45",
+            "why": "gate staff $45"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -663.0,
+            "value": "221",
+            "why": "221 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 178.1510772705078,
+            "value": "89%",
+            "why": ""
+          }
+        ],
+        "cost": 44.79948806762695,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 332.95001220703125,
+        "heavy_seconds": 122.2028579711914,
+        "max_wait": 138.20382690429688,
+        "outcome": "failed_danger",
+        "peak_density": 4.7404398918151855,
+        "satisfaction": 89.0755386352539,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:15, first at 4:49 after the incident at 2:20)",
+          "Still on site: -663 pts (221 people had not left when the run ended)",
+          "Heavy congestion: -122 pts (South Walkway for 1:51)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.0755386352539,
+      "seed": 20284775,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 126.22506713867188,
+        "completed": 784,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:06",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:15",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -111.50220489501953,
+            "value": "1:51",
+            "why": "South Walkway for 1:50"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -900.0089111328125,
+            "value": "1:30",
+            "why": "South Walkway for 1:25"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -9.726552963256836,
+            "value": "$49",
+            "why": "gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -648.0,
+            "value": "216",
+            "why": "216 people had not left when the run ended"
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 179.70668029785156,
+            "value": "90%",
+            "why": ""
+          }
+        ],
+        "cost": 48.63276290893555,
+        "danger_seconds": 90.00089263916016,
+        "ended_at": 333.6499938964844,
+        "heavy_seconds": 111.50220489501953,
+        "max_wait": 135.1036376953125,
+        "outcome": "failed_danger",
+        "peak_density": 5.436794757843018,
+        "satisfaction": 89.85334014892578,
+        "score": 0,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -900 pts (South Walkway for 1:25)",
+          "Still on site: -648 pts (216 people had not left when the run ended)",
+          "Heavy congestion: -112 pts (South Walkway for 1:50)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 89.85334014892578,
+      "seed": 20292694,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 140.1888427734375,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:48",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -121.8028335571289,
+            "value": "2:01",
+            "why": "South Walkway for 1:25"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -794.5025024414062,
+            "value": "1:19",
+            "why": "South Walkway for 0:54"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -7.589918613433838,
+            "value": "$38",
+            "why": "gate staff $38"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 182.63092041015625,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 37.94959259033203,
+        "danger_seconds": 79.45024871826172,
+        "ended_at": 437.25,
+        "heavy_seconds": 121.8028335571289,
+        "max_wait": 108.25200653076172,
+        "outcome": "won",
+        "peak_density": 4.97239875793457,
+        "satisfaction": 91.31546020507812,
+        "score": 259,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -795 pts (South Walkway for 0:54)",
+          "Heavy congestion: -122 pts (South Walkway for 1:25)",
+          "Operating cost: -8 pts (gate staff $38)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 91.31546020507812,
+      "seed": 20300613,
+      "strategy": "trickle_north"
+    },
+    {
+      "report": {
+        "avg_journey": 154.6739044189453,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -9.347808837890625,
+            "value": "2:34",
+            "why": "0:04 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:06",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -64.5493392944336,
+            "value": "1:04",
+            "why": "Central Plaza for 1:04"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -4.500000476837158,
+            "value": "0:00",
+            "why": "Central Plaza for 0:00, first at 4:51 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -26.100543975830078,
+            "value": "$131",
+            "why": "gate staff $81"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 188.7554931640625,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 130.50271606445312,
+        "danger_seconds": 0.4500000476837158,
+        "ended_at": 435.45001220703125,
+        "heavy_seconds": 64.5493392944336,
+        "max_wait": 126.5531234741211,
+        "outcome": "won",
+        "peak_density": 3.312082290649414,
+        "satisfaction": 94.37774658203125,
+        "score": 1084,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -65 pts (Central Plaza for 1:04)",
+          "Operating cost: -26 pts (gate staff $81)",
+          "Average journey: -9 pts (0:04 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.37774658203125,
+      "seed": 20261018,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 171.09898376464844,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -42.197967529296875,
+            "value": "2:51",
+            "why": "0:21 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -113.30231475830078,
+            "value": "1:53",
+            "why": "Central Plaza for 1:33"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -264.49884033203125,
+            "value": "0:26",
+            "why": "Central Plaza for 0:26, first at 4:46 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -29.60129165649414,
+            "value": "$148",
+            "why": "gate staff $98"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 181.18594360351562,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 148.00645446777344,
+        "danger_seconds": 26.44988250732422,
+        "ended_at": 467.0500183105469,
+        "heavy_seconds": 113.30231475830078,
+        "max_wait": 143.65415954589844,
+        "outcome": "won",
+        "peak_density": 3.8470280170440674,
+        "satisfaction": 90.59297180175781,
+        "score": 732,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -264 pts (Central Plaza for 0:26, first at 4:46 after the incident at 2:15)",
+          "Heavy congestion: -113 pts (Central Plaza for 1:33)",
+          "Average journey: -42 pts (0:21 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 90.59297180175781,
+      "seed": 20268937,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 180.18179321289062,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -60.36358642578125,
+            "value": "3:00",
+            "why": "0:30 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:25",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -188.306884765625,
+            "value": "3:08",
+            "why": "Central Plaza for 2:01"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -383.99700927734375,
+            "value": "0:38",
+            "why": "Central Plaza for 0:37, first at 5:01 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -30.914905548095703,
+            "value": "$155",
+            "why": "gate staff $105"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 172.3343505859375,
+            "value": "86%",
+            "why": ""
+          }
+        ],
+        "cost": 154.57452392578125,
+        "danger_seconds": 38.39970016479492,
+        "ended_at": 506.6499938964844,
+        "heavy_seconds": 188.306884765625,
+        "max_wait": 145.70428466796875,
+        "outcome": "won",
+        "peak_density": 4.62626314163208,
+        "satisfaction": 86.16717529296875,
+        "score": 509,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -384 pts (Central Plaza for 0:37, first at 5:01 after the incident at 2:12)",
+          "Heavy congestion: -188 pts (Central Plaza for 2:01)",
+          "Average journey: -60 pts (0:30 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 86.16717529296875,
+      "seed": 20276856,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 164.82534790039062,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -29.65069580078125,
+            "value": "2:44",
+            "why": "0:14 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:12",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -86.40067291259766,
+            "value": "1:26",
+            "why": "Central Plaza for 1:26"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -134.50033569335938,
+            "value": "0:13",
+            "why": "Central Plaza for 0:13, first at 4:52 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -27.92093276977539,
+            "value": "$140",
+            "why": "gate staff $90"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 184.7198028564453,
+            "value": "92%",
+            "why": ""
+          }
+        ],
+        "cost": 139.6046600341797,
+        "danger_seconds": 13.450033187866211,
+        "ended_at": 446.8000183105469,
+        "heavy_seconds": 86.40067291259766,
+        "max_wait": 132.10345458984375,
+        "outcome": "won",
+        "peak_density": 3.5089609622955322,
+        "satisfaction": 92.35990142822266,
+        "score": 906,
+        "stars": 2,
+        "top_losses": [
+          "Dangerous crowding: -135 pts (Central Plaza for 0:13, first at 4:52 after the incident at 2:20)",
+          "Heavy congestion: -86 pts (Central Plaza for 1:26)",
+          "Average journey: -30 pts (0:14 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 92.35990142822266,
+      "seed": 20284775,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 164.36167907714844,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -28.723358154296875,
+            "value": "2:44",
+            "why": "0:14 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:26",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -142.80410766601562,
+            "value": "2:22",
+            "why": "Central Plaza for 2:01"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -197.99984741210938,
+            "value": "0:19",
+            "why": "Central Plaza for 0:19, first at 5:10 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -29.454593658447266,
+            "value": "$147",
+            "why": "gate staff $97"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 182.0314178466797,
+            "value": "91%",
+            "why": ""
+          }
+        ],
+        "cost": 147.27296447753906,
+        "danger_seconds": 19.799983978271484,
+        "ended_at": 469.8500061035156,
+        "heavy_seconds": 142.80410766601562,
+        "max_wait": 146.20431518554688,
+        "outcome": "won",
+        "peak_density": 3.704285144805908,
+        "satisfaction": 91.01570892333984,
+        "score": 783,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -198 pts (Central Plaza for 0:19, first at 5:10 after the incident at 2:31)",
+          "Heavy congestion: -143 pts (Central Plaza for 2:01)",
+          "Operating cost: -29 pts (gate staff $97)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 91.01570892333984,
+      "seed": 20292694,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 148.2808074951172,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:51",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -33.19977951049805,
+            "value": "0:33",
+            "why": "Central Plaza for 0:33"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -25.180347442626953,
+            "value": "$126",
+            "why": "gate staff $76"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.61251831054688,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 125.9017333984375,
+        "danger_seconds": 0.0,
+        "ended_at": 445.25,
+        "heavy_seconds": 33.19977951049805,
+        "max_wait": 111.70221710205078,
+        "outcome": "won",
+        "peak_density": 3.4576141834259033,
+        "satisfaction": 95.30625915527344,
+        "score": 1132,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -33 pts (Central Plaza for 0:33)",
+          "Operating cost: -25 pts (gate staff $76)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.30625915527344,
+      "seed": 20300613,
+      "strategy": "hold_in_plaza"
+    },
+    {
+      "report": {
+        "avg_journey": 138.7667999267578,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:18",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:12",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -59.949371337890625,
+            "value": "0:59",
+            "why": "Station Ramp for 0:57"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -15.933276176452637,
+            "value": "$80",
+            "why": "gate staff $30"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.9485626220703,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 79.6663818359375,
+        "danger_seconds": 0.0,
+        "ended_at": 394.1000061035156,
+        "heavy_seconds": 59.949371337890625,
+        "max_wait": 132.95350646972656,
+        "outcome": "won",
+        "peak_density": 2.9970765113830566,
+        "satisfaction": 96.47428131103516,
+        "score": 1117,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -60 pts (Station Ramp for 0:57)",
+          "Operating cost: -16 pts (gate staff $30)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.47428131103516,
+      "seed": 20261018,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 148.4313507080078,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:18",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -73.69989776611328,
+            "value": "1:13",
+            "why": "Station Ramp for 1:11"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -26.66733169555664,
+            "value": "$133",
+            "why": "gate staff $83"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.00547790527344,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 133.33665466308594,
+        "danger_seconds": 0.0,
+        "ended_at": 422.8500061035156,
+        "heavy_seconds": 73.69989776611328,
+        "max_wait": 138.10382080078125,
+        "outcome": "won",
+        "peak_density": 3.0365614891052246,
+        "satisfaction": 95.00273895263672,
+        "score": 1090,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -74 pts (Station Ramp for 1:11)",
+          "Operating cost: -27 pts (gate staff $83)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.00273895263672,
+      "seed": 20268937,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 147.66036987304688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:21",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -95.30121612548828,
+            "value": "1:35",
+            "why": "Station Ramp for 1:29"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -234.49928283691406,
+            "value": "0:23",
+            "why": "Station Ramp for 0:23, first at 4:38 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -17.133258819580078,
+            "value": "$86",
+            "why": "gate staff $36"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 188.0249481201172,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 85.66629028320312,
+        "danger_seconds": 23.449928283691406,
+        "ended_at": 432.6499938964844,
+        "heavy_seconds": 95.30121612548828,
+        "max_wait": 141.4540252685547,
+        "outcome": "won",
+        "peak_density": 3.733543872833252,
+        "satisfaction": 94.0124740600586,
+        "score": 841,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -234 pts (Station Ramp for 0:23, first at 4:38 after the incident at 2:12)",
+          "Heavy congestion: -95 pts (Station Ramp for 1:29)",
+          "Operating cost: -17 pts (gate staff $36)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.0124740600586,
+      "seed": 20276856,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 144.8597412109375,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:24",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -3.8547821044921875,
+            "value": "2:33",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -76.05004119873047,
+            "value": "1:16",
+            "why": "Station North Hall for 1:01"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -23.19992446899414,
+            "value": "$116",
+            "why": "gate staff $66"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.7825927734375,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 115.99961853027344,
+        "danger_seconds": 0.0,
+        "ended_at": 415.1000061035156,
+        "heavy_seconds": 76.05004119873047,
+        "max_wait": 153.8547821044922,
+        "outcome": "won",
+        "peak_density": 2.863029956817627,
+        "satisfaction": 95.39129638671875,
+        "score": 1088,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -76 pts (Station North Hall for 1:01)",
+          "Operating cost: -23 pts (gate staff $66)",
+          "Longest wait: -4 pts (most waiting happened in Station North Hall)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.39129638671875,
+      "seed": 20284775,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 143.17990112304688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -10.455184936523438,
+            "value": "2:40",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -87.3507308959961,
+            "value": "1:27",
+            "why": "Station Ramp for 1:27"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -31.999980926513672,
+            "value": "0:03",
+            "why": "Station Ramp for 0:03, first at 4:16 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -24.80026626586914,
+            "value": "$124",
+            "why": "gate staff $74"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.83889770507812,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 124.00132751464844,
+        "danger_seconds": 3.199998140335083,
+        "ended_at": 419.8999938964844,
+        "heavy_seconds": 87.3507308959961,
+        "max_wait": 160.45518493652344,
+        "outcome": "won",
+        "peak_density": 3.2330594062805176,
+        "satisfaction": 94.91944885253906,
+        "score": 1035,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -87 pts (Station Ramp for 1:27)",
+          "Dangerous crowding: -32 pts (Station Ramp for 0:03, first at 4:16 after the incident at 2:31)",
+          "Operating cost: -25 pts (gate staff $74)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.91944885253906,
+      "seed": 20292694,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 134.28085327148438,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:01",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -59.89937210083008,
+            "value": "0:59",
+            "why": "Station Ramp for 0:53"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -17.266590118408203,
+            "value": "$86",
+            "why": "gate staff $36"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 193.1493682861328,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 86.33294677734375,
+        "danger_seconds": 0.0,
+        "ended_at": 398.70001220703125,
+        "heavy_seconds": 59.89937210083008,
+        "max_wait": 121.0027847290039,
+        "outcome": "won",
+        "peak_density": 3.2239747047424316,
+        "satisfaction": 96.5746841430664,
+        "score": 1116,
+        "stars": 3,
+        "top_losses": [
+          "Heavy congestion: -60 pts (Station Ramp for 0:53)",
+          "Operating cost: -17 pts (gate staff $36)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.5746841430664,
+      "seed": 20300613,
+      "strategy": "reactive"
+    },
+    {
+      "report": {
+        "avg_journey": 140.76385498046875,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:45",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -52.94947814941406,
+            "value": "0:52",
+            "why": "North Walkway for 0:34"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -229.49935913085938,
+            "value": "0:22",
+            "why": "North Walkway for 0:22, first at 4:19 after the incident at 2:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.07460021972656,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 22.949935913085938,
+        "ended_at": 411.5,
+        "heavy_seconds": 52.94947814941406,
+        "max_wait": 105.3518295288086,
+        "outcome": "won",
+        "peak_density": 3.6750330924987793,
+        "satisfaction": 96.03730010986328,
+        "score": 850,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -229 pts (North Walkway for 0:22, first at 4:19 after the incident at 2:31)",
+          "Operating cost: -60 pts (2 barriers)",
+          "Heavy congestion: -53 pts (North Walkway for 0:34)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.03730010986328,
+      "seed": 20261018,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 150.67164611816406,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -1.343292236328125,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -10.205169677734375,
+            "value": "2:40",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -91.4009780883789,
+            "value": "1:31",
+            "why": "North Walkway for 0:52"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -465.4957580566406,
+            "value": "0:46",
+            "why": "North Walkway for 0:46, first at 3:41 after the incident at 2:15"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 187.6536407470703,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 46.54957580566406,
+        "ended_at": 427.3000183105469,
+        "heavy_seconds": 91.4009780883789,
+        "max_wait": 160.20516967773438,
+        "outcome": "won",
+        "peak_density": 3.5624499320983887,
+        "satisfaction": 93.82682037353516,
+        "score": 559,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -465 pts (North Walkway for 0:46, first at 3:41 after the incident at 2:15)",
+          "Heavy congestion: -91 pts (North Walkway for 0:52)",
+          "Operating cost: -60 pts (2 barriers)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.82682037353516,
+      "seed": 20268937,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 148.59591674804688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:56",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -86.75069427490234,
+            "value": "1:26",
+            "why": "North Walkway for 1:24"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -686.9959106445312,
+            "value": "1:08",
+            "why": "North Walkway for 1:08, first at 4:28 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 187.00119018554688,
+            "value": "94%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 68.69959259033203,
+        "ended_at": 420.8500061035156,
+        "heavy_seconds": 86.75069427490234,
+        "max_wait": 116.65251922607422,
+        "outcome": "won",
+        "peak_density": 3.87247633934021,
+        "satisfaction": 93.50059509277344,
+        "score": 353,
+        "stars": 0,
+        "top_losses": [
+          "Dangerous crowding: -687 pts (North Walkway for 1:08, first at 4:28 after the incident at 2:12)",
+          "Heavy congestion: -87 pts (North Walkway for 1:24)",
+          "Operating cost: -60 pts (2 barriers)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 93.50059509277344,
+      "seed": 20276856,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 147.0408935546875,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:08",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -57.74940490722656,
+            "value": "0:57",
+            "why": "North Walkway for 0:50"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -408.9966125488281,
+            "value": "0:40",
+            "why": "North Walkway for 0:40, first at 3:37 after the incident at 2:20"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.0404052734375,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 40.899662017822266,
+        "ended_at": 415.1499938964844,
+        "heavy_seconds": 57.74940490722656,
+        "max_wait": 128.3532257080078,
+        "outcome": "won",
+        "peak_density": 3.9638442993164062,
+        "satisfaction": 94.52020263671875,
+        "score": 662,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -409 pts (North Walkway for 0:40, first at 3:37 after the incident at 2:20)",
+          "Operating cost: -60 pts (2 barriers)",
+          "Heavy congestion: -58 pts (North Walkway for 0:50)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.52020263671875,
+      "seed": 20284775,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 146.87161254882812,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:26",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:13",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -48.249549865722656,
+            "value": "0:48",
+            "why": "North Walkway for 0:34"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -315.998046875,
+            "value": "0:31",
+            "why": "North Walkway for 0:31"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 189.4151611328125,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 31.599803924560547,
+        "ended_at": 422.70001220703125,
+        "heavy_seconds": 48.249549865722656,
+        "max_wait": 133.20352172851562,
+        "outcome": "won",
+        "peak_density": 3.585714817047119,
+        "satisfaction": 94.70758056640625,
+        "score": 765,
+        "stars": 1,
+        "top_losses": [
+          "Dangerous crowding: -316 pts (North Walkway for 0:31)",
+          "Operating cost: -60 pts (2 barriers)",
+          "Heavy congestion: -48 pts (North Walkway for 0:34)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 94.70758056640625,
+      "seed": 20292694,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 137.02227783203125,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:17",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -28.349853515625,
+            "value": "0:28",
+            "why": "North Walkway for 0:20"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -67.00007629394531,
+            "value": "0:06",
+            "why": "North Walkway for 0:06"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -60.0,
+            "value": "$300",
+            "why": "2 barriers"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 193.92430114746094,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 300.0,
+        "danger_seconds": 6.700007438659668,
+        "ended_at": 415.45001220703125,
+        "heavy_seconds": 28.349853515625,
+        "max_wait": 139.30389404296875,
+        "outcome": "won",
+        "peak_density": 3.324510097503662,
+        "satisfaction": 96.96215057373047,
+        "score": 1039,
+        "stars": 3,
+        "top_losses": [
+          "Dangerous crowding: -67 pts (North Walkway for 0:06)",
+          "Operating cost: -60 pts (2 barriers)",
+          "Heavy congestion: -28 pts (North Walkway for 0:20)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.96215057373047,
+      "seed": 20300613,
+      "strategy": "ramp_pen"
+    },
+    {
+      "report": {
+        "avg_journey": 140.9807586669922,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:20",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:38",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -12.050027847290039,
+            "value": "0:12",
+            "why": "South Junction for 0:09"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -68.04991912841797,
+            "value": "$340",
+            "why": "2 barriers, gate staff $40"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 194.3857879638672,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 340.24957275390625,
+        "danger_seconds": 0.0,
+        "ended_at": 411.1000061035156,
+        "heavy_seconds": 12.050027847290039,
+        "max_wait": 98.6014175415039,
+        "outcome": "won",
+        "peak_density": 2.999990701675415,
+        "satisfaction": 97.1928939819336,
+        "score": 1114,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -68 pts (2 barriers, gate staff $40)",
+          "Heavy congestion: -12 pts (South Junction for 0:09)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 97.1928939819336,
+      "seed": 20261018,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 150.78195190429688,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -1.56390380859375,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:07",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -57.09941482543945,
+            "value": "0:57",
+            "why": "Station Ramp for 0:26"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -69.79988861083984,
+            "value": "$349",
+            "why": "2 barriers, gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.1185760498047,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 348.9994201660156,
+        "danger_seconds": 0.0,
+        "ended_at": 427.0500183105469,
+        "heavy_seconds": 57.09941482543945,
+        "max_wait": 127.05315399169922,
+        "outcome": "won",
+        "peak_density": 2.999701738357544,
+        "satisfaction": 95.55928802490234,
+        "score": 1063,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -70 pts (2 barriers, gate staff $49)",
+          "Heavy congestion: -57 pts (Station Ramp for 0:26)",
+          "Average journey: -2 pts (0:00 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.55928802490234,
+      "seed": 20268937,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 148.8987274169922,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:28",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:54",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -7.050008773803711,
+            "value": "0:07",
+            "why": "Station North Hall for 0:04"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -17.4999942779541,
+            "value": "0:01",
+            "why": "North Walkway for 0:01, first at 4:45 after the incident at 2:12"
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -70.45654296875,
+            "value": "$352",
+            "why": "2 barriers, gate staff $52"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.5677490234375,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 352.28271484375,
+        "danger_seconds": 1.7499994039535522,
+        "ended_at": 419.75,
+        "heavy_seconds": 7.050008773803711,
+        "max_wait": 114.9524154663086,
+        "outcome": "won",
+        "peak_density": 3.329948902130127,
+        "satisfaction": 95.78387451171875,
+        "score": 1097,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -70 pts (2 barriers, gate staff $52)",
+          "Dangerous crowding: -17 pts (North Walkway for 0:01, first at 4:45 after the incident at 2:12)",
+          "Heavy congestion: -7 pts (Station North Hall for 0:04)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.78387451171875,
+      "seed": 20276856,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 147.27438354492188,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.404571533203125,
+            "value": "2:30",
+            "why": "most waiting happened in Station North Hall"
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -3.0499982833862305,
+            "value": "0:03",
+            "why": "South Junction for 0:01"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -68.95989990234375,
+            "value": "$345",
+            "why": "2 barriers, gate staff $45"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.52383422851562,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 344.79949951171875,
+        "danger_seconds": 0.0,
+        "ended_at": 416.3000183105469,
+        "heavy_seconds": 3.0499982833862305,
+        "max_wait": 150.40457153320312,
+        "outcome": "won",
+        "peak_density": 3.007988214492798,
+        "satisfaction": 96.26191711425781,
+        "score": 1120,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -69 pts (2 barriers, gate staff $45)",
+          "Heavy congestion: -3 pts (South Junction for 0:01)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.26191711425781,
+      "seed": 20284775,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 147.58238220214844,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:27",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -12.400029182434082,
+            "value": "0:12",
+            "why": "Station North Hall for 0:04"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -69.72655487060547,
+            "value": "$349",
+            "why": "2 barriers, gate staff $49"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.784423828125,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 348.63275146484375,
+        "danger_seconds": 0.0,
+        "ended_at": 418.6499938964844,
+        "heavy_seconds": 12.400029182434082,
+        "max_wait": 143.5541534423828,
+        "outcome": "won",
+        "peak_density": 3.0894346237182617,
+        "satisfaction": 95.8922119140625,
+        "score": 1110,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -70 pts (2 barriers, gate staff $49)",
+          "Heavy congestion: -12 pts (Station North Hall for 0:04)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.8922119140625,
+      "seed": 20292694,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 137.33274841308594,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:17",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:04",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -67.58992004394531,
+            "value": "$338",
+            "why": "2 barriers, gate staff $38"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 195.25070190429688,
+            "value": "98%",
+            "why": ""
+          }
+        ],
+        "cost": 337.9495849609375,
+        "danger_seconds": 0.0,
+        "ended_at": 419.70001220703125,
+        "heavy_seconds": 0.0,
+        "max_wait": 124.70301055908203,
+        "outcome": "won",
+        "peak_density": 2.645965099334717,
+        "satisfaction": 97.62535095214844,
+        "score": 1128,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -68 pts (2 barriers, gate staff $38)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 97.62535095214844,
+      "seed": 20300613,
+      "strategy": "pen_and_meter"
+    },
+    {
+      "report": {
+        "avg_journey": 143.41358947753906,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:23",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:49",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -76.10054779052734,
+            "value": "$381",
+            "why": "2 barriers, gate staff $81"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 194.09725952148438,
+            "value": "97%",
+            "why": ""
+          }
+        ],
+        "cost": 380.5027160644531,
+        "danger_seconds": 0.0,
+        "ended_at": 428.45001220703125,
+        "heavy_seconds": 0.0,
+        "max_wait": 109.85210418701172,
+        "outcome": "won",
+        "peak_density": 2.9998281002044678,
+        "satisfaction": 97.04862976074219,
+        "score": 1118,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -76 pts (2 barriers, gate staff $81)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 97.04862976074219,
+      "seed": 20261018,
+      "strategy": "expert"
+    },
+    {
+      "report": {
+        "avg_journey": 155.23252868652344,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -10.465057373046875,
+            "value": "2:35",
+            "why": "0:05 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:09",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -42.14964294433594,
+            "value": "0:42",
+            "why": "South Walkway for 0:21"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -79.6012954711914,
+            "value": "$398",
+            "why": "2 barriers, gate staff $98"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 190.70094299316406,
+            "value": "95%",
+            "why": ""
+          }
+        ],
+        "cost": 398.0064697265625,
+        "danger_seconds": 0.0,
+        "ended_at": 442.8000183105469,
+        "heavy_seconds": 42.14964294433594,
+        "max_wait": 129.5032958984375,
+        "outcome": "won",
+        "peak_density": 2.881598472595215,
+        "satisfaction": 95.35047149658203,
+        "score": 1058,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -80 pts (2 barriers, gate staff $98)",
+          "Heavy congestion: -42 pts (South Walkway for 0:21)",
+          "Average journey: -10 pts (0:05 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.35047149658203,
+      "seed": 20268937,
+      "strategy": "expert"
+    },
+    {
+      "report": {
+        "avg_journey": 153.5769805908203,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -7.153961181640625,
+            "value": "2:33",
+            "why": "0:03 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "1:51",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -5.350002288818359,
+            "value": "0:05",
+            "why": "Station North Hall for 0:05"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -80.91490936279297,
+            "value": "$405",
+            "why": "2 barriers, gate staff $105"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.56544494628906,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 404.57452392578125,
+        "danger_seconds": 0.0,
+        "ended_at": 445.3500061035156,
+        "heavy_seconds": 5.350002288818359,
+        "max_wait": 111.60221099853516,
+        "outcome": "won",
+        "peak_density": 3.1861166954040527,
+        "satisfaction": 95.78272247314453,
+        "score": 1098,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -81 pts (2 barriers, gate staff $105)",
+          "Average journey: -7 pts (0:03 over the 2:30 target)",
+          "Heavy congestion: -5 pts (Station North Hall for 0:05)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.78272247314453,
+      "seed": 20276856,
+      "strategy": "expert"
+    },
+    {
+      "report": {
+        "avg_journey": 150.55007934570312,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -1.10015869140625,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:08",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -8.850015640258789,
+            "value": "0:08",
+            "why": "South Junction for 0:07"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -77.92093658447266,
+            "value": "$390",
+            "why": "2 barriers, gate staff $90"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 192.6288604736328,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 389.60467529296875,
+        "danger_seconds": 0.0,
+        "ended_at": 432.1499938964844,
+        "heavy_seconds": 8.850015640258789,
+        "max_wait": 128.2532196044922,
+        "outcome": "won",
+        "peak_density": 2.927124500274658,
+        "satisfaction": 96.3144302368164,
+        "score": 1105,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -78 pts (2 barriers, gate staff $90)",
+          "Heavy congestion: -9 pts (South Junction for 0:07)",
+          "Average journey: -1 pts (0:00 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 96.3144302368164,
+      "seed": 20284775,
+      "strategy": "expert"
+    },
+    {
+      "report": {
+        "avg_journey": 150.36843872070312,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.73687744140625,
+            "value": "2:30",
+            "why": "0:00 over the 2:30 target"
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:14",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -4.950000762939453,
+            "value": "0:04",
+            "why": "Station North Hall for 0:04"
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -79.45458984375,
+            "value": "$397",
+            "why": "2 barriers, gate staff $97"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 191.5881805419922,
+            "value": "96%",
+            "why": ""
+          }
+        ],
+        "cost": 397.27294921875,
+        "danger_seconds": 0.0,
+        "ended_at": 428.45001220703125,
+        "heavy_seconds": 4.950000762939453,
+        "max_wait": 134.20358276367188,
+        "outcome": "won",
+        "peak_density": 3.0761938095092773,
+        "satisfaction": 95.7940902709961,
+        "score": 1106,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -79 pts (2 barriers, gate staff $97)",
+          "Heavy congestion: -5 pts (Station North Hall for 0:04)",
+          "Average journey: -1 pts (0:00 over the 2:30 target)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 95.7940902709961,
+      "seed": 20292694,
+      "strategy": "expert"
+    },
+    {
+      "report": {
+        "avg_journey": 139.55703735351562,
+        "completed": 1000,
+        "components": [
+          {
+            "key": "base",
+            "label": "Base",
+            "points": 1000.0,
+            "value": "",
+            "why": ""
+          },
+          {
+            "key": "journey",
+            "label": "Average journey",
+            "points": -0.0,
+            "value": "2:19",
+            "why": ""
+          },
+          {
+            "key": "wait",
+            "label": "Longest wait",
+            "points": -0.0,
+            "value": "2:03",
+            "why": ""
+          },
+          {
+            "key": "heavy",
+            "label": "Heavy congestion",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "danger",
+            "label": "Dangerous crowding",
+            "points": -0.0,
+            "value": "0:00",
+            "why": ""
+          },
+          {
+            "key": "cost",
+            "label": "Operating cost",
+            "points": -75.18035125732422,
+            "value": "$376",
+            "why": "2 barriers, gate staff $76"
+          },
+          {
+            "key": "stranded",
+            "label": "Still on site",
+            "points": -0.0,
+            "value": "0",
+            "why": ""
+          },
+          {
+            "key": "satisfaction",
+            "label": "Satisfaction",
+            "points": 195.2882080078125,
+            "value": "98%",
+            "why": ""
+          }
+        ],
+        "cost": 375.9017333984375,
+        "danger_seconds": 0.0,
+        "ended_at": 417.6499938964844,
+        "heavy_seconds": 0.0,
+        "max_wait": 123.85295867919922,
+        "outcome": "won",
+        "peak_density": 2.515010118484497,
+        "satisfaction": 97.64410400390625,
+        "score": 1120,
+        "stars": 3,
+        "top_losses": [
+          "Operating cost: -75 pts (2 barriers, gate staff $76)"
+        ],
+        "total": 1000
+      },
+      "satisfaction": 97.64410400390625,
+      "seed": 20300613,
+      "strategy": "expert"
+    }
+  ]
+}

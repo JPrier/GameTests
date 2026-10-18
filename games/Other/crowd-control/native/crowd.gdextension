@@ -1,0 +1,12 @@
+; Rust simulation core as a GDExtension (desktop + headless tests). Built by tools/build_native.sh.
+; Browsers use web/crowd_sim.wasm through JavaScriptBridge instead (see scripts/sim_adapter.gd).
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = false
+
+[libraries]
+linux.x86_64 = "res://native/libcrowd_gdext.so"
+linux.debug.x86_64 = "res://native/libcrowd_gdext.so"
+windows.x86_64 = "res://native/crowd_gdext.dll"
+macos = "res://native/libcrowd_gdext.dylib"

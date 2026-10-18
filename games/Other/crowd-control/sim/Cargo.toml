@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/cli", "crates/gdext", "crates/wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+license = "MIT"
+
+# Exact versions are pinned by the committed Cargo.lock; godot-rust is pinned here too because its
+# API feature must match the engine (Godot 4.7.2 -> api-4-7).
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libm = "=0.2.16"
+godot = { version = "=0.5.5", features = ["api-4-7"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.release-wasm]
+inherits = "release"
+opt-level = 3
+lto = true
+strip = true
+panic = "abort"

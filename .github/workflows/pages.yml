@@ -15,6 +15,7 @@ concurrency:
 
 env:
   GODOT_VERSION: 4.7.2
+  RUST_VERSION: 1.97.0
 
 jobs:
   build:
@@ -43,6 +44,21 @@ jobs:
             "$REL/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
             ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable \
             "templates/version.txt" "templates/web_nothreads_debug.zip" "templates/web_nothreads_release.zip"
+
+      # Games with a prebuild.sh (Crowd Control's Rust simulation) build native + wasm code first.
+      - name: Install Rust ${{ env.RUST_VERSION }} with the wasm target
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            games/**/sim/target
+          key: cargo-${{ env.RUST_VERSION }}-${{ hashFiles('games/**/sim/Cargo.lock') }}
 
       - name: Validate, test and export every game
         run: |
