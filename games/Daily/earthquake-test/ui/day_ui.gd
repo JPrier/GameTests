@@ -5,6 +5,7 @@ extends RefCounted
 ## scene (`m`) and draws on it; game state stays in main.gd.
 
 const Arch = preload("res://challenge/archetypes.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const SEIS_SPAN := 30.0               # s shown across the seismograph (longer quakes stretch it)
 const SEIS_FULL_PGV := 1.6            # m/s of ground velocity that fills the seismograph (sqrt scale)
@@ -26,7 +27,10 @@ static func quake_caption(m) -> String:
 static func conditions_line(m) -> String:
 	if not m.can_brief():
 		return "CLASSIC QUAKE · %d ANCHORS" % m.anchors.size()
-	return "%s · %s" % [Arch.soil_name(m.challenge.soil).to_upper(), Arch.site_name(m.challenge.site_archetype).to_upper()]
+	var c = m.challenge
+	if c.terrain_archetype != "":
+		return "%s · %s" % [Arch.soil_name(c.soil).to_upper(), c.terrain_name().to_upper()]
+	return "%s · %s" % [Arch.soil_name(c.soil).to_upper(), Arch.site_name(c.site_archetype).to_upper()]
 
 
 static func modifier_caption(m) -> String:
@@ -120,6 +124,9 @@ static func brief_rows(m) -> Array:
 	rows.append([String(Arch.QUAKE_INFO[c.quake_archetype].tip), GTUI.FS_LABEL, m.C_MUTED, false, 0.0])
 	rows.append([Arch.soil_name(c.soil).to_upper(), GTUI.FS_BODY, m.C_INK, true, GTUI.dp(GTUI.SP_M)])
 	rows.append([String(Arch.SOIL_INFO[c.soil].tip), GTUI.FS_LABEL, m.C_MUTED, false, 0.0])
+	if c.terrain_archetype != "":
+		rows.append([c.terrain_name().to_upper(), GTUI.FS_BODY, m.C_INK, true, GTUI.dp(GTUI.SP_M)])
+		rows.append([String(Terrain.TERRAIN_INFO[c.terrain_archetype].tip), GTUI.FS_LABEL, m.C_MUTED, false, 0.0])
 	rows.append([Arch.site_name(c.site_archetype).to_upper(), GTUI.FS_BODY, m.C_INK, true, GTUI.dp(GTUI.SP_M)])
 	rows.append(["%d anchors. Budget $%d · wood $%s/m · steel $%s/m" % [m.anchors.size(), m.budget, price(m.mat_cost(0)), price(m.mat_cost(1))],
 		GTUI.FS_LABEL, m.C_MUTED, false, 0.0])

@@ -9,7 +9,7 @@ const NOTE := "While you draw, a magnifier above your finger shows where the lin
 
 static func rows(m) -> Array:
 	return [
-		["anchor", "Everyone gets the same site: the same grey anchors and the same budget."],
+		["anchor", "Everyone gets the same site: the same ground, grey anchors and budget. Only anchors may touch the ground; build over or around hills and rocks."],
 		["beam", "Pick a max piece length (1, 2 or 3 m), then drag a line from an anchor or joint to any dot, at any angle. It's split into equal pieces no longer than that. Only the Erase tool removes pieces."],
 		["steel", "Wood is cheap and light. Steel usually costs 3× but is ~5× stronger. Long pieces buckle more easily when squeezed."],
 		["quake", "Every day brings its own kind of quake, ground and footing (tap the seismograph for today's briefing). Start the quake: that exact seismogram hits your build and overloaded beams snap."],
