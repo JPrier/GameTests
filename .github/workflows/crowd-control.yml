@@ -139,6 +139,9 @@ jobs:
           G=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
           chmod +x "$G"
           cd "$GAME"
+          # The very first import that discovers the GDExtension aborts at shutdown after
+          # finishing (Godot 4.7.2 + godot-rust, reproducible locally); a second import must be clean.
+          "$G" --headless --path . --import || echo "first import exited with $?"
           "$G" --headless --path . --import
           "$G" --headless --path . -- --agent-validate --agent-out=validate.json || { cat validate.json; exit 1; }
           "$G" --headless --path . -- --agent-run-tests --agent-out=tests.json || { cat tests.json; exit 1; }
