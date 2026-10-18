@@ -116,7 +116,6 @@ fn invariants_hold_on_random_worlds() {
             "seed {seed}: metered gate exceeded its service rate"
         );
         assert_eq!(sim.gates[0].violations, 0, "seed {seed}: unserved crossing");
-        for i in 0..sim.agents.len() {}
         assert_eq!(
             sim.completed, pop,
             "seed {seed}: not everyone arrived ({} of {pop})",
