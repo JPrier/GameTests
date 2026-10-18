@@ -5,6 +5,7 @@ extends RefCounted
 
 const Arch = preload("res://challenge/archetypes.gd")
 const Site = preload("res://site/site_generator.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const BUDGET_RANGE := [40, 75]
 const PGA_RANGE := [1.8, 11.0]         # m/s^2
@@ -20,9 +21,12 @@ static func _finite(x: float) -> bool:
 ## Reasons a candidate challenge is invalid ([] = valid).
 static func problems(c) -> PackedStringArray:
 	var out := PackedStringArray()
-	var site := Site.problem(c.anchors)
+	var site := Site.problem(c.anchors.map(func(a): return Vector2i(a.x, 0)))
 	if site != "":
 		out.append("site: " + site)
+	var ground := Terrain.problem(c.ground(), c.anchors)
+	if ground != "":
+		out.append("terrain: " + ground)
 	if c.budget < BUDGET_RANGE[0] or c.budget > BUDGET_RANGE[1]:
 		out.append("budget %d out of range" % c.budget)
 	if c.is_legacy():
@@ -49,7 +53,7 @@ static func problems(c) -> PackedStringArray:
 			break
 	if c.modifier != "" and Arch.affinity(Arch.MODIFIER_AFFINITY, c.quake_archetype, c.modifier) <= 0.0:
 		out.append("modifier %s doesn't fit %s" % [c.modifier, c.quake_archetype])
-	if c.min_height() > 7.0:
+	if c.min_height() > 11.0:
 		out.append("minimum height too high")
 	for m in c.mat_costs:
 		if float(m) <= 0.0:

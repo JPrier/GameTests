@@ -22,6 +22,7 @@ const Validator = preload("res://challenge/validator.gd")
 const Waveform = preload("res://quake/waveform.gd")
 const Fingerprint = preload("res://challenge/fingerprint.gd")
 const Canon = preload("res://reference/canonical.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 
 func _init() -> void:
@@ -143,7 +144,7 @@ static func _corr(a: Array, b: Array) -> float:
 
 
 static func report(records: Array) -> String:
-	var v2: Array = records.filter(func(r): return int(r.version) == 2)
+	var v2: Array = records.filter(func(r): return int(r.version) >= 2)
 	var n := v2.size()
 	if n == 0:
 		return "no v2 days in sample"
@@ -151,6 +152,16 @@ static func report(records: Array) -> String:
 	s += _table("quake archetypes", _count(v2, "quake"), n, Arch.QUAKES) + "\n"
 	s += _table("site archetypes", _count(v2, "site"), n, Arch.SITES) + "\n"
 	s += _table("soils", _count(v2, "soil"), n, Arch.SOILS) + "\n"
+	var v3: Array = v2.filter(func(r): return int(r.version) >= 3)
+	if not v3.is_empty():
+		s += _table("terrain (%d terrain days)" % v3.size(), _count(v3, "terrain"), v3.size(), Terrain.TERRAINS) + "\n"
+		var same_t := 0
+		for i in range(1, v3.size()):
+			if v3[i].terrain == v3[i - 1].terrain:
+				same_t += 1
+		s += "same terrain as yesterday: %s\n" % _pct(same_t, v3.size() - 1)
+		s += "terrain relief (m): %s\n" % _stats(v3.map(func(r): return float(Array(r.ground).max()) / 100.0))
+		s += "anchor height spread (m): %s\n\n" % _stats(v3.map(func(r): return (float(Array(r.anchor_y).max()) - float(Array(r.anchor_y).min())) / 100.0))
 	s += _table("modifiers", _count(v2, "modifier"), n, [""] + Arch.MODIFIERS) + "\n"
 	s += _table("budgets", _count(v2, "budget"), n) + "\n"
 	# quake x soil and quake x site mixes

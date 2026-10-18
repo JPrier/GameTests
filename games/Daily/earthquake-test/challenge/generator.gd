@@ -1,5 +1,5 @@
 extends RefCounted
-## The daily challenge curator (generator v2).
+## The daily challenge curator (generator v2, with terrain from v3).
 ##
 ## For each date:
 ##   1. The plan: the quake archetype comes from a shuffled two-week bag (every archetype
@@ -18,7 +18,10 @@ extends RefCounted
 ## Days are curated in 14-day runs starting at CUTOVER: a day's novelty is measured against
 ## exactly the challenges published earlier in its run, so generating any date in any
 ## order gives the same result. Dates before CUTOVER use the frozen v1 generator.
-## Changing any rule here must bump VERSION/SALT and move CUTOVER forward.
+## From TERRAIN_FROM (v3) each candidate also gets a terrain shaped around its anchors
+## (site/terrain.gd), drawn from its own seed so the v2 draws for earlier days are untouched.
+## Changing any rule here must bump VERSION/SALT and move CUTOVER (or add a new cutover
+## like TERRAIN_FROM) so days already published never change.
 
 const Challenge = preload("res://challenge/challenge.gd")
 const Arch = preload("res://challenge/archetypes.gd")
@@ -27,10 +30,12 @@ const Waveform = preload("res://quake/waveform.gd")
 const Fingerprint = preload("res://challenge/fingerprint.gd")
 const Validator = preload("res://challenge/validator.gd")
 const Legacy = preload("res://challenge/legacy_v1.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const VERSION := 2
 const SALT := "eq-v2"
 const CUTOVER := "2026-10-18"
+const TERRAIN_FROM := "2026-10-19"   # v3: terrain
 const N_CANDIDATES := 20
 const RUN := 14
 const BAG_DAYS := 14
@@ -201,6 +206,8 @@ static func make_candidate(d: String, key: String, quake: String, may_modify: bo
 		c.modifier = force.get("modifier", _weighted(rng, Arch.MODIFIERS, Arch.MODIFIERS.map(func(m): return Arch.affinity(Arch.MODIFIER_AFFINITY, quake, m))))
 	c.anchors = Site.make(c.site_archetype, rng)
 	c.quake_spec = Arch.draw_quake(quake, c.soil, c.modifier, rng)
+	if d >= TERRAIN_FROM:
+		_add_terrain(c, d, key, force)
 	var budget_adj := 0
 	match c.modifier:
 		"steel_shortage", "cheap_steel", "timber_shortage":
@@ -210,13 +217,32 @@ static func make_candidate(d: String, key: String, quake: String, may_modify: bo
 			c.modifier_params = {"top_mass": Arch.HEAVY_TOP_KG}
 			budget_adj = 5
 		"min_height":
-			c.modifier_params = {"min_height": float(rng.randi_range(4, 6))}
+			# measured from the lowest ground, so add the highest anchor: a few metres of real height
+			var top := 0
+			for a in c.anchors:
+				top = maxi(top, a.y)
+			c.modifier_params = {"min_height": float(rng.randi_range(4, 6)) + ceilf(top / 50.0) * 0.5}
 			budget_adj = 5
 	c.metrics = _metrics(c)
-	budget_adj += int(SITE_BUDGET.get(c.site_archetype, 0))
+	budget_adj += int(SITE_BUDGET.get(c.site_archetype, 0)) + int(Terrain.TERRAIN_BUDGET.get(c.terrain_archetype, 0))
 	c.budget = clampi(_budget_for(float(c.metrics.difficulty)) + budget_adj + 5 * rng.randi_range(-1, 1), Validator.BUDGET_RANGE[0], Validator.BUDGET_RANGE[1])
-	c.fingerprint = Fingerprint.make(quake, c.quake_spec, c.site_archetype, c.anchors, c.soil, c.budget, c.modifier, c.metrics)
+	c.fingerprint = Fingerprint.make(quake, c.quake_spec, c.site_archetype, c.anchors, c.soil, c.budget, c.modifier, c.metrics, c.terrain_archetype, c.terrain)
 	return c
+
+
+## v3: shape the ground around the candidate's anchors and stand them on it.
+static func _add_terrain(c, d: String, key: String, force := {}) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = ("%s:terrain:%s:%s" % [SALT, d, key]).hash()
+	var xs: Array = c.anchors.map(func(a): return a.x / Site.U)
+	var keys: Array = Terrain.TERRAINS.filter(func(t): return Terrain.applicable(t, xs))
+	var arch: String = force.get("terrain", _weighted(rng, keys, keys.map(func(t): return Terrain.TERRAIN_WEIGHT[t])))
+	if not Terrain.applicable(arch, xs):
+		arch = "slope"
+	c.version = 3
+	c.terrain_archetype = arch
+	c.terrain = Terrain.make(arch, xs, rng)
+	c.anchors = Terrain.place(c.terrain, c.anchors)
 
 
 ## Analytic response metrics for a candidate.
@@ -299,6 +325,12 @@ static func repetition(c, refs: Array) -> float:
 		return 0.0
 	if refs[n - 1].site_archetype == c.site_archetype:
 		p += 1.6
+	if c.terrain_archetype != "":
+		if refs[n - 1].terrain_archetype == c.terrain_archetype:
+			p += 1.8
+		for k in range(maxi(0, n - 4), n - 1):
+			if refs[k].terrain_archetype == c.terrain_archetype:
+				p += 0.5
 	for k in range(maxi(0, n - 3), n - 1):
 		if refs[k].site_archetype == c.site_archetype:
 			p += 0.45

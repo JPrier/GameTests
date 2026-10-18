@@ -62,6 +62,7 @@ var gx := 0.0
 var gy := 0.0
 var total_time := 0.0
 var start_height := 0.0
+var ground_h := PackedFloat64Array()  # terrain heights (m) every metre from x = 0; empty = flat
 var heavy_joint := -1            # joint carrying the Heavy Top weight (-1: none)
 var top_mass := 0.0
 
@@ -69,6 +70,8 @@ var top_mass := 0.0
 ## design: Array of {a: Vector2i, b: Vector2i, m: int}; anchors: Array of Vector2i (y == 0).
 ## unit: metres per design coordinate (the game builds in centimetres, so 0.01).
 ## opts.top_mass: extra kg on the highest joint attached to an anchor (Heavy Top days).
+## opts.terrain: the challenge's terrain, ground heights in design units (cm) every metre
+## (PackedInt32Array). The ground surface moves rigidly with the quake.
 func setup(design: Array, anchors: Array, q, unit := 1.0, opts := {}) -> void:
 	quake = q
 	total_time = SETTLE + q.duration + AFTER
@@ -121,8 +124,11 @@ func setup(design: Array, anchors: Array, q, unit := 1.0, opts := {}) -> void:
 		vy[j] = 0.0
 		rest_x[j] = px[j]
 		rest_y[j] = py[j]
-		anchor[j] = 1 if (p.y == 0 and anchors.has(p)) else 0
+		anchor[j] = 1 if anchors.has(p) else 0
 		inv_m[j] = 0.0 if anchor[j] == 1 else 1.0 / masses[j]
+	ground_h.clear()
+	for v in opts.get("terrain", PackedInt32Array()):
+		ground_h.append(float(v) * unit)
 	top_mass = float(opts.get("top_mass", 0.0))
 	heavy_joint = -1
 	if top_mass > 0.0:
@@ -200,8 +206,9 @@ func step() -> void:
 		for j in n:
 			if anchor[j] == 1:
 				continue
-			if py[j] < gy:
-				py[j] = gy
+			var surf := gy + ground_at(px[j] - gx)
+			if py[j] < surf:
+				py[j] = surf
 				var slip := (px[j] - ox[j]) - dgx
 				px[j] -= slip * FRICTION
 		# velocities
@@ -241,6 +248,16 @@ func step() -> void:
 		vy[b] -= ny * k * inv_m[b]
 	t += STEP
 	steps += 1
+
+
+## Terrain height (m) at world x in the ground's own frame (0 on flat days).
+func ground_at(x: float) -> float:
+	var n_g := ground_h.size()
+	if n_g < 2:
+		return 0.0
+	var fx := clampf(x, 0.0, float(n_g - 1))
+	var i := mini(int(fx), n_g - 2)
+	return lerpf(ground_h[i], ground_h[i + 1], fx - i)
 
 
 ## |force| / limit for beam i in the last step (> 1 snaps). Compression uses the buckling limit.

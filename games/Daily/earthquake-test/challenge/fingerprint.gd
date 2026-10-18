@@ -9,12 +9,14 @@ extends RefCounted
 const Arch = preload("res://challenge/archetypes.gd")
 const Site = preload("res://site/site_generator.gd")
 const Waveform = preload("res://quake/waveform.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const W_QUAKE := 0.5
 const W_SITE := 0.4
 const W_SOIL := 0.3
 const W_MOD := 0.35
 const W_RESP := 0.5
+const W_TERRAIN := 0.45
 
 
 static func _onehot(out: PackedFloat32Array, keys: Array, key: String, w: float) -> void:
@@ -24,7 +26,7 @@ static func _onehot(out: PackedFloat32Array, keys: Array, key: String, w: float)
 
 ## Fingerprint parts: quake spec + site + budget + modifier + analytic metrics.
 static func make(quake_arch: String, spec: Dictionary, site_arch: String, anchors: Array, soil: String,
-		budget: int, modifier: String, metrics: Dictionary) -> PackedFloat32Array:
+		budget: int, modifier: String, metrics: Dictionary, terrain_arch := "", terrain := PackedInt32Array()) -> PackedFloat32Array:
 	var v := PackedFloat32Array()
 	_onehot(v, Arch.QUAKES, quake_arch, W_QUAKE)
 	_onehot(v, Arch.SITES, site_arch, W_SITE)
@@ -51,6 +53,11 @@ static func make(quake_arch: String, spec: Dictionary, site_arch: String, anchor
 	v.append(float(f.asym))
 	v.append(float(f.count - 2) * 0.4)
 	v.append(float(budget) / 70.0)
+	_onehot(v, Terrain.TERRAINS, terrain_arch if terrain_arch != "" else "flat", W_TERRAIN)
+	var tf := Terrain.features(terrain if not terrain.is_empty() else Terrain.flat(), anchors)
+	v.append(float(tf.relief) / 5.0)
+	v.append(float(tf.anchor_spread) / 5.0)
+	v.append(float(tf.obstacle) / 5.0)
 	var psa: PackedFloat32Array = metrics.get("psa", PackedFloat32Array())
 	for x in psa:
 		v.append(W_RESP * clampf(x / 3.0, 0.0, 1.5))

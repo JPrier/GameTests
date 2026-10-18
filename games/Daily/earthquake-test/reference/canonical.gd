@@ -14,6 +14,7 @@ extends RefCounted
 ## one would break the day's budget (or a height cap).
 
 const Sim = preload("res://quake_sim.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const U := 100
 const GH := 18.0
@@ -39,15 +40,15 @@ const STRUCTS := {
 const IDS := ["wood_tower", "steel_tower", "wide_frame", "a_frame", "squat_steel", "steel_spine", "lattice", "lean_tower", "mixed_tower", "pyramid"]
 
 
+## The anchors a structure stands on: all of them, or the closest pair (by distance).
 static func _base(anchors: Array, mode: String) -> Array:
-	var xs: Array = anchors.map(func(a): return float(a.x) / U)
-	if mode == "all" or xs.size() <= 2:
-		return xs
+	if mode == "all" or anchors.size() <= 2:
+		return anchors.duplicate()
 	var best := 0
-	for i in range(1, xs.size() - 1):
-		if xs[i + 1] - xs[i] < xs[best + 1] - xs[best]:
+	for i in range(1, anchors.size() - 1):
+		if _d(anchors[i], anchors[i + 1]) < _d(anchors[best], anchors[best + 1]):
 			best = i
-	return [xs[best], xs[best + 1]]
+	return [anchors[best], anchors[best + 1]]
 
 
 static func _row(center: float, width: float) -> Array:
@@ -69,9 +70,16 @@ static func _d(a: Vector2i, b: Vector2i) -> float:
 
 
 ## Build a canonical design for a site. Returns {design: [{a, b, m}], height: m, cost: $}.
-static func build(id: String, anchors: Array, budget: float, mat_costs: Array) -> Dictionary:
+## On terrain days rows start above the highest base anchor, joints under the ground are
+## dropped and beams that would cut through it are skipped.
+static func build(id: String, anchors: Array, budget: float, mat_costs: Array, ground := PackedInt32Array()) -> Dictionary:
 	var s: Dictionary = STRUCTS[id]
-	var base := _base(anchors, String(s.base))
+	var gnd := ground if not ground.is_empty() else Terrain.flat()
+	var base_pts := _base(anchors, String(s.base))
+	var base: Array = base_pts.map(func(a): return float(a.x) / U)
+	var y0 := 0.0
+	for a in base_pts:
+		y0 = maxf(y0, a.y / float(U))
 	var x0: float = base[0]
 	var x1: float = base[-1]
 	var target := (x1 - x0) if float(s.width) < 0.0 else float(s.width)
@@ -82,20 +90,25 @@ static func build(id: String, anchors: Array, budget: float, mat_costs: Array) -
 	var design: Array = []
 	var keys := {}
 	var cost := 0.0
-	var lower: Array = base.map(func(x): return _pt(x, 0.0))
+	var lower: Array = base_pts.duplicate()
+	var is_anchor := {}
+	for a in anchors:
+		is_anchor[a] = true
 	var width := x1 - x0
 	var center := (x0 + x1) / 2.0
 	var height := 0.0
 	var k := 0
 	while true:
 		k += 1
-		var y := k * story
-		if y > cap + 1e-6 or y > GH - 0.5:
+		var y := y0 + k * story
+		if k * story > cap + 1e-6 or y > GH - 0.5:
 			break
 		var shrink := minf(taper, BASE_TAPER) * story * 2.0
 		width = maxf(target, width - shrink) if width > target else minf(target, width + 2.0)
 		center += lean * story
-		var upper: Array = _row(center, width).map(func(x): return _pt(x, y))
+		var upper: Array = _row(center, width).map(func(x): return _pt(x, y)).filter(func(p): return not Terrain.grounded(gnd, p + Vector2i(0, -40)))
+		if upper.is_empty():
+			break
 		var row_beams: Array = []
 		var linked := {}
 		var reached := 0
@@ -109,6 +122,8 @@ static func build(id: String, anchors: Array, budget: float, mat_costs: Array) -
 				var dist := _d(l, u)
 				if dist > MAX_LEN:
 					break
+				if not Terrain.clear(gnd, l, u, is_anchor.has(l), false):
+					continue
 				var want := false
 				if s.bracing == "x":
 					want = dist <= LINK or got < 2
@@ -129,10 +144,11 @@ static func build(id: String, anchors: Array, budget: float, mat_costs: Array) -
 			for u in upper:
 				if _d(u, l) < _d(best, l):
 					best = u
-			if _d(best, l) <= MAX_LEN:
+			if _d(best, l) <= MAX_LEN and Terrain.clear(gnd, l, best, is_anchor.has(l), false):
 				row_beams.append([l, best])
 		for i in range(1, upper.size()):
-			row_beams.append([upper[i - 1], upper[i]])
+			if Terrain.clear(gnd, upper[i - 1], upper[i]):
+				row_beams.append([upper[i - 1], upper[i]])
 		# materials + cost of the whole row; stop before overspending
 		var add: Array = []
 		var row_cost := 0.0
@@ -167,13 +183,13 @@ static func build(id: String, anchors: Array, budget: float, mat_costs: Array) -
 
 ## Run one design through the solver. Metrics: standing height, beams surviving, first
 ## failure time, max sway of the top joint, collapse (less than a third left standing).
-static func run(design: Array, anchors: Array, quake, top_mass := 0.0) -> Dictionary:
+static func run(design: Array, anchors: Array, quake, top_mass := 0.0, ground := PackedInt32Array()) -> Dictionary:
 	var out := {"built": 0.0, "standing": 0.0, "survive": 1.0, "first_fail": -1.0, "max_sway": 0.0,
 		"collapse": true, "unstable": false, "beams": design.size()}
 	if design.is_empty():
 		return out
 	var sim := Sim.new()
-	sim.setup(design, anchors, quake, 1.0 / U, {"top_mass": top_mass})
+	sim.setup(design, anchors, quake, 1.0 / U, {"top_mass": top_mass, "terrain": ground})
 	out.built = sim.start_height
 	var top := 0
 	for j in sim.n:
@@ -203,8 +219,8 @@ static func evaluate(c, ids: Array = IDS) -> Dictionary:
 	var q = c.make_quake()
 	var out := {}
 	for id in ids:
-		var b := build(id, c.anchors, float(c.budget), c.mat_costs)
-		var r := run(b.design, c.anchors, q, c.top_mass())
+		var b := build(id, c.anchors, float(c.budget), c.mat_costs, c.ground())
+		var r := run(b.design, c.anchors, q, c.top_mass(), c.ground())
 		r["cost"] = b.cost
 		out[id] = r
 	return out

@@ -8,6 +8,8 @@ const Sim = preload("res://quake_sim.gd")
 const Gen = preload("res://challenge/generator.gd")
 const DayUI = preload("res://ui/day_ui.gd")
 const TutorialUI = preload("res://ui/tutorial_ui.gd")
+const GroundUI = preload("res://ui/ground_ui.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 const GW := 14                        # build grid width (m)
 const GH := 18                        # build grid height (m)
@@ -28,8 +30,6 @@ enum Phase { BUILD, RUN, RESULT, FINAL }
 const C_BG := Color("1b1917")
 const C_PANEL := Color("25221f")
 const C_SKY := Color("221f1c")
-const C_GROUND := Color("5b4a3a")
-const C_GROUND_HI := Color("7a6450")
 const C_DOT := Color(1, 1, 1, 0.09)
 const C_DOT_REACH := Color("ffd27a")
 const C_ANCHOR := Color("9aa3ad")
@@ -52,7 +52,8 @@ var date := ""
 var today := ""
 var quake_no := 1
 var budget := 50
-var anchors: Array = []               # Vector2i on y = 0
+var anchors: Array = []               # Vector2i, standing on the ground
+var ground := PackedInt32Array()      # terrain heights (cm) every metre (site/terrain.gd)
 var quake = null
 var challenge = null                  # today's DailyChallenge (challenge/challenge.gd)
 var briefed := false                  # the day's briefing card has been dismissed (saved per day)
@@ -187,6 +188,7 @@ func generate(d: String) -> void:
 	challenge = Gen.generate(d)
 	budget = challenge.budget
 	anchors = challenge.anchors.duplicate()
+	ground = challenge.ground()
 	quake = challenge.make_quake()
 
 
@@ -232,6 +234,11 @@ static func dot(x: int, y: int) -> Vector2i:
 
 func money_left() -> float:
 	return budget - design_cost()
+
+
+## True when a build point is on or under the ground.
+func grounded(p: Vector2i) -> bool:
+	return Terrain.grounded(ground, p)
 
 
 ## Today's price per metre (modifiers can change it).
@@ -305,8 +312,10 @@ func check_beam(a: Vector2i, b: Vector2i, mat: int = build_mat) -> String:
 	if not is_node(a) and not is_node(b):
 		return "Start from an anchor or a joint"
 	for p in [a, b]:
-		if p.y == 0 and not is_anchor(p):
+		if grounded(p) and not is_anchor(p):
 			return "Only anchors can touch the ground"
+	if not Terrain.clear(ground, a, b, is_anchor(a), is_anchor(b)):
+		return "Can't go through the ground"
 	if wpos(a).distance_to(wpos(b)) > MAX_LEN + 1e-6:
 		return "Too long — max %.1f m" % MAX_LEN
 	if beam_index(a, b) >= 0:
@@ -382,9 +391,12 @@ func plan_chain(a: Vector2i, b: Vector2i, plen: int = piece_len, mat: int = buil
 			prev = q
 	for sg in segs:
 		for p in [sg[0], sg[1]]:
-			if p.y == 0 and not is_anchor(p):
+			if grounded(p) and not is_anchor(p):
 				out.why = "Only anchors can touch the ground"
 				return out
+		if not sg[2] and not Terrain.clear(ground, sg[0], sg[1], is_anchor(sg[0]), is_anchor(sg[1])):
+			out.why = "Can't go through the ground"
+			return out
 	var unit_cost := mat_cost(mat)
 	var left := money_left()
 	var any_new := false
@@ -540,7 +552,7 @@ func run() -> void:
 		return
 	selected = Vector2i(-1, -1)
 	sim = Sim.new()
-	sim.setup(design, anchors, quake, 1.0 / U, {"top_mass": challenge.top_mass() if challenge else 0.0})
+	sim.setup(design, anchors, quake, 1.0 / U, {"top_mass": challenge.top_mass() if challenge else 0.0, "terrain": ground})
 	sim_acc = 0.0
 	fast = false
 	flashes.clear()
@@ -769,6 +781,7 @@ func archive_page_days(page: int) -> Array:
 func open_archive() -> void:
 	if phase == Phase.RUN:
 		return
+	brief_open = false
 	archive_results = _picker_results()
 	var idx := clampi(day_number(today) - day_number(date), 0, archive_count() - 1)
 	archive_page = int(idx / ARCHIVE_ROWS)
@@ -1579,11 +1592,12 @@ func _mask_outside_board() -> void:
 func _draw_header() -> void:
 	var r := head_rect
 	var th := GTUI.target()
-	var title_px := GTUI.fs(GTUI.FS_HEADING)
-	var tw := font.get_string_size("Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px).x
-	title_rect = Rect2(r.position, Vector2(tw, th))
-	draw_string(font, Vector2(r.position.x, r.position.y + (th + font.get_ascent(title_px) - font.get_descent(title_px)) / 2.0), "Earthquake Test", HORIZONTAL_ALIGNMENT_LEFT, -1, title_px, C_INK)
 	var icons := GTUI.icon_row(r.end.x, r.position.y, ["calendar", "help"])
+	# the title shrinks to fit beside the icons rather than running under them
+	var room: float = icons["calendar"].position.x - r.position.x - GTUI.dp(GTUI.SP_S)
+	var tw := minf(GTUI.text_width("Earthquake Test", GTUI.FS_HEADING), room)
+	title_rect = Rect2(r.position, Vector2(tw, th))
+	GTUI.text_in(self, Rect2(r.position, Vector2(room, th)), "Earthquake Test", GTUI.FS_HEADING, C_INK, -1, false, GTUI.FS_TITLE)
 	help_rect = icons["help"]
 	cal_rect = icons["calendar"]
 	GTUI.icon_button(self, "help", help_rect, "help")
@@ -1612,27 +1626,15 @@ func _draw_board() -> void:
 		g = Vector2(sim.gx, sim.gy) * vis_k
 	elif (phase == Phase.RESULT or phase == Phase.FINAL) and show_try >= 0:
 		g = Vector2(float(tries[show_try].end_gx), float(tries[show_try].end_gy))
-	var gy0 := world_to_screen(Vector2(0, g.y)).y
-	var ground := Rect2(r.position.x, gy0, r.size.x, maxf(0.0, r.end.y - gy0))
-	if ground.size.y > 0.0:
-		_box(ground, C_GROUND, 0)
-	draw_line(Vector2(r.position.x, gy0), Vector2(r.end.x, gy0), C_GROUND_HI, 3.0)
-	# soil texture ticks that slide with the ground
-	var off := fposmod(g.x * ppm, ppm)
-	var k := 0
-	var x := r.position.x - ppm + off
-	while x < r.end.x:
-		var yy := gy0 + 10.0 + float(k % 3) * 9.0
-		if yy < r.end.y - 4:
-			draw_line(Vector2(x, yy), Vector2(x + ppm * 0.3, yy), Color(0, 0, 0, 0.18), 2.0)
-		x += ppm * 0.5
-		k += 1
+	GroundUI.draw_board(self, r, g)
 	# grid dots + reach preview while building
 	if phase == Phase.BUILD:
 		var focus := selected if selected.x >= 0 else drag_from
 		for gy in range(1, GH + 1):
 			for gx2 in range(0, GW + 1):
 				var p := dot(gx2, gy)
+				if grounded(p):
+					continue
 				var s := world_to_screen(wpos(p))
 				if focus.x >= 0 and _reach(focus).has(p):
 					draw_circle(s, maxf(2.0, ppm * 0.07), Color(C_DOT_REACH, 0.45))
@@ -1801,7 +1803,7 @@ func _vis(j: int) -> Vector2:
 	var d := Vector2(sim.px[j], sim.py[j]) - rest - g
 	var extra := minf(d.length() * (vis_k - 1.0), VIS_MAX_EXTRA)
 	var v := rest + g * vis_k + d + d.normalized() * extra
-	v.y = maxf(v.y, g.y * vis_k)
+	v.y = maxf(v.y, g.y * vis_k + sim.ground_at(v.x - g.x * vis_k))
 	return v
 
 
@@ -1999,18 +2001,13 @@ func _draw_loupe() -> void:
 	_box(R.grow(3), Color(0, 0, 0, 0.45), 18)
 	_box(R, C_SKY, 16, Color(C_INK, 0.5))
 	# ground
-	var gy: float = ls.call(Vector2(0, 0)).y
-	if gy < inner.end.y:
-		var top := maxf(gy, inner.position.y)
-		draw_rect(Rect2(inner.position.x, top, inner.size.x, inner.end.y - top), C_GROUND)
-		if gy >= inner.position.y:
-			draw_line(Vector2(inner.position.x, gy), Vector2(inner.end.x, gy), C_GROUND_HI, 3.0)
-	# grid dots
 	var half := R.size.x / 2.0 / lppm
+	GroundUI.draw_loupe(self, ls, inner, wc, half)
+	# grid dots
 	for gx in range(floori(wc.x - half), ceili(wc.x + half) + 1):
 		for gyi in range(floori(wc.y - half), ceili(wc.y + half) + 1):
 			var d := dot(gx, gyi)
-			if not in_grid(d) or gyi == 0:
+			if not in_grid(d) or grounded(d):
 				continue
 			var sp: Vector2 = ls.call(wpos(d))
 			if inner.grow(-4).has_point(sp):

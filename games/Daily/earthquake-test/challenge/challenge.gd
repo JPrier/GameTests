@@ -8,6 +8,7 @@ extends RefCounted
 const Arch = preload("res://challenge/archetypes.gd")
 const Quake = preload("res://quake/quake.gd")
 const QuakeV1 = preload("res://quake/quake_v1.gd")
+const Terrain = preload("res://site/terrain.gd")
 
 var date := ""
 var version := 2
@@ -18,7 +19,9 @@ var quake_archetype := ""         # "" for legacy days
 var quake_spec := {}              # archetypes.draw_quake() output (v2)
 var site_archetype := ""
 var suggested_site := ""          # the plan's site for the day (the curator may override)
-var anchors: Array = []           # Vector2i, cm, y = 0
+var anchors: Array = []           # Vector2i, cm, standing on the terrain
+var terrain_archetype := ""       # "" before v3 (flat ground)
+var terrain := PackedInt32Array() # heights (cm) every metre, site/terrain.gd; empty = flat
 var soil := ""
 var budget := 50
 var modifier := ""                # "" = normal day
@@ -60,6 +63,15 @@ func min_height() -> float:
 	return float(modifier_params.get("min_height", 0.0))
 
 
+## Ground heights (cm) every metre; flat for days before terrain.
+func ground() -> PackedInt32Array:
+	return terrain if not terrain.is_empty() else Terrain.flat()
+
+
+func terrain_name() -> String:
+	return Terrain.terrain_name(terrain_archetype if terrain_archetype != "" else "flat")
+
+
 func quake_name() -> String:
 	return Arch.quake_name(quake_archetype) if quake_archetype != "" else ""
 
@@ -76,7 +88,7 @@ func modifier_text() -> String:
 		"aftershock":
 			return "A second, smaller quake follows a few seconds later"
 		"min_height":
-			return "Build at least %d m tall before the quake can start" % int(min_height())
+			return "Build up to the %s m line before the quake can start" % _money(min_height())
 	return ""
 
 
@@ -90,6 +102,7 @@ func to_dict() -> Dictionary:
 		"date": date, "version": version, "seed": rng_seed, "candidate": candidate, "fallback": fallback,
 		"quake": quake_archetype, "soil": soil, "site": site_archetype,
 		"anchors": anchors.map(func(a): return a.x), "budget": budget,
+		"terrain": terrain_archetype, "ground": Array(terrain), "anchor_y": anchors.map(func(a): return a.y),
 		"modifier": modifier, "modifier_params": modifier_params, "mat_costs": mat_costs,
 		"novelty": snappedf(novelty, 0.0001), "score": snappedf(score, 0.0001), "rejected": rejected,
 	}
