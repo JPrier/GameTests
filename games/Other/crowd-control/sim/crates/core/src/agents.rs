@@ -48,8 +48,6 @@ pub struct Agents {
     pub next_decision: Vec<f32>,
     /// Gate index this agent has been served at (may cross that gate line), or NONE16.
     pub gate_pass: Vec<u16>,
-    /// Signed distance to the relevant gate line last tick (crossing detection).
-    pub gate_side: Vec<f32>,
     /// Node recommended by a sign this agent read (NONE16 = none) and the sign it came from.
     pub sign_via: Vec<u16>,
     pub signs_read: Vec<u8>,
@@ -114,7 +112,6 @@ impl Agents {
         self.last_node.push(a.last_node);
         self.next_decision.push(a.next_decision);
         self.gate_pass.push(NONE16);
-        self.gate_side.push(-1e9);
         self.sign_via.push(NONE16);
         self.signs_read.push(0);
         self.area.push(u8::MAX);
@@ -149,7 +146,6 @@ impl Agents {
         self.last_node.swap_remove(i);
         self.next_decision.swap_remove(i);
         self.gate_pass.swap_remove(i);
-        self.gate_side.swap_remove(i);
         self.sign_via.swap_remove(i);
         self.signs_read.swap_remove(i);
         self.area.swap_remove(i);

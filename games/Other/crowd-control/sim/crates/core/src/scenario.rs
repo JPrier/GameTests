@@ -138,9 +138,23 @@ pub struct GateDef {
     /// Staff cost per minute while metered.
     #[serde(default)]
     pub staff_cost_per_min: f32,
-    /// Agents allowed to cross only in the line normal's direction (outbound).
+    /// Agents may cross only downstream (toward the gate node); nobody walks back through.
     #[serde(default)]
     pub one_way: bool,
+    /// Scheduled operation: changes applied at fixed times (e.g. a gate that opens at 2:00).
+    #[serde(default)]
+    pub schedule: Vec<GateScheduleDef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GateScheduleDef {
+    /// Time (s).
+    pub at: f32,
+    /// "open", "metered" or "closed".
+    pub mode: String,
+    #[serde(default)]
+    pub level: Option<f32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -367,7 +381,7 @@ impl Default for Tuning {
             neighbor_range: 0.1,
             wall_strength: 5.0,
             wall_range: 0.02,
-            interaction_radius: 2.0,
+            interaction_radius: 1.5,
             decision_interval: 4.0,
             wait_speed: 0.25,
             density_cell: 2.0,
@@ -540,6 +554,23 @@ impl Scenario {
                     "fixed gate '{}' must be 'metered' (a service point)",
                     g.id
                 ));
+            }
+            for sch in &g.schedule {
+                if !GATE_MODES.contains(&sch.mode.as_str()) || !(sch.at >= 0.0) || !g.controllable {
+                    return err(format!(
+                        "gate '{}' schedule entry invalid (mode, time, or gate not controllable)",
+                        g.id
+                    ));
+                }
+                if sch.mode == "metered" {
+                    let l = sch.level.unwrap_or(1.0);
+                    if !g.meter_levels.iter().any(|x| (x - l).abs() < 1e-4) {
+                        return err(format!(
+                            "gate '{}' schedule level {l} is not one of its meter levels",
+                            g.id
+                        ));
+                    }
+                }
             }
             for l in &g.meter_levels {
                 if !(*l > 0.0 && *l <= 1.0) {

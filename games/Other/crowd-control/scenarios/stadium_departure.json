@@ -90,9 +90,9 @@
     {"id": "gate_b", "name": "South Gate", "node": "gate_b", "line": [86, 64, 86, 76], "lanes": 8, "lane_rate": 1.0,
      "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 20},
     {"id": "fare_n", "name": "North Fare Gates", "node": "fare_n", "line": [130, 11, 130, 19], "lanes": 5, "lane_rate": 0.6,
-     "default_mode": "metered"},
+     "default_mode": "metered", "one_way": true},
     {"id": "fare_s", "name": "South Fare Gates", "node": "fare_s", "line": [130, 51, 130, 59], "lanes": 4, "lane_rate": 0.5,
-     "default_mode": "metered"}
+     "default_mode": "metered", "one_way": true}
   ],
   "destinations": [
     {"id": "station", "name": "Train Station", "node": "platform", "area": "platform"},
@@ -139,13 +139,13 @@
     {"id": "trains", "name": "Station", "gates": ["fare_n", "fare_s"], "destination": "station"}
   ],
   "event_schedule": [
-    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.25,
+    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.18,
      "start": [100, 170], "duration": [110, 160], "probability": 1.0}
   ],
   "player_resources": {"budget": 1500, "barrier_cost": 150, "barrier_max_len": 10, "max_barriers": 6, "undo_window": 10},
   "objectives": {"time_limit": 900, "clear_fraction": 0.95, "target_journey": 150, "target_max_wait": 150},
   "failure_conditions": {"max_danger_seconds": 90},
   "scoring_rules": {"base": 1000, "per_journey_second": 2, "per_wait_second": 1, "per_heavy_second": 1,
-    "per_danger_second": 10, "per_cost": 0.2, "per_stranded": 3, "per_satisfaction": 2, "stars": [650, 850, 980]},
+    "per_danger_second": 10, "per_cost": 0.2, "per_stranded": 3, "per_satisfaction": 2, "stars": [600, 800, 950]},
   "information": {"delayed": [{"area": "station_north", "period": 30}, {"area": "station_south", "period": 30}]}
 }

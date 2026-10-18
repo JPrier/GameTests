@@ -26,14 +26,37 @@ impl Sim {
     ///   custom:    [(x - prev x) / scale, (y - prev y) / scale, heading angle, stable hash 0..1]
     /// (the motion delta is in the quad's local units so the shader can interpolate between ticks)
     /// The shader maps the data channels to colours, so overlay modes never need a new buffer.
+    /// People inside camera-delayed areas are drawn as they were at the last camera refresh, so the
+    /// map shows the operator's information, not the truth (unless perfect information is on).
     pub fn render_buffer(&self, out: &mut Vec<f32>) {
         let n = self.agents.len();
         out.clear();
         out.reserve(n * FLOATS_PER_AGENT);
-        let a = &self.agents;
+        let hidden = |area: u8| {
+            !self.perfect_info
+                && (area as usize) < self.reported.len()
+                && self.reported[area as usize].delayed
+        };
         for i in 0..n {
+            if !hidden(self.agents.area[i]) {
+                self.push_render_record(i, out, true);
+            }
+        }
+        if !self.perfect_info {
+            for r in &self.reported {
+                if r.delayed {
+                    out.extend_from_slice(&r.render);
+                }
+            }
+        }
+    }
+
+    /// One person's 16-float render record (see `render_buffer`).
+    pub(crate) fn push_render_record(&self, i: usize, out: &mut Vec<f32>, motion: bool) {
+        let a = &self.agents;
+        {
             let p = a.pos[i];
-            let d = p - a.prev[i];
+            let d = if motion { p - a.prev[i] } else { Vec2::ZERO };
             let s = a.radius[i] * 2.0;
             let stress = (a.wait_now[i] / a.patience[i].max(1.0))
                 .min(1.0)
@@ -68,12 +91,28 @@ impl Sim {
         out.clear();
         out.reserve(g.cols * g.rows * 4);
         for i in 0..g.cols * g.rows {
-            let d = (g.density[i] * 50.0).round().clamp(0.0, 255.0) as u8;
-            let l = g.level[i] as u8 * 85;
-            let fx = (g.flow[i].x * 60.0 + 128.0).round().clamp(0.0, 255.0) as u8;
-            let fy = (g.flow[i].y * 60.0 + 128.0).round().clamp(0.0, 255.0) as u8;
-            out.extend_from_slice(&[d, l, fx, fy]);
+            out.extend_from_slice(&self.density_texel(i));
         }
+        // delayed areas show the camera snapshot
+        if !self.perfect_info {
+            for r in &self.reported {
+                if r.delayed {
+                    for (c, t) in &r.texels {
+                        let k = *c as usize * 4;
+                        out[k..k + 4].copy_from_slice(t);
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn density_texel(&self, i: usize) -> [u8; 4] {
+        let g = &self.density;
+        let d = (g.density[i] * 50.0).round().clamp(0.0, 255.0) as u8;
+        let l = g.level[i] as u8 * 85;
+        let fx = (g.flow[i].x * 60.0 + 128.0).round().clamp(0.0, 255.0) as u8;
+        let fy = (g.flow[i].y * 60.0 + 128.0).round().clamp(0.0, 255.0) as u8;
+        [d, l, fx, fy]
     }
 
     pub fn density_dims(&self) -> (usize, usize, f32) {
@@ -85,7 +124,8 @@ impl Sim {
         let gates: Vec<Value> = self
             .gates
             .iter()
-            .map(|g| {
+            .enumerate()
+            .map(|(gi, g)| {
                 let reported = !self.perfect_info && (g.area as usize) < self.areas.len() && self.reported[g.area as usize].delayed;
                 let wait = if reported { self.reported_wait(g.node) } else { g.wait_estimate() };
                 json!({
@@ -93,7 +133,7 @@ impl Sim {
                     "mode": match g.mode { GateMode::Open => "open", GateMode::Metered => "metered", GateMode::Closed => "closed" },
                     "level": g.level, "levels": g.meter_levels,
                     "rate_pm": if g.rate().is_finite() { g.rate() * 60.0 } else { -1.0 },
-                    "flow_pm": g.passed.per_minute(),
+                    "flow_pm": if reported { self.reported_gate_flow[gi] } else { g.passed.per_minute() },
                     "queue": if reported { -1 } else { g.queue as i64 },
                     "wait": wait, "delayed": reported,
                     "service_factor": g.service_factor,
@@ -113,7 +153,8 @@ impl Sim {
                     "level": level_name(if delayed { r.level } else { a.level as u8 }),
                     "age": if delayed { self.time - r.at } else { 0.0 },
                     "delayed": delayed,
-                    "in_pm": a.inflow.per_minute(), "out_pm": a.outflow.per_minute(),
+                    "in_pm": if delayed { r.in_pm } else { a.inflow.per_minute() },
+                    "out_pm": if delayed { r.out_pm } else { a.outflow.per_minute() },
                 })
             })
             .collect();
@@ -161,7 +202,7 @@ impl Sim {
             "fields_pending": self.fields_pending(),
             "perfect_info": self.perfect_info,
             "fidelity": [
-                {"region": "Stadium bowl", "model": "aggregate reservoir (released through exits at capacity)", "count": res},
+                {"region": "Stadium bowl", "model": "aggregate count, released through the exits at their capacity when there is room outside", "count": res},
                 {"region": "Exterior", "model": "microscopic collision-free speed model", "count": active}
             ],
         })
@@ -176,8 +217,11 @@ impl Sim {
         let rep = &self.reported[ai];
         let delayed = rep.delayed && !self.perfect_info;
         let mut lines: Vec<String> = Vec::new();
-        let inflow = a.inflow.per_minute();
-        let outflow = a.outflow.per_minute();
+        let (inflow, outflow) = if delayed {
+            (rep.in_pm, rep.out_pm)
+        } else {
+            (a.inflow.per_minute(), a.outflow.per_minute())
+        };
         if delayed {
             lines.push(format!(
                 "Camera feed: data is {:.0} s old",
@@ -210,7 +254,18 @@ impl Sim {
         let mut gates: Vec<&crate::sim::Gate> = self
             .gates
             .iter()
-            .filter(|g| feeds(g) && g.queue > 0)
+            .filter(|g| {
+                // behind a delayed camera, only what the last refresh showed
+                let cam = !self.perfect_info
+                    && (g.area as usize) < self.reported.len()
+                    && self.reported[g.area as usize].delayed;
+                feeds(g)
+                    && if cam {
+                        self.reported_node_wait[g.node as usize] > 0.5
+                    } else {
+                        g.queue > 0
+                    }
+            })
             .collect();
         gates.sort_by_key(|g| std::cmp::Reverse(g.queue));
         if let Some(g) = gates.first() {
@@ -285,7 +340,7 @@ impl Sim {
             "density": if delayed { rep.density } else { a.density },
             "level": level_name(if delayed { rep.level } else { a.level as u8 }),
             "arrivals_pm": inflow, "departures_pm": outflow,
-            "mean_speed": a.mean_speed,
+            "mean_speed": if delayed { -1.0 } else { a.mean_speed },
             "limiting": limiting,
             "notes": lines,
             "recent": recent,

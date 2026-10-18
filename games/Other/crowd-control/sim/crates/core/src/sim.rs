@@ -68,6 +68,10 @@ pub struct Gate {
     pub violations: u32,
     /// Service tokens issued (people allowed through a metered line).
     pub served: u32,
+    /// Crossable only downstream (fare gates): nobody walks back through.
+    pub one_way: bool,
+    /// Scheduled operation: (time, mode, level), sorted by time; consumed as it fires.
+    pub schedule: Vec<(f32, GateMode, f32)>,
     pub last_change: f32,
 }
 
@@ -99,6 +103,34 @@ impl Gate {
     #[inline]
     pub fn lateral(&self, p: Vec2) -> f32 {
         (p - self.mid).dot(self.tangent).abs()
+    }
+}
+
+/// Copyable trait ranges of a population profile (avoids cloning strings per spawn).
+#[derive(Clone, Copy)]
+struct Traits {
+    speed: [f32; 2],
+    familiarity: [f32; 2],
+    sign_compliance: [f32; 2],
+    crowd_following: [f32; 2],
+    patience: [f32; 2],
+    group_size: [u32; 2],
+    stairs_aversion: f32,
+    radius: f32,
+}
+
+impl From<&crate::scenario::ProfileDef> for Traits {
+    fn from(p: &crate::scenario::ProfileDef) -> Traits {
+        Traits {
+            speed: p.speed,
+            familiarity: p.familiarity,
+            sign_compliance: p.sign_compliance,
+            crowd_following: p.crowd_following,
+            patience: p.patience,
+            group_size: p.group_size,
+            stairs_aversion: p.stairs_aversion,
+            radius: p.radius,
+        }
     }
 }
 
@@ -178,6 +210,13 @@ pub struct Reported {
     /// Time the reading was taken (s).
     pub at: f32,
     pub delayed: bool,
+    pub in_pm: u32,
+    pub out_pm: u32,
+    /// Camera snapshot: render records of the people inside, and density image texels.
+    #[serde(skip)]
+    pub render: Vec<f32>,
+    #[serde(skip)]
+    pub texels: Vec<(u32, [u8; 4])>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -255,6 +294,7 @@ pub struct Sim {
     pub area_names: Vec<String>,
     pub area_speed: Vec<f32>,
     pub area_static: Vec<f32>,
+    profile_traits: Vec<Traits>,
     pub area_center: Vec<Vec2>,
     pub gates: Vec<Gate>,
     pub sources: Vec<Source>,
@@ -286,7 +326,8 @@ pub struct Sim {
     pub ended_at: f32,
     pub perfect_info: bool,
     pub reported: Vec<Reported>,
-    reported_node_wait: Vec<f32>,
+    pub(crate) reported_node_wait: Vec<f32>,
+    pub reported_gate_flow: Vec<u32>,
     delayed_period: Vec<f32>,
     area_last_warn: Vec<f32>,
     pub area_prev_level: Vec<Level>,
@@ -303,6 +344,8 @@ pub struct Sim {
     route_buf: Vec<u16>,
     remove_buf: Vec<usize>,
     vel_buf: Vec<Vec2>,
+    near_buf: Vec<(u32, f32)>,
+    waiting_buf: Vec<(u16, f32, u32, usize)>,
     pub version_fields: u64,
 }
 
@@ -442,6 +485,23 @@ impl Sim {
                 area,
                 violations: 0,
                 served: 0,
+                one_way: g.one_way,
+                schedule: {
+                    let mut v: Vec<(f32, GateMode, f32)> = g
+                        .schedule
+                        .iter()
+                        .map(|s| {
+                            let m = match s.mode.as_str() {
+                                "metered" => GateMode::Metered,
+                                "closed" => GateMode::Closed,
+                                _ => GateMode::Open,
+                            };
+                            (s.at, m, s.level.unwrap_or(1.0))
+                        })
+                        .collect();
+                    v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                    v
+                },
                 last_change: -1e9,
             });
         }
@@ -562,6 +622,7 @@ impl Sim {
             })
             .collect();
         let n_areas = areas.len();
+        let n_gates = gates.len();
         let sc_area_static: Vec<f32> = areas.iter().map(|a| a.speed_factor).collect();
         let area_ids = sc.map.areas.iter().map(|a| a.id.clone()).collect();
         let area_names = sc.map.areas.iter().map(|a| a.name.clone()).collect();
@@ -593,6 +654,7 @@ impl Sim {
             area_names,
             area_speed: vec![1.0; n_areas],
             area_static: sc_area_static,
+            profile_traits: sc.population_profiles.iter().map(Traits::from).collect(),
             area_center,
             gates,
             sources,
@@ -624,6 +686,7 @@ impl Sim {
             perfect_info: false,
             reported: vec![Reported::default(); n_areas],
             reported_node_wait: vec![0.0; n_nodes],
+            reported_gate_flow: vec![0; n_gates],
             delayed_period,
             area_last_warn: vec![-1e9; n_areas],
             area_prev_level: vec![Level::Comfortable; n_areas],
@@ -638,10 +701,22 @@ impl Sim {
             route_buf: Vec::new(),
             remove_buf: Vec::new(),
             vel_buf: Vec::new(),
+            near_buf: Vec::new(),
+            waiting_buf: Vec::new(),
             version_fields: 0,
             grid,
             sc,
         };
+        // one-way gates constrain path search in their downstream direction
+        for g in &sim.gates {
+            if g.one_way {
+                sim.grid.one_way.push(crate::grid::OneWay {
+                    a: g.a,
+                    b: g.b,
+                    normal: g.normal,
+                });
+            }
+        }
         // closed gates start as walls
         for gi in 0..sim.gates.len() {
             if sim.gates[gi].mode == GateMode::Closed {
@@ -1025,6 +1100,7 @@ impl Sim {
         let dt = self.dt;
         let t0 = now();
         self.update_incidents();
+        self.update_schedules();
         // amortised field rebuild after geometry changes
         if self.fields_pending() > 0 {
             let mut done = 0;
@@ -1078,6 +1154,30 @@ impl Sim {
             tm.movement += t5 - t4;
             tm.density += t6 - t5;
             tm.ticks += 1;
+        }
+    }
+
+    /// Scenario-scheduled gate operations (deterministic, not player commands).
+    fn update_schedules(&mut self) {
+        for gi in 0..self.gates.len() {
+            while let Some(&(at, mode, level)) = self.gates[gi].schedule.first() {
+                if self.time < at {
+                    break;
+                }
+                self.gates[gi].schedule.remove(0);
+                let cmd = Command::Gate {
+                    gate: self.gates[gi].id.clone(),
+                    mode,
+                    level: (mode == GateMode::Metered).then_some(level),
+                };
+                if let Err(e) = self.apply_inner(&cmd) {
+                    self.log_event(
+                        "gate",
+                        format!("Scheduled change to {} failed: {e}", self.gates[gi].name),
+                        None,
+                    );
+                }
+            }
         }
     }
 
@@ -1145,7 +1245,7 @@ impl Sim {
                     }
                     // who: profile and group size (traits stream); where to: destination (arrivals)
                     let pi = self.rng_traits.weighted(&shares).min(n_profiles - 1);
-                    let prof = self.sc.population_profiles[pi].clone();
+                    let prof = self.profile_traits[pi];
                     let gsize = (self
                         .rng_traits
                         .int(prof.group_size[0] as i64, prof.group_size[1] as i64)
@@ -1354,6 +1454,7 @@ impl Sim {
             node_wait[g.node as usize] = g.wait_estimate();
         }
         let mut dist = [f32::INFINITY; MAX_NODES];
+        let mut dirs = [Vec2::ZERO; MAX_NODES];
         let mut believed = [-1.0f32; MAX_NODES];
         let mut herd = [0.0f32; MAX_NODES];
         let mut counts = [0u16; MAX_NODES];
@@ -1389,6 +1490,7 @@ impl Sim {
             let p = self.agents.pos[i];
             for (u, d) in dist.iter_mut().enumerate().take(n_nodes) {
                 *d = self.fields[u].dist_at(&self.grid, p);
+                dirs[u] = self.fields[u].direction(&self.grid, p);
             }
             for b in believed.iter_mut() {
                 *b = -1.0;
@@ -1451,6 +1553,7 @@ impl Sim {
                 area_static: &self.area_static,
                 area_center: &self.area_center,
                 herd_share: &herd[..n_nodes],
+                dir_to_node: &dirs[..n_nodes],
             };
             if choose_route(&inp, &mut route) {
                 let old_next = self.agents.next_node(i);
@@ -1464,7 +1567,6 @@ impl Sim {
                     } else {
                         NONE16
                     };
-                    self.agents.gate_side[i] = -1e9;
                 } else {
                     // same next hop: refresh the tail of the route
                     self.agents.set_route(i, &route);
@@ -1521,22 +1623,32 @@ impl Sim {
             }
         }
         // service: serve the people closest to each metered line first (deterministic order)
-        let mut waiting: Vec<(u16, f32, u32, usize)> = Vec::new();
+        // Service queue: unserved people at a metered line who are heading through it, whether it
+        // is their next waypoint or they are simply pressing into it.
+        let mut waiting = std::mem::take(&mut self.waiting_buf);
+        waiting.clear();
         for i in 0..n {
             let nn = self.agents.next_node(i);
-            if (nn as usize) >= self.graph.nodes.len() {
-                continue;
-            }
-            if let Some(gi) = self.graph.nodes[nn as usize].gate {
-                let g = &self.gates[gi as usize];
-                if g.mode == GateMode::Metered && self.agents.gate_pass[i] != gi {
-                    let s = g.side(self.agents.pos[i]);
-                    if s > -(tuning.gate_hold + self.agents.radius[i] + 0.35)
-                        && s < 0.0
-                        && g.lateral(self.agents.pos[i]) < g.half_len + 1.0
-                    {
-                        waiting.push((gi, s, self.agents.id[i], i));
-                    }
+            let route_gate = if (nn as usize) < self.graph.nodes.len() {
+                self.graph.nodes[nn as usize].gate
+            } else {
+                None
+            };
+            let p = self.agents.pos[i];
+            for (gi, g) in self.gates.iter().enumerate() {
+                let gi = gi as u16;
+                if g.mode != GateMode::Metered || self.agents.gate_pass[i] == gi {
+                    continue;
+                }
+                let s = g.side(p);
+                if s <= -(tuning.gate_hold + self.agents.radius[i] + 0.35)
+                    || s >= 0.0
+                    || g.lateral(p) >= g.half_len + 1.0
+                {
+                    continue;
+                }
+                if route_gate == Some(gi) || self.agents.heading[i].dot(g.normal) > 0.2 {
+                    waiting.push((gi, s, self.agents.id[i], i));
                 }
             }
         }
@@ -1565,8 +1677,13 @@ impl Sim {
             }
         }
 
+        self.waiting_buf = waiting;
         let ag = &self.agents;
         let grid = &self.grid;
+        // Beyond the cutoff neighbours neither repel measurably (8 e^-11 at 1.5 m) nor limit speed
+        // (spacing only binds below v0 * T + 2r, about 1.2 m at T = 0.5 s).
+        let cutoff2 = tuning.interaction_radius * tuning.interaction_radius;
+        let mut near = std::mem::take(&mut self.near_buf);
         for i in 0..n {
             let p = ag.pos[i];
             let ri = ag.radius[i];
@@ -1605,15 +1722,19 @@ impl Sim {
             let mut dir = e0;
             let mut spacing = f32::INFINITY;
             let hi = ag.heading[i];
+            // Neighbours within the cutoff, gathered once and reused for the spacing pass.
+            near.clear();
             self.spatial.for_each_near(p, |j| {
                 if j == i {
                     return;
                 }
                 let dvec = p - ag.pos[j];
-                let d = dvec.len();
-                if d > tuning.interaction_radius || d < 1e-5 {
+                let d2 = dvec.len_sq();
+                if d2 > cutoff2 || d2 < 1e-10 {
                     return;
                 }
+                let d = d2.sqrt();
+                near.push((j as u32, d));
                 let l = ri + ag.radius[j];
                 let nij = dvec * (1.0 / d);
                 let rep = tuning.neighbor_strength * exp((l - d) / tuning.neighbor_range);
@@ -1636,24 +1757,21 @@ impl Sim {
             let e = dir.norm();
             let e = if e == Vec2::ZERO { e0 } else { e };
             // --- speed: spacing to the nearest person ahead (within body width of the path)
-            self.spatial.for_each_near(p, |j| {
-                if j == i {
-                    return;
-                }
+            for &(j, d) in near.iter() {
+                let j = j as usize;
                 let dv = ag.pos[j] - p;
-                let ahead = dv.dot(e);
-                if ahead <= 0.0 {
-                    return;
+                if dv.dot(e) <= 0.0 {
+                    continue;
                 }
                 let l = ri + ag.radius[j];
                 if dv.cross(e).abs() >= l {
-                    return;
+                    continue;
                 }
-                let s = dv.len() - l;
+                let s = d - l;
                 if s < spacing {
                     spacing = s;
                 }
-            });
+            }
             // Queue discipline (gameplay approximation): people knowingly waiting for a metered or fare
             // gate keep a little personal space instead of pressing into body contact, as managed
             // queues do in practice (Fruin queue LOS C-D). Uncontrolled jams still compress fully.
@@ -1695,6 +1813,7 @@ impl Sim {
             self.new_dir[i] = e;
             self.new_speed[i] = v;
         }
+        self.near_buf = near;
 
         // apply movement, collisions with walls, gate crossings
         let tuning_hold = tuning.gate_hold;
@@ -1704,6 +1823,14 @@ impl Sim {
             let old = self.agents.pos[i];
             let mut p = old + e * (v * dt);
             let ri = self.agents.radius[i];
+            for &wi in self.grid.walls_near(p) {
+                let w = &self.grid.walls[wi as usize];
+                if segments_intersect(old, p, w.a, w.b) {
+                    // slide along the wall instead of stopping dead
+                    let t = (w.b - w.a).norm();
+                    p = old + t * (p - old).dot(t);
+                }
+            }
             for &wi in self.grid.walls_near(p) {
                 let w = &self.grid.walls[wi as usize];
                 if segments_intersect(old, p, w.a, w.b) {
@@ -1748,6 +1875,43 @@ impl Sim {
                     }
                 }
             }
+            // Every gate line, not just the one on this person's route: crossing downstream needs
+            // service at a metered gate; crossing upstream is impossible at a one-way gate.
+            for gi in 0..self.gates.len() {
+                let g = &self.gates[gi];
+                if (closest_on_segment(old, g.a, g.b) - old).len() > 2.5
+                    || !segments_intersect(old, p, g.a, g.b)
+                {
+                    continue;
+                }
+                let forward = (p - old).dot(g.normal) > 0.0;
+                let allowed = if forward {
+                    g.mode == GateMode::Open || self.agents.gate_pass[i] == gi as u16
+                } else {
+                    !g.one_way
+                };
+                if allowed {
+                    if forward {
+                        let g = &mut self.gates[gi];
+                        g.passed.add(1);
+                        g.total_passed += 1;
+                        if self.agents.gate_pass[i] == gi as u16 {
+                            self.agents.gate_pass[i] = NONE16;
+                        }
+                    }
+                } else {
+                    let t = g.tangent;
+                    let slid = old + t * (p - old).dot(t);
+                    p = if segments_intersect(old, slid, g.a, g.b) {
+                        old
+                    } else {
+                        slid
+                    };
+                    if segments_intersect(old, p, g.a, g.b) {
+                        self.gates[gi].violations += 1;
+                    }
+                }
+            }
             self.agents.prev[i] = old;
             self.agents.pos[i] = p;
             let moved = (p - old).len() / dt;
@@ -1765,20 +1929,6 @@ impl Sim {
                 continue;
             }
             let p = self.agents.pos[i];
-            if let Some(gi) = self.graph.nodes[nn as usize].gate {
-                let g = &mut self.gates[gi as usize];
-                let s = g.side(p);
-                let before = self.agents.gate_side[i];
-                if before > -1e8 && before < 0.0 && s >= 0.0 && g.lateral(p) < g.half_len + 1.0 {
-                    g.passed.add(1);
-                    g.total_passed += 1;
-                    if g.mode != GateMode::Open && self.agents.gate_pass[i] != gi {
-                        g.violations += 1;
-                    }
-                    self.agents.gate_pass[i] = NONE16;
-                }
-                self.agents.gate_side[i] = s;
-            }
             let node = &self.graph.nodes[nn as usize];
             let mut reached = (p - node.pos).len() <= node.radius
                 || self.fields[nn as usize].dist_at(&self.grid, p) <= node.radius * 0.8;
@@ -1804,7 +1954,6 @@ impl Sim {
             if reached && gate_ok {
                 self.agents.last_node[i] = nn;
                 self.agents.route_pos[i] += 1;
-                self.agents.gate_side[i] = -1e9;
                 if node.dest == Some(self.agents.dest[i]) {
                     self.remove_buf.push(i);
                 } else if self.agents.next_node(i) == NONE16 {
@@ -2057,16 +2206,37 @@ impl Sim {
                 continue;
             }
             let a = &self.areas[ai];
+            let delayed = period > 0.0;
+            let mut render = Vec::new();
+            let mut texels = Vec::new();
+            if delayed {
+                for i in 0..self.agents.len() {
+                    if self.agents.area[i] as usize == ai {
+                        self.push_render_record(i, &mut render, false);
+                    }
+                }
+                for c in 0..self.density.area_of.len() {
+                    if self.density.area_of[c] as usize == ai {
+                        texels.push((c as u32, self.density_texel(c)));
+                    }
+                }
+            }
             self.reported[ai] = Reported {
                 occupancy: a.occupancy,
                 density: a.density,
                 level: a.level as u8,
                 at: self.time,
-                delayed: period > 0.0,
+                delayed,
+                in_pm: a.inflow.per_minute(),
+                out_pm: a.outflow.per_minute(),
+                render,
+                texels,
             };
-            for g in &self.gates {
-                if g.area as usize == ai {
+            for gi in 0..self.gates.len() {
+                if self.gates[gi].area as usize == ai {
+                    let g = &self.gates[gi];
                     self.reported_node_wait[g.node as usize] = g.wait_estimate();
+                    self.reported_gate_flow[gi] = g.passed.per_minute();
                 }
             }
         }

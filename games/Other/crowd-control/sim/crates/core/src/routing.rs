@@ -17,6 +17,9 @@ pub const HERD_BONUS: f32 = 25.0;
 pub const COMMIT_BONUS: f32 = 8.0;
 /// Extra cost an impatient agent puts on the queue it is standing in (s).
 pub const IMPATIENCE_PENALTY: f32 = 40.0;
+/// Turning back against your own direction of travel (s); impatient people pay much less.
+pub const BACKTRACK_PENALTY: f32 = 45.0;
+pub const BACKTRACK_PENALTY_IMPATIENT: f32 = 8.0;
 /// Unfamiliar people distrust long unseen legs (s per metre * (1 - familiarity)).
 pub const UNCERTAINTY_PER_M: f32 = 0.25;
 
@@ -101,6 +104,8 @@ pub struct ChoiceInput<'a> {
     pub area_center: &'a [Vec2],
     /// Share of nearby same-destination people heading to each node.
     pub herd_share: &'a [f32],
+    /// Desired walking direction toward each node from the agent's position (field descent).
+    pub dir_to_node: &'a [Vec2],
 }
 
 /// Cheapest route from the agent to its destination as node indices (first hop first). Returns false
@@ -199,6 +204,18 @@ pub fn choose_route(inp: &ChoiceInput, out: &mut Vec<u16>) -> bool {
             }
         }
         c -= HERD_BONUS * inp.crowd_following * inp.herd_share[ui];
+        // switching to an option that means turning around (against people behind you)
+        if u != inp.current_next && (inp.current_next as usize) < n {
+            let a = inp.dir_to_node[inp.current_next as usize];
+            let b = inp.dir_to_node[ui];
+            if a.dot(b) < -0.3 {
+                c += if inp.impatient {
+                    BACKTRACK_PENALTY_IMPATIENT
+                } else {
+                    BACKTRACK_PENALTY
+                };
+            }
+        }
         if (inp.sign_via as usize) < n {
             let mut k = ui;
             let mut hops = 0;

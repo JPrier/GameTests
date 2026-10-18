@@ -101,8 +101,12 @@ def main():
             write_png(base / p.name, *half(*read_png(p)))
             print("approved", p.name)
         return 0
+    baselines = sorted(base.glob("*.png"))
+    if not baselines:
+        print(f"no baselines in {base}: nothing was compared (run 'approve' first)")
+        return 1
     failed = 0
-    for b in sorted(base.glob("*.png")):
+    for b in baselines:
         s = shots / b.name
         if not s.exists():
             print(f"MISSING {b.name}")

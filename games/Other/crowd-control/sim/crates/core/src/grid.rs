@@ -29,7 +29,36 @@ pub enum WallOwner {
     Gate(u16),
 }
 
+/// A line that may only be crossed in the direction of `normal` (e.g. fare gates).
+#[derive(Clone, Copy, Debug)]
+pub struct OneWay {
+    pub a: Vec2,
+    pub b: Vec2,
+    pub normal: Vec2,
+}
+
+impl OneWay {
+    /// Whether moving from `from` to `to` crosses the line against its direction.
+    #[inline]
+    pub fn blocks(&self, from: Vec2, to: Vec2) -> bool {
+        let pad = 1.0;
+        let (minx, maxx) = (self.a.x.min(self.b.x) - pad, self.a.x.max(self.b.x) + pad);
+        let (miny, maxy) = (self.a.y.min(self.b.y) - pad, self.a.y.max(self.b.y) + pad);
+        if (from.x < minx && to.x < minx)
+            || (from.x > maxx && to.x > maxx)
+            || (from.y < miny && to.y < miny)
+            || (from.y > maxy && to.y > maxy)
+        {
+            return false;
+        }
+        (to - from).dot(self.normal) < 0.0
+            && crate::math::segments_intersect(from, to, self.a, self.b)
+    }
+}
+
 pub struct NavGrid {
+    /// Lines crossable in one direction only; distance fields never route against them.
+    pub one_way: Vec<OneWay>,
     pub cols: usize,
     pub rows: usize,
     pub cell: f32,
@@ -68,6 +97,7 @@ impl NavGrid {
             }
         }
         let mut g = NavGrid {
+            one_way: Vec::new(),
             cols,
             rows,
             cell,
@@ -440,6 +470,14 @@ pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> 
                 let a = (cy * cols + nx) as usize;
                 let b = (ny * cols + cx) as usize;
                 if !mask[a] || !mask[b] {
+                    continue;
+                }
+            }
+            // the agent would walk j -> i: never against a one-way line
+            if !grid.one_way.is_empty() {
+                let ci = grid.center(cx as usize, cy as usize);
+                let cj = grid.center(nx as usize, ny as usize);
+                if grid.one_way.iter().any(|l| l.blocks(cj, ci)) {
                     continue;
                 }
             }

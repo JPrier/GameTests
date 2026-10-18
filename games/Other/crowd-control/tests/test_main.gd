@@ -48,7 +48,11 @@ func test_people_leave_the_stadium_and_render():
 	var pop: Dictionary = g.telemetry.population
 	assert_gt(int(pop.active), 50, "people are walking outside")
 	assert_lt(int(pop.inside), 1000, "the stadium is emptying")
-	assert_eq(g.world.count, int(pop.active), "one rendered instance per person")
+	# people in camera-delayed station halls are drawn from the last snapshot, so compare with
+	# perfect information on: then there is exactly one instance per person on site
+	g.set_perfect_info(true)
+	g.step_ticks(1)
+	assert_eq(g.world.count, int(g.telemetry.population.active), "one rendered instance per person")
 	assert_eq(int(pop.inside) + int(pop.active) + int(pop.completed), int(pop.total), "population is conserved")
 
 
@@ -176,3 +180,49 @@ func test_camera_zoom_is_clamped():
 	for i in 80:
 		g.zoom_at(Vector2(400, 300), 0.7)
 	assert_gt(g.camera.zoom.x, z0 * 0.8, "min zoom keeps the map in view")
+
+
+func _play(g, interventions: bool) -> Dictionary:
+	g.start_scenario(false)
+	g.paused = true
+	g.tutorial_step = -1
+	var placed := false
+	var signs := false
+	var metered := false
+	var guard := 0
+	while g.phase == g.Phase.PLAYING and guard < 2000:
+		g.step_ticks(20)
+		guard += 1
+		if not interventions:
+			continue
+		var t: float = g.telemetry.get("time", 0.0)
+		if not signs:
+			g.set_sign("sign_n", "waits")
+			g.set_sign("sign_s", "waits")
+			signs = true
+		if not placed and t > 20.0:
+			var r = g.adapter.command({"type": "barrier_add", "a": [117, 64.5], "b": [117, 70]})
+			assert_true(r.ok, "barrier placed: %s" % str(r))
+			placed = true
+		var delayed: bool = not g.telemetry.get("incidents", []).is_empty()
+		if delayed and not metered:
+			g.set_gate("gate_a", "metered", 0.25)
+			metered = true
+		elif metered and not delayed:
+			g.set_gate("gate_a", "open")
+			metered = false
+	return g.report
+
+
+## End-to-end: the same scenario played with gate, barrier and sign interventions through an
+## incident, compared with doing nothing. The interventions must change the outcome for the better.
+func test_playthrough_interventions_beat_doing_nothing():
+	var g = await _game(false)
+	var idle := _play(g, false)
+	var played := _play(g, true)
+	var cost := float(played.cost)
+	assert_gt(cost, 0.0, "interventions were paid for")
+	assert_lt(float(played.danger_seconds), float(idle.danger_seconds), "less dangerous crowding")
+	assert_gt(int(played.score), int(idle.score), "better score (%d vs %d)" % [int(played.score), int(idle.score)])
+	assert_true(g.log_entries.any(func(e): return e.kind == "incident"), "the train delay happened")
+	assert_eq(g.phase, g.Phase.ENDED, "results screen reached")

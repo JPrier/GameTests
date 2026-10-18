@@ -15,7 +15,7 @@ games/
   Incremental/
     bistro-empire/
   Other/
-    kitchen-crawl/
+    crowd-control/  kitchen-crawl/
 ```
 
 [Game idea backlog](game-ideas/README.md): add concepts to the inbox for agents to review and claim.
@@ -37,6 +37,7 @@ games/
 | **Incremental** | |
 | Bistro Empire: an incremental restaurant tycoon with 1,726 upgrades, franchises, side businesses, prestige and opt-in challenges | [`games/Incremental/bistro-empire`](games/Incremental/bistro-empire) |
 | **Other** | |
+| Crowd Control: you don't control people, you control the system they move through; get 1,000 fans home after the match | [`games/Other/crowd-control`](games/Other/crowd-control) |
 | Kitchen Crawl: a restaurant-sim roguelike | [`games/Other/kitchen-crawl`](games/Other/kitchen-crawl) |
 
 ## How deploys work
@@ -44,7 +45,7 @@ games/
 Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which:
 
 1. installs Godot 4.7.2 and only the web export templates (cached between runs),
-2. validates and runs the tests of every Godot project under `games/` (found in any category folder), failing the build on errors,
+2. validates and runs the tests of every Godot project under `games/` (found in any category folder), failing the build on errors; a game with an executable `prebuild.sh` runs it first (Crowd Control builds its Rust simulation there, so the workflow also installs Rust with the wasm target),
 3. exports each game to `/<folder>/` and generates the home page,
 4. deploys the result to GitHub Pages.
 

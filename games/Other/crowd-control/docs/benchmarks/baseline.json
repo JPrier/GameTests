@@ -1,0 +1,185 @@
+{
+  "build": "release",
+  "machine": {
+    "arch": "x86_64",
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logical_cores": 2,
+    "os": "linux",
+    "threads_used": 1
+  },
+  "results": [
+    {
+      "completed": 500,
+      "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
+      "full_field_rebuild_ms": 32.627584,
+      "load_ms": 41.69219,
+      "mean_agents": 190.7072011878248,
+      "outcome": "won",
+      "peak_microscopic_agents": 482,
+      "population": 500,
+      "realtime_factor_20hz": 385.4505869860168,
+      "render_buffer_ms": 0.005560683741648109,
+      "sim_seconds": 336.75,
+      "step_ms": {
+        "max": 7.397872,
+        "mean": 0.12971831328878966,
+        "p50": 0.10646599999999999,
+        "p95": 0.25003,
+        "p99": 0.31090399999999996
+      },
+      "systems_ms": {
+        "decisions_ms": 0.00868658515218957,
+        "density_ms": 0.04661370452858253,
+        "fields_ms": 0.00007288923533739008,
+        "movement_ms": 0.06937923266518223,
+        "neighbor_index_ms": 0.00031611670378666867,
+        "spawn_ms": 0.0044748976985893,
+        "ticks": 6735
+      },
+      "ticks": 6735,
+      "worst_tick": {
+        "ms": 7.397872,
+        "systems_ms": {
+          "agents": 210,
+          "decisions": 7.282141999999999,
+          "density": 0.029949000000001336,
+          "fields": 0.000059000000003639474,
+          "movement": 0.08136900000000474,
+          "neighbor_index": 0.00004599999999660431,
+          "spawn": 0.003916999999999116
+        },
+        "tick": 848
+      }
+    },
+    {
+      "completed": 979,
+      "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
+      "full_field_rebuild_ms": 26.570324,
+      "load_ms": 37.121393000000005,
+      "mean_agents": 365.51075,
+      "outcome": "running",
+      "peak_microscopic_agents": 664,
+      "population": 1000,
+      "realtime_factor_20hz": 263.4271852566604,
+      "render_buffer_ms": 0.00912150375093772,
+      "sim_seconds": 400.0,
+      "step_ms": {
+        "max": 1.189007,
+        "mean": 0.189805770999999,
+        "p50": 0.171022,
+        "p95": 0.346733,
+        "p99": 0.44967199999999996
+      },
+      "systems_ms": {
+        "decisions_ms": 0.0102733846250001,
+        "density_ms": 0.03372658037499965,
+        "fields_ms": 0.0000581766249990111,
+        "movement_ms": 0.14015594525000064,
+        "neighbor_index_ms": 0.000489144749999174,
+        "spawn_ms": 0.004919179625001546,
+        "ticks": 8000
+      },
+      "ticks": 8000,
+      "worst_tick": {
+        "ms": 1.189007,
+        "systems_ms": {
+          "agents": 533,
+          "decisions": 0.01870800000003392,
+          "density": 0.03905000000004044,
+          "fields": 0.00009800000000392828,
+          "movement": 1.124288999999945,
+          "neighbor_index": 0.00005599999997052407,
+          "spawn": 0.006249999999985434
+        },
+        "tick": 4763
+      }
+    },
+    {
+      "completed": 699,
+      "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
+      "full_field_rebuild_ms": 39.28036,
+      "load_ms": 31.705367,
+      "mean_agents": 2263.9624500665777,
+      "outcome": "failed_danger",
+      "peak_microscopic_agents": 4286,
+      "population": 5000,
+      "realtime_factor_20hz": 28.68595280880185,
+      "render_buffer_ms": 0.06388159792166266,
+      "sim_seconds": 187.75,
+      "step_ms": {
+        "max": 38.246072999999996,
+        "mean": 1.7430133952063902,
+        "p50": 1.558532,
+        "p95": 4.104123,
+        "p99": 5.5902840000000005
+      },
+      "systems_ms": {
+        "decisions_ms": 0.10561720505991812,
+        "density_ms": 0.059115612782955754,
+        "fields_ms": 0.00017112836218235392,
+        "movement_ms": 1.5372333411451387,
+        "neighbor_index_ms": 0.019862942210388302,
+        "spawn_ms": 0.02030918402130628,
+        "ticks": 3755
+      },
+      "ticks": 3755,
+      "worst_tick": {
+        "ms": 38.246072999999996,
+        "systems_ms": {
+          "agents": 3961,
+          "decisions": 0.2665600000000268,
+          "density": 0.09685599999986749,
+          "fields": 0.00016599999952404687,
+          "movement": 37.80251299999993,
+          "neighbor_index": 0.04853200000010105,
+          "spawn": 0.030557000000541734
+        },
+        "tick": 3446
+      }
+    },
+    {
+      "completed": 419,
+      "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
+      "full_field_rebuild_ms": 31.345201000000003,
+      "load_ms": 33.029572,
+      "mean_agents": 2749.402018795684,
+      "outcome": "failed_danger",
+      "peak_microscopic_agents": 5267,
+      "population": 10000,
+      "realtime_factor_20hz": 23.006076568498592,
+      "render_buffer_ms": 0.08058367607105538,
+      "sim_seconds": 143.65000915527344,
+      "step_ms": {
+        "max": 9.381065,
+        "mean": 2.1733388503306657,
+        "p50": 1.922871,
+        "p95": 4.838883,
+        "p99": 5.782493
+      },
+      "systems_ms": {
+        "decisions_ms": 0.11814277062304458,
+        "density_ms": 0.06126823320570757,
+        "fields_ms": 0.0002237184128087984,
+        "movement_ms": 1.9487829227288542,
+        "neighbor_index_ms": 0.01674231569787267,
+        "spawn_ms": 0.027355304559700203,
+        "ticks": 2873
+      },
+      "ticks": 2873,
+      "worst_tick": {
+        "ms": 9.381065,
+        "systems_ms": {
+          "agents": 4265,
+          "decisions": 0.39769300000003227,
+          "density": 0.118721999999849,
+          "fields": 0.0006979999995770925,
+          "movement": 8.7260640000002,
+          "neighbor_index": 0.07838400000004242,
+          "spawn": 0.0587570000001314
+        },
+        "tick": 2249
+      }
+    }
+  ],
+  "scenario": "stadium_departure"
+}

@@ -92,8 +92,8 @@ fn bottleneck_specific_flow_and_width() {
     let wide = bottleneck_flow(2.0);
     println!("specific flow: 1.0 m -> {narrow:.2} p/m/s, 2.0 m -> {wide:.2} p/m/s");
     assert!(
-        narrow > 0.8 && narrow < 3.2,
-        "1 m door specific flow {narrow}"
+        narrow > 1.2 && narrow < 2.2,
+        "1 m door specific flow {narrow} (Seyfried et al. 2007: about 1.6-2.0)"
     );
     assert!(
         wide * 2.0 > narrow * 1.0 * 1.3,
@@ -179,18 +179,15 @@ fn opposing_streams_pass_without_deadlock() {
         dests: vec![dest("east", "we"), dest("west", "ew")],
         sources: if counter {
             vec![
-                source("sw", 40, "w", [0.3, 0.3, 4.0, 3.4], 2.0, &[("east", 1.0)]),
-                source("se", 40, "e", [45.7, 0.3, 4.0, 3.4], 2.0, &[("west", 1.0)]),
+                source("sw", 80, "w", [0.3, 0.3, 4.0, 3.4], 8.0, &[("east", 1.0)]),
+                source("se", 80, "e", [45.7, 0.3, 4.0, 3.4], 8.0, &[("west", 1.0)]),
             ]
         } else {
-            vec![source(
-                "sw",
-                80,
-                "w",
-                [0.3, 0.3, 4.0, 3.4],
-                4.0,
-                &[("east", 1.0)],
-            )]
+            // same two sources and rates, both at the west end
+            vec![
+                source("sw", 80, "w", [0.3, 0.3, 4.0, 3.4], 8.0, &[("east", 1.0)]),
+                source("sw2", 80, "w", [0.3, 0.3, 4.0, 3.4], 8.0, &[("east", 1.0)]),
+            ]
         },
         ..Default::default()
     };
@@ -198,13 +195,18 @@ fn opposing_streams_pass_without_deadlock() {
     let mut ok = true;
     run_until_done(&mut bi, 600.0, |s| ok &= all_on_walkable(s));
     assert!(ok);
-    assert_eq!(bi.completed, 80, "counterflow deadlocked");
+    assert_eq!(bi.completed, 160, "counterflow deadlocked");
     let mut uni = build(false).sim();
     run_until_done(&mut uni, 600.0, |_| {});
-    let t_bi = bi.journey_sum / 80.0;
-    let t_uni = uni.journey_sum / 80.0;
-    println!("mean journey: counterflow {t_bi:.1} s, one-way {t_uni:.1} s");
-    assert!(t_bi > t_uni, "opposing streams should interfere");
+    let t_bi = bi.journey_sum / 160.0;
+    let t_uni = uni.journey_sum / 160.0;
+    println!(
+        "mean journey (160 people, same demand): counterflow {t_bi:.1} s, one-way {t_uni:.1} s"
+    );
+    assert!(
+        t_bi > t_uni * 1.05,
+        "opposing streams should clearly interfere"
+    );
 }
 
 /// Reference 5: Intersecting streams: two perpendicular flows cross in a square and everyone gets through.

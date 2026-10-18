@@ -45,8 +45,11 @@ pub fn report(sim: &Sim) -> Report {
     let ob = &sim.sc.objectives;
     let completed = sim.completed;
     let total = sim.total_population;
-    let avg_journey = if completed > 0 {
-        sim.journey_sum / completed as f32
+    // people still on site count with their journey so far, so stranding people never helps
+    let on_site: f32 = sim.agents.spawn_time.iter().map(|t| sim.time - t).sum();
+    let counted = completed as f32 + sim.agents.len() as f32;
+    let avg_journey = if counted > 0.0 {
+        (sim.journey_sum + on_site) / counted
     } else {
         0.0
     };

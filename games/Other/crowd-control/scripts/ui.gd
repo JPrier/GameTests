@@ -609,7 +609,8 @@ func _area_panel() -> void:
 	draw_circle(Vector2(r.position.x + p + GTUI.dp(5), y + GTUI.dp(11)), GTUI.dp(5), LEVEL_COL.get(lvl, Color.WHITE))
 	GTUI.text_in(self, Rect2(r.position.x + p + GTUI.dp(16), y, r.size.x - p * 2 - GTUI.dp(16), GTUI.dp(22)), LEVEL_TEXT.get(lvl, lvl), GTUI.FS_BODY, GTUI.c("text"), -1, true)
 	y += GTUI.dp(26)
-	y = _line(r, y, "%d people · %.1f per m² · moving %.1f m/s" % [int(e.occupancy), float(e.density), float(e.mean_speed)], GTUI.FS_LABEL, GTUI.c("text_muted"))
+	var speed_txt := "" if float(e.mean_speed) < 0.0 else " · moving %.1f m/s" % float(e.mean_speed)
+	y = _line(r, y, "%d people · %.1f per m²%s" % [int(e.occupancy), float(e.density), speed_txt], GTUI.FS_LABEL, GTUI.c("text_muted"))
 	y = _line(r, y, "Arriving %d/min · leaving %d/min" % [int(e.arrivals_pm), int(e.departures_pm)], GTUI.FS_LABEL, GTUI.c("text_muted"))
 	for n in e.get("notes", []):
 		y = _line(r, y, str(n), GTUI.FS_LABEL, GTUI.c("text"))
@@ -693,6 +694,8 @@ func _draw_title() -> void:
 	var btn := Rect2(x, card.end.y - p - GTUI.target(), w, GTUI.target())
 	var cols := GTUI.row(btn, 3, [1.3, 1, 1])
 	GTUI.chip(self, "title_big", cols[0], "Stress test: 5,000", big_crowd)
+	if big_crowd:
+		GTUI.paragraph(self, x, btn.position.y - GTUI.dp(GTUI.SP_L + 18), w, "Stress test: performance only, not balanced for a fair score.", GTUI.FS_CAPTION, GTUI.c("text_muted"))
 	GTUI.button(self, "help", cols[1], "How to play")
 	GTUI.button(self, "title_start", cols[2], "Start", "primary")
 	if main.help_open:
@@ -733,7 +736,8 @@ func _draw_help() -> void:
 		"People choose their own routes. You change gates, barriers and signs, and they react.",
 		"Gates: tap one, then Open, Meter (hold people back) or Close.",
 		"Signs: point train passengers to a gate, or show live waits. Not everyone reads them.",
-		"Barriers: pick the Barrier tool and drag inside a yellow zone.",
+		"Barriers: pick the Barrier tool and drag inside a yellow zone (pan with two fingers meanwhile).",
+		"Station halls are watched by cameras that refresh every 30 s: what you see there may be out of date.",
 		"Tap an area to see what is limiting it. Overlays show density, risk, flow and routes.",
 		"Drag or use WASD to pan; scroll, pinch or +/- to zoom; Space pauses; 1–4 set the speed.",
 	]

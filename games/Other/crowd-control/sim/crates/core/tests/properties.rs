@@ -116,6 +116,7 @@ fn invariants_hold_on_random_worlds() {
             "seed {seed}: metered gate exceeded its service rate"
         );
         assert_eq!(sim.gates[0].violations, 0, "seed {seed}: unserved crossing");
+        for i in 0..sim.agents.len() {}
         assert_eq!(
             sim.completed, pop,
             "seed {seed}: not everyone arrived ({} of {pop})",
@@ -363,4 +364,62 @@ fn overlays_and_queries_do_not_change_state() {
         }
     }
     assert_eq!(a.checksum(), b.checksum());
+}
+
+/// Independent geometric audit of every gate line (not the simulation's own counters): nobody walks
+/// back through a one-way fare line, and downstream crossings of metered lines never exceed the
+/// service tokens issued there.
+#[test]
+fn nobody_bypasses_fare_or_metered_gates() {
+    for seed in [1u64, 2, 3] {
+        let mut sim = Sim::new(
+            stadium(),
+            &LoadOptions {
+                seed: Some(seed),
+                population: None,
+            },
+        )
+        .unwrap();
+        // hold the north side mid-run so metered plaza gates are exercised too
+        let mut forward = vec![0u32; sim.gates.len()];
+        let mut backward = vec![0u32; sim.gates.len()];
+        while !sim.is_over() {
+            if sim.tick == 1500 {
+                sim.apply(Command::Gate {
+                    gate: "gate_a".into(),
+                    mode: GateMode::Metered,
+                    level: Some(0.25),
+                })
+                .unwrap();
+            }
+            sim.step();
+            for i in 0..sim.agents.len() {
+                let (a, b) = (sim.agents.prev[i], sim.agents.pos[i]);
+                for (gi, g) in sim.gates.iter().enumerate() {
+                    if crowd_core::math::segments_intersect(a, b, g.a, g.b) {
+                        if (b - a).dot(g.normal) > 0.0 {
+                            forward[gi] += 1;
+                        } else {
+                            backward[gi] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        for (gi, g) in sim.gates.iter().enumerate() {
+            if g.one_way {
+                assert_eq!(backward[gi], 0, "seed {seed}: walked back through {}", g.id);
+            }
+            if !g.controllable {
+                // fare gates are always metered: every downstream crossing needed a token
+                assert!(
+                    forward[gi] <= g.served,
+                    "seed {seed}: {} crossed {} times with {} tokens",
+                    g.id,
+                    forward[gi],
+                    g.served
+                );
+            }
+        }
+    }
 }

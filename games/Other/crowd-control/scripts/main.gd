@@ -63,6 +63,9 @@ var _last_render_tick := -1
 var _step_ms := 0.0
 var _render_ms := 0.0
 var _keys_pan := Vector2.ZERO
+var _held_keys := {}
+var _loading_t := 0.0
+const LOAD_TIMEOUT := 30.0
 
 
 func _ready() -> void:
@@ -110,10 +113,13 @@ func _process(delta: float) -> void:
 	_update_toasts()
 	match phase:
 		Phase.LOADING:
+			_loading_t += delta
 			if adapter.is_ready():
 				phase = Phase.TITLE
 			elif adapter.error != "":
 				_fail(adapter.error)
+			elif _loading_t > LOAD_TIMEOUT:
+				_fail("The simulation took too long to start. Check your connection and reload.")
 		Phase.PLAYING:
 			_advance(delta)
 	_apply_keys_pan(delta)
@@ -401,11 +407,15 @@ func _input(ev: InputEvent) -> void:
 
 func _key(ev: InputEventKey) -> void:
 	var dir := {KEY_W: Vector2.UP, KEY_UP: Vector2.UP, KEY_S: Vector2.DOWN, KEY_DOWN: Vector2.DOWN, KEY_A: Vector2.LEFT, KEY_LEFT: Vector2.LEFT, KEY_D: Vector2.RIGHT, KEY_RIGHT: Vector2.RIGHT}
-	if dir.has(ev.keycode) and phase == Phase.PLAYING:
-		if ev.pressed and not ev.echo:
-			_keys_pan += dir[ev.keycode]
-		elif not ev.pressed:
-			_keys_pan -= dir[ev.keycode]
+	if dir.has(ev.keycode):
+		# releases always count (so panning never sticks after a dialog opens); presses only in play
+		if not ev.pressed:
+			_held_keys.erase(ev.keycode)
+		elif not ev.echo and phase == Phase.PLAYING:
+			_held_keys[ev.keycode] = true
+		_keys_pan = Vector2.ZERO
+		for k in _held_keys:
+			_keys_pan += dir[k]
 		_keys_pan = _keys_pan.clamp(Vector2(-1, -1), Vector2(1, 1))
 		return
 	if not ev.pressed or ev.echo:
@@ -415,7 +425,8 @@ func _key(ev: InputEventKey) -> void:
 			if phase == Phase.PLAYING and tutorial_step < 0:
 				paused = not paused
 		KEY_1, KEY_2, KEY_3, KEY_4:
-			speed_idx = ev.keycode - KEY_1
+			if phase == Phase.PLAYING:
+				speed_idx = ev.keycode - KEY_1
 		KEY_B:
 			if phase == Phase.PLAYING:
 				set_tool("select" if tool == "barrier" else "barrier")
@@ -532,9 +543,13 @@ func _pointer_move(pos: Vector2, rel: Vector2) -> void:
 		_preview_t -= 1.0
 		_update_preview(false)
 		return
-	if pos.distance_to(_press_pos) > TAP_SLOP or _moved:
-		_moved = true
+	if _moved:
 		camera.position -= rel / camera.zoom.x
+		_clamp_camera()
+	elif pos.distance_to(_press_pos) > TAP_SLOP:
+		# start panning, including the movement inside the tap slop
+		_moved = true
+		camera.position -= (pos - _press_pos) / camera.zoom.x
 		_clamp_camera()
 
 

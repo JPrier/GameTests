@@ -6,6 +6,7 @@
 //!   crowd bench <scenario.json> [--populations 500,1000,5000] [--ticks N] [--out bench.json]
 //!   crowd experiments <scenario.json> [--seeds N] [--out experiments.json]
 //!   crowd trace <scenario.json> [--every SECONDS] [--strategy NAME]
+//!   crowd research <scenario.json>       (timestep and route-reconsideration studies)
 //!   crowd checksum <scenario.json> [--ticks N] [--commands cmds.json]   (compare with tools/wasm_check.mjs)
 
 mod strategies;
@@ -127,6 +128,7 @@ fn main() {
             println!("{:016x}", sim.checksum());
         }
         "experiments" => strategies::experiments(&args),
+        "research" => research(&args),
         "trace" => strategies::trace(&args),
         _ => {
             eprintln!("usage: crowd <validate|run|replay|bench|experiments|trace> ... (see source header)");
@@ -175,10 +177,27 @@ fn bench(args: &[String]) {
         let mut agent_ticks = 0u64;
         let mut render = Vec::new();
         let mut render_ms = 0.0;
+        let mut worst = (0.0f64, 0u64, json!({}));
         while !sim.is_over() && sim.tick < max_ticks {
+            let before = sim.timings.clone();
             let t = Instant::now();
             sim.step_timed(Some(&clock));
-            times.push(t.elapsed().as_secs_f64() * 1000.0);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            times.push(ms);
+            if ms > worst.0 {
+                let a = &sim.timings;
+                let d = |x: f64, y: f64| (x - y) * 1000.0;
+                worst = (
+                    ms,
+                    sim.tick,
+                    json!({
+                        "fields": d(a.fields, before.fields), "spawn": d(a.spawn, before.spawn),
+                        "neighbor_index": d(a.neighbor_index, before.neighbor_index), "decisions": d(a.decisions, before.decisions),
+                        "movement": d(a.movement, before.movement), "density": d(a.density, before.density),
+                        "agents": sim.agents.len(),
+                    }),
+                );
+            }
             peak_agents = peak_agents.max(sim.agents.len());
             agent_ticks += sim.agents.len() as u64;
             if sim.tick.is_multiple_of(3) {
@@ -208,6 +227,7 @@ fn bench(args: &[String]) {
             "systems_ms": sim.timing_report(),
             "render_buffer_ms": render_ms / (sim.tick / 3).max(1) as f64,
             "load_ms": load_ms,
+            "worst_tick": {"ms": worst.0, "tick": worst.1, "systems_ms": worst.2},
             "full_field_rebuild_ms": rebuild_ms,
             "realtime_factor_20hz": if mean > 0.0 { 50.0 / mean } else { 0.0 },
             "outcome": sim.outcome,
@@ -251,4 +271,90 @@ fn machine() -> serde_json::Value {
         .map(|n| n.get())
         .unwrap_or(1);
     json!({"cpu": cpu, "logical_cores": cores, "os": std::env::consts::OS, "arch": std::env::consts::ARCH, "threads_used": 1})
+}
+
+/// Empirical studies behind two design decisions: the fixed timestep and how often people
+/// reconsider their route. Each variant runs the full scenario (no player action) over 3 seeds.
+fn research(args: &[String]) {
+    let path = args
+        .get(2)
+        .map(String::as_str)
+        .unwrap_or_else(|| die("scenario path required"));
+    let base = load(path);
+    let seeds = [base.seed, base.seed + 7919, base.seed + 2 * 7919];
+    let run = |sc: &crowd_core::Scenario| {
+        let mut out = Vec::new();
+        for &seed in &seeds {
+            let mut sim = Sim::new(
+                sc.clone(),
+                &LoadOptions {
+                    seed: Some(seed),
+                    population: None,
+                },
+            )
+            .unwrap();
+            let t0 = Instant::now();
+            let mut overlap_ticks = 0u64;
+            let mut overlaps = 0u64;
+            while !sim.is_over() && sim.time < sc.objectives.time_limit {
+                sim.step();
+                // body overlap: pairs closer than 60% of the summed radii
+                if sim.tick.is_multiple_of(10) {
+                    overlap_ticks += 1;
+                    let a = &sim.agents;
+                    // the sim's own index is from before this tick's arrivals left; build a fresh one
+                    let mut grid = crowd_core::spatial::SpatialGrid::new(sc.map.size, 2.0);
+                    grid.rebuild(&a.pos);
+                    for i in 0..a.len() {
+                        grid.for_each_near(a.pos[i], |j| {
+                            if j > i
+                                && (a.pos[i] - a.pos[j]).len() < 0.6 * (a.radius[i] + a.radius[j])
+                            {
+                                overlaps += 1;
+                            }
+                        });
+                    }
+                }
+            }
+            let r = score::report(&sim);
+            out.push((
+                r.avg_journey,
+                sim.danger_seconds,
+                sim.heavy_seconds,
+                overlaps as f64 / overlap_ticks.max(1) as f64,
+                t0.elapsed().as_secs_f64() / sim.time.max(1.0) as f64 * 1000.0,
+                sim.completed,
+            ));
+        }
+        let n = out.len() as f64;
+        let m = |k: usize| {
+            out.iter()
+                .map(|o| [o.0 as f64, o.1 as f64, o.2 as f64, o.3, o.4, o.5 as f64][k])
+                .sum::<f64>()
+                / n
+        };
+        (m(0), m(1), m(2), m(3), m(4), m(5))
+    };
+    println!("## Timestep (no action, 3 seeds)");
+    println!("| dt (s) | rate | avg journey s | danger s | heavy s | overlapping pairs/tick | ms per sim-second | delivered |");
+    println!("|---:|---:|---:|---:|---:|---:|---:|---:|");
+    for dt in [0.1f32, 0.05, 1.0 / 30.0] {
+        let mut sc = base.clone();
+        sc.tuning.dt = dt;
+        let (j, d, h, o, ms, c) = run(&sc);
+        println!(
+            "| {dt:.3} | {:.0} Hz | {j:.1} | {d:.1} | {h:.1} | {o:.2} | {ms:.2} | {c:.0} |",
+            1.0 / dt
+        );
+    }
+    println!();
+    println!("## Route reconsideration interval (dt 0.05, 3 seeds)");
+    println!("| interval (s) | avg journey s | danger s | heavy s | ms per sim-second |");
+    println!("|---:|---:|---:|---:|---:|");
+    for iv in [1.0f32, 2.0, 4.0, 8.0, 16.0] {
+        let mut sc = base.clone();
+        sc.tuning.decision_interval = iv;
+        let (j, d, h, _, ms, _) = run(&sc);
+        println!("| {iv:.0} | {j:.1} | {d:.1} | {h:.1} | {ms:.2} |");
+    }
 }
