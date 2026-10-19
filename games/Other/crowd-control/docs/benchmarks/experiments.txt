@@ -1,0 +1,16 @@
+strategy                            score stars  journey  maxwait  heavy_s danger_s    cost   sat  fails
+Do nothing                            324   0.2      147      138      110     71.3       0    90      1
+Wait-time signs                       795   1.8      150      155      122     24.8      50    92      0
+Signs: trains via South Gate           23   0.0      138      133      110     89.4      50    89      5
+Meter North Gate during the delay     424   0.2      150      135      114     63.2      45    91      0
+Close North Gate during the delay       0   0.0      143      153      120     90.0       0    85      6
+Wait signs + metering                 858   2.3      150      153      117     18.0      95    93      0
+Trains north + meter during delay     334   0.2      156      135      130     68.3      95    90      0
+Trickle North Gate (10%) in the delay      0   0.0      140      132      103     90.0      45    88      6
+Hold crowd in plaza (meter both)      826   2.0      169      154       99     18.2     141    90      0
+Meter whichever side is congested     770   1.8      151      227      121     18.3     128    93      0
+Barrier pen for the ramp queue        399   0.2      150      142       78     61.6     300    93      1
+Ramp pen + meter North in the delay    849   2.0      153      136       53     20.4     345    94      0
+Ramp pen + hold both gates lightly    698   1.2      159      131       60     33.1     391    93      0
+
+Best strategy varied across seeds: {"expert", "hold_in_plaza", "pen_and_meter", "reactive"}

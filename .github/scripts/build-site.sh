@@ -22,6 +22,12 @@ mapfile -t games <<< "$game_list"
 for dir in "${games[@]}"; do
   name="$(basename "$dir")"
   echo "::group::$name"
+  # Optional per-game build hook (e.g. a native simulation library), run before the import.
+  if [ -x "$dir/prebuild.sh" ]; then
+    if ! "$dir/prebuild.sh"; then
+      echo "::error::$name prebuild.sh failed"; fail=1; echo "::endgroup::"; continue
+    fi
+  fi
   "$GODOT" --headless --path "$dir" --import >/dev/null 2>&1 || true
 
   # Gate on the AgentBridge validator (parse/compile errors) and the game's tests, when present.

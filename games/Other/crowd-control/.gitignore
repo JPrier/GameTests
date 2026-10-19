@@ -1,0 +1,11 @@
+# build outputs (made by tools/build_native.sh and tools/build_web.sh, in CI by prebuild.sh)
+sim/target/
+native/*.so
+native/*.dll
+native/*.dylib
+web/crowd_sim.wasm
+build/
+shots/
+shots_failed/
+validate.json
+tests.json

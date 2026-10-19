@@ -1,0 +1,177 @@
+name: Crowd Control
+
+# Deeper checks for games/Other/crowd-control (its Rust simulation core). The site build
+# (pages.yml) also builds, tests and exports it like every other game.
+on:
+  push:
+    branches: [main]
+    paths: ["games/Other/crowd-control/**", ".github/workflows/crowd-control.yml"]
+  pull_request:
+    paths: ["games/Other/crowd-control/**", ".github/workflows/crowd-control.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+  RUST_VERSION: 1.97.0
+  GAME: games/Other/crowd-control
+
+jobs:
+  simulation:
+    name: Simulation (fmt, clippy, tests, replay, wasm determinism, benchmarks, experiments)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: games/Other/crowd-control/sim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            games/Other/crowd-control/sim/target
+          key: crowd-sim-${{ env.RUST_VERSION }}-${{ hashFiles('games/Other/crowd-control/sim/Cargo.lock') }}
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Lints
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Unit, behavioural and property tests
+        run: cargo test --workspace --release --locked
+
+      - name: Build the headless harness
+        run: cargo build --release --locked -p crowd_cli
+
+      - name: Validate scenarios
+        run: ./target/release/crowd validate ../scenarios/*.json
+
+      - name: Deterministic replay round trip
+        run: |
+          ./target/release/crowd run ../scenarios/stadium_departure.json --commands ../tools/check_commands.json --out replay.json > report.json
+          ./target/release/crowd replay ../scenarios/stadium_departure.json replay.json
+
+      - name: Native and wasm builds produce identical state
+        run: |
+          ../tools/build_web.sh
+          native=$(./target/release/crowd checksum ../scenarios/stadium_departure.json --ticks 3000 --commands ../tools/check_commands.json)
+          wasm=$(node ../tools/wasm_check.mjs ../scenarios/stadium_departure.json 3000 ../tools/check_commands.json)
+          echo "native $native  wasm $wasm"
+          test "$native" = "$wasm"
+
+      - name: Benchmarks (compared with the recorded baseline)
+        run: |
+          ./target/release/crowd bench ../scenarios/stadium_departure.json --populations 500,1000,5000 --ticks 6000 --out bench.json
+          python3 ../tools/bench_compare.py bench.json ../docs/benchmarks/baseline.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Strategy experiments (gameplay validation)
+        run: |
+          ./target/release/crowd experiments ../scenarios/stadium_departure.json --seeds 3 --out experiments.json | tee experiments.txt
+          { echo '### Strategy experiments'; echo '```'; cat experiments.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crowd-simulation-reports
+          path: |
+            games/Other/crowd-control/sim/replay.json
+            games/Other/crowd-control/sim/report.json
+            games/Other/crowd-control/sim/bench.json
+            games/Other/crowd-control/sim/experiments.json
+            games/Other/crowd-control/sim/experiments.txt
+
+  game:
+    name: Game (import, tests, screenshots, web build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot + web export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-web-nothreads
+
+      - name: Install Godot ${{ env.GODOT_VERSION }}
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          REL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/.local/godot
+          curl -fsSL -o /tmp/godot.zip "$REL/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -oq /tmp/godot.zip -d ~/.local/godot
+          python3 .github/scripts/fetch-zip-members.py \
+            "$REL/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable \
+            "templates/version.txt" "templates/web_nothreads_debug.zip" "templates/web_nothreads_release.zip"
+
+      - name: Install Rust ${{ env.RUST_VERSION }} and a virtual display
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+          sudo apt-get update -q && sudo apt-get install -yq xvfb libgl1-mesa-dri
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            games/Other/crowd-control/sim/target
+          key: crowd-game-${{ env.RUST_VERSION }}-${{ hashFiles('games/Other/crowd-control/sim/Cargo.lock') }}
+
+      - name: Build the native extension and the wasm module
+        run: ${{ env.GAME }}/prebuild.sh
+
+      - name: Import (fails on errors), validate and run the Godot tests
+        run: |
+          G=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          chmod +x "$G"
+          cd "$GAME"
+          # The very first import that discovers the GDExtension aborts at shutdown after
+          # finishing (Godot 4.7.2 + godot-rust, reproducible locally); a second import must be clean.
+          "$G" --headless --path . --import || echo "first import exited with $?"
+          "$G" --headless --path . --import
+          "$G" --headless --path . -- --agent-validate --agent-out=validate.json || { cat validate.json; exit 1; }
+          "$G" --headless --path . -- --agent-run-tests --agent-out=tests.json || { cat tests.json; exit 1; }
+          python3 -c "import json;r=json.load(open('tests.json'));print(f\"{r['passed']}/{r['total']} Godot tests passed\")"
+
+      - name: Screenshot checkpoints vs. approved baselines
+        run: |
+          G=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          cd "$GAME"
+          xvfb-run -a -s "-screen 0 1600x1000x24" "$G" --path . --rendering-driver opengl3 --resolution 960x540 -- --capture="$PWD/shots"
+          python3 tools/compare_shots.py check shots tests/visual/baseline --out shots_failed
+
+      - name: Export the playable web build
+        run: |
+          G=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          cd "$GAME"
+          mkdir -p build/web
+          "$G" --headless --path . --export-release "Web" build/web/index.html
+          test -s build/web/index.wasm
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crowd-game-screenshots
+          path: |
+            games/Other/crowd-control/shots
+            games/Other/crowd-control/shots_failed
+            games/Other/crowd-control/tests.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crowd-control-web-build
+          path: games/Other/crowd-control/build/web

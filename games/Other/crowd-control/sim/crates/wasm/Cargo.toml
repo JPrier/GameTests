@@ -1,0 +1,13 @@
+[package]
+name = "crowd_wasm"
+description = "WebAssembly build of the crowd simulation for the browser (called via JavaScriptBridge)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+crowd_core = { path = "../core" }

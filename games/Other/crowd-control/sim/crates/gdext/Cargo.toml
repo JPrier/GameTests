@@ -1,0 +1,14 @@
+[package]
+name = "crowd_gdext"
+description = "Godot GDExtension binding for the crowd simulation (desktop and headless tests)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+crowd_core = { path = "../core" }
+godot = { workspace = true }
