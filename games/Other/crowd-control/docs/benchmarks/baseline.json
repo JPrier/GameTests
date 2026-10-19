@@ -9,175 +9,132 @@
   },
   "results": [
     {
-      "completed": 397,
+      "completed": 840,
       "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
-      "full_field_rebuild_ms": 18.408354,
-      "load_ms": 34.905063,
-      "mean_agents": 269.26683333333335,
+      "full_field_rebuild_ms": 39.184428,
+      "load_ms": 68.896118,
+      "mean_agents": 869.161,
       "outcome": "running",
-      "peak_microscopic_agents": 496,
-      "population": 500,
-      "realtime_factor_20hz": 91.37392849658424,
-      "render_buffer_ms": 0.005850929499999992,
+      "peak_microscopic_agents": 1200,
+      "population": 1200,
+      "realtime_factor_20hz": 39.56048323173531,
+      "render_buffer_ms": 0.025791397999999993,
       "sim_seconds": 300.0,
       "step_ms": {
-        "max": 4.374402,
-        "mean": 0.5472020391666657,
-        "p50": 0.307957,
-        "p95": 2.487138,
-        "p99": 3.112061
+        "max": 19.231930000000002,
+        "mean": 1.2638874936666633,
+        "p50": 0.717856,
+        "p95": 5.312162,
+        "p99": 6.786174
       },
       "systems_ms": {
-        "decisions_ms": 0.010033683999997663,
-        "density_ms": 0.04863467566666341,
-        "fields_ms": 0.26978192350000185,
-        "movement_ms": 0.21298062450000402,
-        "neighbor_index_ms": 0.00029617150000098985,
-        "spawn_ms": 0.005245139833332206,
+        "decisions_ms": 0.036813026499998514,
+        "density_ms": 0.2674628086666618,
+        "fields_ms": 0.5713111521666688,
+        "movement_ms": 0.34758937650000205,
+        "neighbor_index_ms": 0.0041678031666711295,
+        "spawn_ms": 0.03611984799999949,
         "ticks": 6000
       },
       "ticks": 6000,
       "worst_tick": {
-        "ms": 4.374402,
+        "ms": 19.231930000000002,
         "systems_ms": {
-          "agents": 352,
-          "decisions": 0.0032020000000354543,
-          "density": 0.044038000000190536,
-          "fields": 4.024814000000099,
-          "movement": 0.2938919999999623,
-          "neighbor_index": 0.00008999999989711682,
-          "spawn": 0.00793999999992856
+          "agents": 626,
+          "decisions": 0.017026999999281145,
+          "density": 4.062397000000217,
+          "fields": 14.877047999999782,
+          "movement": 0.24163500000007332,
+          "neighbor_index": 0.00006800000029727471,
+          "spawn": 0.03323199999982762
         },
-        "tick": 2705
+        "tick": 5393
       }
     },
     {
-      "completed": 584,
+      "completed": 871,
       "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
-      "full_field_rebuild_ms": 20.269526,
-      "load_ms": 25.00749,
-      "mean_agents": 522.3028333333333,
+      "full_field_rebuild_ms": 40.014278,
+      "load_ms": 55.548062,
+      "mean_agents": 1801.4238333333333,
       "outcome": "running",
-      "peak_microscopic_agents": 793,
-      "population": 1000,
-      "realtime_factor_20hz": 57.97196882898481,
-      "render_buffer_ms": 0.012097785500000008,
+      "peak_microscopic_agents": 3047,
+      "population": 6000,
+      "realtime_factor_20hz": 31.33976449933915,
+      "render_buffer_ms": 0.05004038700000004,
       "sim_seconds": 300.0,
       "step_ms": {
-        "max": 31.763371999999997,
-        "mean": 0.8624858015000004,
-        "p50": 0.64232,
-        "p95": 3.0047110000000004,
-        "p99": 4.081988
+        "max": 15.799961000000001,
+        "mean": 1.5954172214999998,
+        "p50": 1.170187,
+        "p95": 5.57166,
+        "p99": 6.745526
       },
       "systems_ms": {
-        "decisions_ms": 0.021354438833336133,
-        "density_ms": 0.04334733900000085,
-        "fields_ms": 0.28676354950000166,
-        "movement_ms": 0.5025194134999978,
-        "neighbor_index_ms": 0.0007420601666648444,
-        "spawn_ms": 0.007426701833333366,
+        "decisions_ms": 0.07481787966666066,
+        "density_ms": 0.20395687916666644,
+        "fields_ms": 0.5400486915000051,
+        "movement_ms": 0.7182547845000014,
+        "neighbor_index_ms": 0.015760347833334753,
+        "spawn_ms": 0.041942661333328475,
         "ticks": 6000
       },
       "ticks": 6000,
       "worst_tick": {
-        "ms": 31.763371999999997,
+        "ms": 15.799961000000001,
         "systems_ms": {
-          "agents": 528,
-          "decisions": 0.042170999999591174,
-          "density": 0.05699799999980826,
-          "fields": 0.00010800000005417587,
-          "movement": 31.65683000000019,
-          "neighbor_index": 0.00005900000044078979,
-          "spawn": 0.0068019999996948854
+          "agents": 2967,
+          "decisions": 0.12534600000080331,
+          "density": 14.332336000000723,
+          "fields": 0.00032899999879987263,
+          "movement": 1.246485999999436,
+          "neighbor_index": 0.04446099999988462,
+          "spawn": 0.050454000000144106
         },
-        "tick": 5447
+        "tick": 5483
       }
     },
     {
-      "completed": 587,
+      "completed": 871,
       "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
-      "full_field_rebuild_ms": 19.477763,
-      "load_ms": 26.857528,
-      "mean_agents": 2290.9487927832315,
-      "outcome": "failed_danger",
-      "peak_microscopic_agents": 4414,
-      "population": 5000,
-      "realtime_factor_20hz": 19.356553972818,
-      "render_buffer_ms": 0.06943640684713372,
-      "sim_seconds": 188.4499969482422,
+      "full_field_rebuild_ms": 44.590334000000006,
+      "load_ms": 49.255461,
+      "mean_agents": 1801.4238333333333,
+      "outcome": "running",
+      "peak_microscopic_agents": 3047,
+      "population": 12000,
+      "realtime_factor_20hz": 29.76259332009169,
+      "render_buffer_ms": 0.05293495250000005,
+      "sim_seconds": 300.0,
       "step_ms": {
-        "max": 11.399638999999999,
-        "mean": 2.583104413637569,
-        "p50": 2.128554,
-        "p95": 6.1727739999999995,
-        "p99": 7.896319000000001
+        "max": 26.969482,
+        "mean": 1.6799611331666702,
+        "p50": 1.312646,
+        "p95": 5.937192,
+        "p99": 7.123445
       },
       "systems_ms": {
-        "decisions_ms": 0.09880879198725953,
-        "density_ms": 0.07294291111700449,
-        "fields_ms": 0.29907718997082505,
-        "movement_ms": 2.073760345980371,
-        "neighbor_index_ms": 0.015191951180684784,
-        "spawn_ms": 0.02258388909524676,
-        "ticks": 3769
+        "decisions_ms": 0.07967262000000282,
+        "density_ms": 0.2119388156666691,
+        "fields_ms": 0.5624454428333447,
+        "movement_ms": 0.76477625716666,
+        "neighbor_index_ms": 0.016579005333340644,
+        "spawn_ms": 0.043886031333324034,
+        "ticks": 6000
       },
-      "ticks": 3769,
+      "ticks": 6000,
       "worst_tick": {
-        "ms": 11.399638999999999,
+        "ms": 26.969482,
         "systems_ms": {
-          "agents": 4271,
-          "decisions": 0.46650800000058723,
-          "density": 0.18004100000013068,
-          "fields": 3.4099469999997467,
-          "movement": 7.240955000000326,
-          "neighbor_index": 0.04756299999897351,
-          "spawn": 0.05407000000090534
+          "agents": 1989,
+          "decisions": 0.047152000000494354,
+          "density": 0.27188000000011314,
+          "fields": 0.00036199999975394803,
+          "movement": 26.604554999999586,
+          "neighbor_index": 0.00006199999980083248,
+          "spawn": 0.044916000000227996
         },
-        "tick": 3641
-      }
-    },
-    {
-      "completed": 375,
-      "fidelity": "microscopic CFSM outside, aggregate reservoir inside the stadium",
-      "full_field_rebuild_ms": 20.974328,
-      "load_ms": 26.151079,
-      "mean_agents": 3411.258793159084,
-      "outcome": "failed_danger",
-      "peak_microscopic_agents": 6636,
-      "population": 10000,
-      "realtime_factor_20hz": 11.072922453606308,
-      "render_buffer_ms": 0.11382750145208145,
-      "sim_seconds": 154.9499969482422,
-      "step_ms": {
-        "max": 20.374455,
-        "mean": 4.515519747337853,
-        "p50": 3.538215,
-        "p95": 11.365007,
-        "p99": 14.00451
-      },
-      "systems_ms": {
-        "decisions_ms": 0.13985979606323967,
-        "density_ms": 0.07906995837367399,
-        "fields_ms": 0.3083209616005116,
-        "movement_ms": 3.928046636979675,
-        "neighbor_index_ms": 0.023955763472079367,
-        "spawn_ms": 0.0353180248467338,
-        "ticks": 3099
-      },
-      "ticks": 3099,
-      "worst_tick": {
-        "ms": 20.374455,
-        "systems_ms": {
-          "agents": 6113,
-          "decisions": 0.6445090000006815,
-          "density": 0.17712700000060977,
-          "fields": 5.652990000001523,
-          "movement": 13.74168399999931,
-          "neighbor_index": 0.062989999999985,
-          "spawn": 0.09470499999864046
-        },
-        "tick": 2841
+        "tick": 3078
       }
     }
   ],
