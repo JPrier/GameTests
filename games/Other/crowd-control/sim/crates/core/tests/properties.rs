@@ -186,7 +186,7 @@ fn replay_reproduces_and_detects_tampering() {
             },
         },
         TimedCommand {
-            tick: 900,
+            tick: 2400,
             cmd: Command::Gate {
                 gate: "gate_a".into(),
                 mode: GateMode::Metered,
@@ -194,14 +194,14 @@ fn replay_reproduces_and_detects_tampering() {
             },
         },
         TimedCommand {
-            tick: 1000,
+            tick: 2500,
             cmd: Command::BarrierAdd {
-                a: [117.0, 64.5],
-                b: [117.0, 70.0],
+                a: [294.0, 193.5],
+                b: [294.0, 210.0],
             },
         },
         TimedCommand {
-            tick: 3000,
+            tick: 3600,
             cmd: Command::Gate {
                 gate: "gate_a".into(),
                 mode: GateMode::Open,
@@ -220,7 +220,12 @@ fn replay_reproduces_and_detects_tampering() {
     back.verify(&sc).expect("replay verifies");
     // a changed command must be detected
     let mut bad = back.clone();
-    bad.commands[1].tick += 20;
+    // (closing the gate instead of metering it changes who gets through)
+    bad.commands[1].cmd = Command::Gate {
+        gate: "gate_a".into(),
+        mode: GateMode::Closed,
+        level: None,
+    };
     assert!(bad.verify(&sc).is_err(), "tampered replay must fail");
 }
 
@@ -236,16 +241,16 @@ fn barrier_placement_rules() {
         "outside zones"
     );
     assert!(
-        add(&mut sim, [50.0, 30.0], [70.0, 30.0]).is_err(),
+        add(&mut sim, [130.0, 60.0], [170.0, 60.0]).is_err(),
         "too long"
     );
     assert!(
-        add(&mut sim, [114.5, 70.0], [114.6, 70.0]).is_err(),
+        add(&mut sim, [290.0, 200.0], [290.1, 200.0]).is_err(),
         "too short"
     );
     // a barrier across the whole north walkway would cut the north route but not trap anyone
     // (they can still go south), so it is allowed, and the route graph sees the cut
-    let ok = add(&mut sim, [100.0, 13.1], [100.0, 19.9]);
+    let ok = add(&mut sim, [280.0, 39.1], [280.0, 59.9]);
     assert!(ok.is_ok(), "{ok:?}");
     for _ in 0..20 {
         sim.step();
@@ -274,21 +279,21 @@ fn barrier_placement_rules() {
             let p = sim.agents.pos[i];
             let q = sim.agents.prev[i];
             assert!(
-                !((q.x < 100.0 && p.x >= 100.0 || q.x > 100.0 && p.x <= 100.0)
-                    && p.y > 13.0
-                    && p.y < 20.0),
+                !((q.x < 280.0 && p.x >= 280.0 || q.x > 280.0 && p.x <= 280.0)
+                    && p.y > 39.0
+                    && p.y < 60.0),
                 "crossed the barrier"
             );
         }
     }
     // a barrier that would trap the people behind the first one is refused
     assert!(
-        add(&mut sim, [92.0, 13.1], [92.0, 19.9]).is_err()
+        add(&mut sim, [274.0, 39.1], [274.0, 59.9]).is_err()
             || sim
                 .agents
                 .pos
                 .iter()
-                .all(|p| !(p.x > 92.0 && p.x < 100.0 && p.y < 20.0))
+                .all(|p| !(p.x > 274.0 && p.x < 280.0 && p.y < 60.0))
     );
 }
 

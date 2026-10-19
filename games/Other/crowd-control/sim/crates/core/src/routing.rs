@@ -17,7 +17,7 @@ pub const HERD_BONUS: f32 = 25.0;
 /// already made; after `MAX_SWITCHES` changes people stick with their choice.
 pub const COMMIT_BONUS: f32 = 8.0;
 pub const COMMIT_PER_SWITCH: f32 = 25.0;
-pub const MAX_SWITCHES: u8 = 2;
+pub const MAX_SWITCHES: u8 = 1;
 /// Extra cost an impatient agent puts on the queue it is standing in (s).
 pub const IMPATIENCE_PENALTY: f32 = 40.0;
 /// Turning back against your own direction of travel (s); impatient people pay much less.

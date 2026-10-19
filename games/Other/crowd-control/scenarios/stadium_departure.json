@@ -2,71 +2,88 @@
   "schema_version": 1,
   "scenario_id": "stadium_departure",
   "title": "Stadium Departure",
-  "briefing": "The match is over and 1,200 fans are leaving. Get them to the trains and the car park quickly and safely. A train delay is likely tonight.",
+  "briefing": "The cup final is over and 12,000 fans are leaving. Get them to the trains and the car park quickly and safely. A long train delay is likely tonight: the station can close its entrances, the plaza gates can hold people back.",
   "seed": 20261018,
   "map": {
-    "size": [150, 90],
-    "cell": 0.5,
+    "size": [393, 270],
+    "cell": 1,
     "walkable": [
-      [34, 14, 46, 62],
-      [80, 13, 38, 7],
-      [118, 10, 12, 10],
-      [130, 6, 14, 56],
-      [118, 50, 12, 10],
-      [119, 60, 6, 4],
-      [114, 64, 12, 18],
-      [80, 64, 34, 12],
-      [126, 64, 22, 22]
+      [102, 42, 138, 186],
+      [240, 39, 57, 21],
+      [297, 30, 36, 30],
+      [333, 18, 42, 168],
+      [297, 150, 36, 30],
+      [300, 180, 18, 12],
+      [285, 192, 36, 54],
+      [240, 192, 45, 36],
+      [321, 192, 66, 66],
+      [240, 60, 6, 2],
+      [240, 62, 4, 2],
+      [240, 64, 2, 2],
+      [240, 190, 6, 2],
+      [240, 188, 4, 2],
+      [240, 186, 2, 2]
     ],
     "walls": [
-      [130, 10, 130, 11],
-      [130, 19, 130, 20],
-      [130, 50, 130, 51],
-      [130, 59, 130, 60]
+      [333, 30, 333, 33],
+      [333, 57, 333, 60],
+      [333, 150, 333, 153],
+      [333, 177, 333, 180]
     ],
     "areas": [
-      {"id": "plaza", "name": "Central Plaza", "rect": [34, 14, 46, 62], "kind": "plaza"},
-      {"id": "north_corridor", "name": "North Walkway", "rect": [80, 13, 38, 7], "kind": "corridor", "speed_factor": 0.85},
-      {"id": "station_north", "name": "Station North Hall", "rect": [118, 10, 12, 10], "kind": "station"},
-      {"id": "platform", "name": "Platforms", "rect": [130, 6, 14, 56], "kind": "platform"},
-      {"id": "station_south", "name": "Station South Hall", "rect": [118, 50, 12, 10], "kind": "station"},
-      {"id": "connector", "name": "Station Ramp", "rect": [119, 60, 6, 4], "kind": "corridor"},
-      {"id": "junction", "name": "South Junction", "rect": [114, 64, 12, 18], "kind": "plaza"},
-      {"id": "south_corridor", "name": "South Walkway", "rect": [80, 64, 34, 12], "kind": "corridor"},
-      {"id": "parking", "name": "Car Park", "rect": [126, 64, 22, 22], "kind": "parking"}
+      {"id": "plaza", "name": "Central Plaza", "rect": [102, 42, 138, 186], "kind": "plaza"},
+      {"id": "north_corridor", "name": "North Walkway", "rect": [240, 39, 57, 21], "kind": "corridor", "speed_factor": 0.85},
+      {"id": "station_north", "name": "Station North Hall", "rect": [297, 30, 36, 30], "kind": "station"},
+      {"id": "platform", "name": "Platforms", "rect": [333, 18, 42, 168], "kind": "platform"},
+      {"id": "station_south", "name": "Station South Hall", "rect": [297, 150, 36, 30], "kind": "station"},
+      {"id": "connector", "name": "Station Ramp", "rect": [300, 180, 18, 12], "kind": "corridor"},
+      {"id": "junction", "name": "South Junction", "rect": [285, 192, 36, 54], "kind": "plaza"},
+      {"id": "south_corridor", "name": "South Walkway", "rect": [240, 192, 45, 36], "kind": "corridor"},
+      {"id": "parking", "name": "Car Park", "rect": [321, 192, 66, 66], "kind": "parking"}
     ],
     "barrier_zones": [
-      {"id": "plaza_north", "rect": [40, 14, 40, 26]},
-      {"id": "plaza_south", "rect": [40, 50, 40, 26]},
-      {"id": "north_walkway", "rect": [90, 13, 26, 7]},
-      {"id": "junction", "rect": [114, 64, 12, 18]}
+      {"id": "plaza_north", "rect": [120, 42, 120, 78]},
+      {"id": "plaza_south", "rect": [120, 150, 120, 78]},
+      {"id": "north_walkway", "rect": [270, 39, 21, 21]},
+      {"id": "junction", "rect": [285, 192, 36, 54]}
     ],
     "decor": {
-      "stadium": [2, 6, 30, 78],
+      "stadium": [6, 18, 90, 234],
       "buildings": [
-        {"name": "Station", "rect": [116, 2, 30, 61]},
-        {"name": "Ticket office", "rect": [84, 24, 28, 34]}
+        {"name": "Station", "rect": [291, 6, 90, 183]},
+        {"name": "Ticket office", "rect": [252, 72, 27, 102]}
       ],
-      "trees": [[44, 38], [44, 52], [60, 34], [60, 56], [74, 40], [74, 50], [96, 62], [104, 62], [100, 79], [110, 79]],
+      "trees": [
+        [132, 114],
+        [132, 156],
+        [180, 102],
+        [180, 168],
+        [222, 120],
+        [222, 150],
+        [288, 186],
+        [312, 186],
+        [300, 237],
+        [273, 237]
+      ],
       "labels": [
-        {"text": "STADIUM", "pos": [17, 45]},
-        {"text": "TRAINS", "pos": [137, 34]},
-        {"text": "CAR PARK", "pos": [137, 84]}
+        {"text": "STADIUM", "pos": [51, 135]},
+        {"text": "TRAINS", "pos": [354, 102]},
+        {"text": "CAR PARK", "pos": [354, 252]}
       ]
     }
   },
   "nodes": [
-    {"id": "door1", "name": "Exit 1", "pos": [36.5, 25], "radius": 2, "kind": "door"},
-    {"id": "door2", "name": "Exit 2", "pos": [36.5, 45], "radius": 2, "kind": "door"},
-    {"id": "door3", "name": "Exit 3", "pos": [36.5, 65], "radius": 2, "kind": "door"},
-    {"id": "gate_a", "name": "North Gate", "pos": [88, 16.5], "radius": 1.5, "kind": "gate"},
-    {"id": "gate_b", "name": "South Gate", "pos": [88.5, 70], "radius": 2, "kind": "gate"},
-    {"id": "north_end", "name": "Station North Entrance", "pos": [116, 16.5], "radius": 2, "kind": "corridor", "portal": [116, 13, 116, 20]},
-    {"id": "fare_n", "name": "North Fare Gates", "pos": [132, 15], "radius": 1.5, "kind": "faregate"},
-    {"id": "fare_s", "name": "South Fare Gates", "pos": [132, 55], "radius": 1.5, "kind": "faregate"},
-    {"id": "platform", "name": "Platforms", "pos": [138, 34], "radius": 3, "kind": "destination"},
-    {"id": "ramp", "name": "Station Ramp", "pos": [122, 62], "radius": 1.5, "kind": "corridor", "portal": [119, 62, 125, 62]},
-    {"id": "parking", "name": "Car Park", "pos": [138, 76], "radius": 4, "kind": "destination"}
+    {"id": "door1", "name": "Exit 1", "pos": [109.5, 75], "radius": 4, "kind": "door"},
+    {"id": "door2", "name": "Exit 2", "pos": [109.5, 135], "radius": 4, "kind": "door"},
+    {"id": "door3", "name": "Exit 3", "pos": [109.5, 195], "radius": 4, "kind": "door"},
+    {"id": "gate_a", "name": "North Gate", "pos": [264, 49.5], "radius": 3, "kind": "gate"},
+    {"id": "gate_b", "name": "South Gate", "pos": [265.5, 210], "radius": 4, "kind": "gate"},
+    {"id": "north_end", "name": "Station North Entrance", "pos": [294, 49.5], "radius": 4, "kind": "corridor"},
+    {"id": "fare_n", "name": "North Fare Gates", "pos": [339, 45], "radius": 3, "kind": "faregate"},
+    {"id": "fare_s", "name": "South Fare Gates", "pos": [339, 165], "radius": 3, "kind": "faregate"},
+    {"id": "platform", "name": "Platforms", "pos": [357, 102], "radius": 6, "kind": "destination"},
+    {"id": "ramp", "name": "Station Ramp", "pos": [309, 184], "radius": 3, "kind": "corridor"},
+    {"id": "parking", "name": "Car Park", "pos": [357, 228], "radius": 8, "kind": "destination"}
   ],
   "edges": [
     {"a": "door1", "b": "gate_a", "one_way": true, "area": "plaza"},
@@ -85,67 +102,40 @@
     {"a": "fare_s", "b": "platform", "one_way": true, "area": "platform"}
   ],
   "gates": [
-    {"id": "gate_a", "name": "North Gate", "node": "gate_a", "line": [81, 13, 81, 20], "lanes": 5, "lane_rate": 1.0,
-     "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 20},
-    {"id": "gate_b", "name": "South Gate", "node": "gate_b", "line": [81, 64, 81, 76], "lanes": 8, "lane_rate": 1.0,
-     "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 20},
-    {"id": "fare_n", "name": "North Fare Gates", "node": "fare_n", "line": [130, 11, 130, 19], "lanes": 5, "lane_rate": 0.6,
-     "default_mode": "metered", "one_way": true},
-    {"id": "fare_s", "name": "South Fare Gates", "node": "fare_s", "line": [130, 51, 130, 59], "lanes": 4, "lane_rate": 0.5,
-     "default_mode": "metered", "one_way": true}
+    {"id": "gate_a", "name": "North Gate", "node": "gate_a", "line": [246, 39, 246, 60], "lanes": 10, "lane_rate": 0.5, "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 60},
+    {"id": "gate_b", "name": "South Gate", "node": "gate_b", "line": [246, 192, 246, 228], "lanes": 12, "lane_rate": 0.5, "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 60},
+    {"id": "fare_n", "name": "North Fare Gates", "node": "fare_n", "line": [333, 33, 333, 57], "lanes": 8, "lane_rate": 0.7, "default_mode": "metered", "one_way": true},
+    {"id": "fare_s", "name": "South Fare Gates", "node": "fare_s", "line": [333, 153, 333, 177], "lanes": 7, "lane_rate": 0.6, "default_mode": "metered", "one_way": true},
+    {"id": "station_n", "name": "North Entrance", "node": "north_end", "line": [290, 39, 290, 60], "lanes": 10, "lane_rate": 0.5, "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 60},
+    {"id": "station_r", "name": "Ramp Gate", "node": "ramp", "line": [300, 189, 318, 189], "lanes": 9, "lane_rate": 0.5, "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 60}
   ],
   "destinations": [
     {"id": "station", "name": "Train Station", "node": "platform", "area": "platform"},
     {"id": "parking", "name": "Car Park", "node": "parking", "area": "parking"}
   ],
   "population_profiles": [
-    {"id": "commuter", "name": "Local commuter", "share": 0.25, "speed": [1.25, 1.5], "familiarity": [0.8, 1.0],
-     "sign_compliance": [0.3, 0.6], "crowd_following": [0.1, 0.3], "patience": [120, 240]},
-    {"id": "visitor", "name": "First-time visitor", "share": 0.3, "speed": [1.1, 1.4], "familiarity": [0.0, 0.3],
-     "sign_compliance": [0.6, 0.95], "crowd_following": [0.4, 0.8], "patience": [150, 300], "group_size": [1, 2]},
-    {"id": "family", "name": "Family", "share": 0.2, "speed": [0.9, 1.2], "familiarity": [0.2, 0.6],
-     "sign_compliance": [0.5, 0.8], "crowd_following": [0.3, 0.6], "patience": [90, 200], "group_size": [3, 4], "stairs_aversion": 0.3},
-    {"id": "impatient", "name": "Impatient fan", "share": 0.15, "speed": [1.3, 1.6], "familiarity": [0.4, 0.8],
-     "sign_compliance": [0.2, 0.5], "crowd_following": [0.2, 0.5], "patience": [40, 90], "group_size": [1, 2]},
-    {"id": "mobility", "name": "Mobility-limited", "share": 0.1, "speed": [0.6, 0.9], "familiarity": [0.3, 0.7],
-     "sign_compliance": [0.6, 0.9], "crowd_following": [0.1, 0.3], "patience": [200, 400], "stairs_aversion": 2.0, "radius": 0.25}
+    {"id": "commuter", "name": "Local commuter", "share": 0.25, "speed": [1.25, 1.5], "familiarity": [0.8, 1], "sign_compliance": [0.3, 0.6], "crowd_following": [0.1, 0.3], "patience": [120, 240]},
+    {"id": "visitor", "name": "First-time visitor", "share": 0.3, "speed": [1.1, 1.4], "familiarity": [0, 0.3], "sign_compliance": [0.6, 0.95], "crowd_following": [0.4, 0.8], "patience": [150, 300], "group_size": [1, 2]},
+    {"id": "family", "name": "Family", "share": 0.2, "speed": [0.9, 1.2], "familiarity": [0.2, 0.6], "sign_compliance": [0.5, 0.8], "crowd_following": [0.3, 0.6], "patience": [90, 200], "group_size": [3, 4], "stairs_aversion": 0.3},
+    {"id": "impatient", "name": "Impatient fan", "share": 0.15, "speed": [1.3, 1.6], "familiarity": [0.4, 0.8], "sign_compliance": [0.2, 0.5], "crowd_following": [0.2, 0.5], "patience": [40, 90], "group_size": [1, 2]},
+    {"id": "mobility", "name": "Mobility-limited", "share": 0.1, "speed": [0.6, 0.9], "familiarity": [0.3, 0.7], "sign_compliance": [0.6, 0.9], "crowd_following": [0.1, 0.3], "patience": [200, 400], "stairs_aversion": 2, "radius": 0.25}
   ],
   "spawn_schedules": [
-    {"id": "stadium", "name": "Stadium", "population": 1200, "start": 3,
-     "doors": [
-       {"node": "door1", "spawn": [34.5, 21, 4, 8], "rate": 2.16},
-       {"node": "door2", "spawn": [34.5, 41, 4, 8], "rate": 2.16},
-       {"node": "door3", "spawn": [34.5, 61, 4, 8], "rate": 2.16}
-     ],
-     "destination_mix": [["station", 0.6], ["parking", 0.4]]}
+    {"id": "stadium", "name": "Stadium", "population": 12000, "start": 3, "doors": [{"node": "door1", "spawn": [103.5, 63, 12, 24], "rate": 4.4}, {"node": "door2", "spawn": [103.5, 123, 12, 24], "rate": 4.4}, {"node": "door3", "spawn": [103.5, 183, 12, 24], "rate": 4.4}], "destination_mix": [["station", 0.6], ["parking", 0.4]]}
   ],
   "signs": [
-    {"id": "sign_n", "name": "North sign", "pos": [66, 26], "radius": 14, "default_mode": "off", "change_cost": 25,
-     "modes": [
-       {"id": "off", "label": "Blank", "kind": "off"},
-       {"id": "trains_north", "label": "Trains: North Gate", "kind": "route", "destination": "station", "via": "gate_a"},
-       {"id": "trains_south", "label": "Trains: South Gate", "kind": "route", "destination": "station", "via": "gate_b"},
-       {"id": "waits", "label": "Train wait times", "kind": "wait_times", "compare": ["fare_n", "fare_s"]}
-     ]},
-    {"id": "sign_s", "name": "South sign", "pos": [66, 62], "radius": 14, "default_mode": "off", "change_cost": 25,
-     "modes": [
-       {"id": "off", "label": "Blank", "kind": "off"},
-       {"id": "trains_north", "label": "Trains: North Gate", "kind": "route", "destination": "station", "via": "gate_a"},
-       {"id": "trains_south", "label": "Trains: South Gate", "kind": "route", "destination": "station", "via": "gate_b"},
-       {"id": "waits", "label": "Train wait times", "kind": "wait_times", "compare": ["fare_n", "fare_s"]}
-     ]}
+    {"id": "sign_n", "name": "North sign", "pos": [198, 78], "radius": 42, "default_mode": "off", "change_cost": 25, "modes": [{"id": "off", "label": "Blank", "kind": "off"}, {"id": "trains_north", "label": "Trains: North Gate", "kind": "route", "destination": "station", "via": "gate_a"}, {"id": "trains_south", "label": "Trains: South Gate", "kind": "route", "destination": "station", "via": "gate_b"}, {"id": "waits", "label": "Train wait times", "kind": "wait_times", "compare": ["fare_n", "fare_s"]}]},
+    {"id": "sign_s", "name": "South sign", "pos": [198, 186], "radius": 42, "default_mode": "off", "change_cost": 25, "modes": [{"id": "off", "label": "Blank", "kind": "off"}, {"id": "trains_north", "label": "Trains: North Gate", "kind": "route", "destination": "station", "via": "gate_a"}, {"id": "trains_south", "label": "Trains: South Gate", "kind": "route", "destination": "station", "via": "gate_b"}, {"id": "waits", "label": "Train wait times", "kind": "wait_times", "compare": ["fare_n", "fare_s"]}]}
   ],
   "transit_services": [
     {"id": "trains", "name": "Station", "gates": ["fare_n", "fare_s"], "destination": "station"}
   ],
   "event_schedule": [
-    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.05,
-     "start": [75, 105], "duration": [130, 160], "probability": 1.0}
+    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.05, "start": [300, 420], "duration": [200, 240], "probability": 1}
   ],
-  "player_resources": {"budget": 1500, "barrier_cost": 150, "barrier_max_len": 10, "max_barriers": 6, "undo_window": 10},
-  "objectives": {"time_limit": 900, "clear_fraction": 0.95, "target_journey": 150, "target_max_wait": 150},
+  "player_resources": {"budget": 1500, "barrier_cost": 150, "barrier_max_len": 30, "max_barriers": 6, "undo_window": 10},
+  "objectives": {"time_limit": 2700, "clear_fraction": 0.95, "target_journey": 330, "target_max_wait": 420},
   "failure_conditions": {"max_danger_seconds": 75},
-  "scoring_rules": {"base": 1000, "per_journey_second": 2, "per_wait_second": 1, "per_heavy_second": 1,
-    "per_danger_second": 15, "per_cost": 0.2, "per_stranded": 3, "per_satisfaction": 2, "stars": [680, 800, 880]},
+  "scoring_rules": {"base": 1000, "per_journey_second": 2, "per_wait_second": 1, "per_heavy_second": 0.25, "per_danger_second": 15, "per_cost": 0.2, "per_stranded": 0.3, "per_satisfaction": 2, "stars": [680, 800, 880]},
   "information": {"delayed": [{"area": "station_north", "period": 30}, {"area": "station_south", "period": 30}]}
 }

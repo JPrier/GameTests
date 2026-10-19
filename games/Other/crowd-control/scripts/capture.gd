@@ -64,16 +64,16 @@ func _run() -> void:
 	await _shot("signage")
 	main.set_tool("barrier")
 	main.drag_active = true
-	main.drag_from = Vector2(52, 31)
-	main.drag_to = Vector2(60, 27)
+	main.drag_from = Vector2(156, 93)
+	main.drag_to = Vector2(180, 81)
 	main.preview_ok = true
 	await _shot("barrier_preview")
 	main.drag_active = false
-	main.adapter.command({"type": "barrier_add", "a": [52, 31], "b": [60, 27]})
+	main.adapter.command({"type": "barrier_add", "a": [156, 93], "b": [180, 81]})
 	main.set_tool("select")
 	main.select("gate", "gate_a")
 	main.set_gate("gate_a", "metered", 0.5)
-	main.step_ticks(int(130.0 / main.dt))
+	main.step_ticks(int(400.0 / main.dt))
 	await _shot("gate_metered")
 	main.selection = {}
 	main.toggle_overlay("density")
@@ -86,7 +86,7 @@ func _run() -> void:
 	main.toggle_overlay("risk")
 	main.toggle_overlay("flow")
 	main.selection = {}
-	main.zoom_at(main.m_to_screen(Vector2(124, 15)), 3.2)
+	main.zoom_at(main.m_to_screen(Vector2(315, 45)), 3.2)
 	await _shot("close_zoom")
 	main._fit_camera()
 	main.color_mode = 1
@@ -95,7 +95,7 @@ func _run() -> void:
 	main.color_mode = 0
 	main.toggle_overlay("routes")
 	var guard := 0
-	while main.phase == main.Phase.PLAYING and guard < 80:
+	while main.phase == main.Phase.PLAYING and guard < 200:
 		main.step_ticks(400)
 		guard += 1
 	await _shot("results")
@@ -104,7 +104,7 @@ func _run() -> void:
 	main.paused = true
 	main.tutorial_step = -1
 	guard = 0
-	while main.phase == main.Phase.PLAYING and float(main.telemetry.get("danger_seconds", 0.0)) < 3.0 and guard < 400:
+	while main.phase == main.Phase.PLAYING and float(main.telemetry.get("danger_seconds", 0.0)) < 3.0 and guard < 1500:
 		main.step_ticks(20)
 		guard += 1
 	main.toggle_overlay("risk")

@@ -29,12 +29,22 @@ fn area(sim: &Sim, id: &str) -> usize {
     sim.area_ids.iter().position(|a| a == id).unwrap()
 }
 
-/// A reasonable operator who heeds the briefing's warning of a likely train delay: wait-time signs,
-/// both plaza gates held back from the start (North 25%, South 50%) so queues build in the open
-/// plaza rather than packed into the station halls, and opened again once trains run normally.
-fn operator(sim: &mut Sim, released: &mut bool) {
+/// A reasonable operator: wait-time signs; when the trains stop, close both station entrances (so
+/// the halls do not overfill) and hold both plaza gates at half rate (so the walkways do not
+/// either); open everything again when service returns.
+fn operator(sim: &mut Sim, held: &mut bool, released: &mut bool) {
     let cmd = |sim: &mut Sim, c: Command| {
         sim.apply(c).unwrap();
+    };
+    let gate = |sim: &mut Sim, g: &str, mode: GateMode, level: Option<f32>| {
+        cmd(
+            sim,
+            Command::Gate {
+                gate: g.into(),
+                mode,
+                level,
+            },
+        );
     };
     if sim.tick == 0 {
         for sg in ["sign_n", "sign_s"] {
@@ -46,29 +56,20 @@ fn operator(sim: &mut Sim, released: &mut bool) {
                 },
             );
         }
-        for (g, level) in [("gate_a", 0.25), ("gate_b", 0.5)] {
-            cmd(
-                sim,
-                Command::Gate {
-                    gate: g.into(),
-                    mode: GateMode::Metered,
-                    level: Some(level),
-                },
-            );
-        }
     }
+    let active = sim.incidents.iter().any(|e| e.active);
     let over = sim.incidents.iter().all(|e| !e.happens || e.done);
-    if over && !*released {
+    if active && !*held {
+        *held = true;
+        gate(sim, "station_n", GateMode::Closed, None);
+        gate(sim, "station_r", GateMode::Closed, None);
+        gate(sim, "gate_a", GateMode::Metered, Some(0.5));
+        gate(sim, "gate_b", GateMode::Metered, Some(0.5));
+    }
+    if over && *held && !*released {
         *released = true;
-        for g in ["gate_a", "gate_b"] {
-            cmd(
-                sim,
-                Command::Gate {
-                    gate: g.into(),
-                    mode: GateMode::Open,
-                    level: None,
-                },
-            );
+        for g in ["station_n", "station_r", "gate_a", "gate_b"] {
+            gate(sim, g, GateMode::Open, None);
         }
     }
 }
@@ -100,16 +101,16 @@ fn people_do_not_turn_back_inside_walkways() {
 
 #[test]
 fn people_use_the_width_of_the_walkways() {
-    // Not single file: people spread across the 7 m North Walkway.
+    // Not single file: people spread across the 21 m North Walkway.
     let mut s = sim(1);
     let north = area(&s, "north_corridor");
     let mut ys: Vec<f32> = Vec::new();
-    while s.time < 120.0 {
+    while s.time < 240.0 {
         s.step();
         if s.tick.is_multiple_of(40) {
             for i in 0..s.agents.len() {
                 let p = s.agents.pos[i];
-                if s.agents.area[i] as usize == north && p.x > 90.0 && p.x < 110.0 {
+                if s.agents.area[i] as usize == north && p.x > 255.0 && p.x < 285.0 {
                     ys.push(p.y);
                 }
             }
@@ -118,7 +119,7 @@ fn people_use_the_width_of_the_walkways() {
     assert!(ys.len() > 200, "too few samples: {}", ys.len());
     let mean = ys.iter().sum::<f32>() / ys.len() as f32;
     let sd = (ys.iter().map(|y| (y - mean) * (y - mean)).sum::<f32>() / ys.len() as f32).sqrt();
-    assert!(sd > 1.0, "lateral spread {sd:.2} m");
+    assert!(sd > 3.0, "lateral spread {sd:.2} m");
 }
 
 #[test]
@@ -127,16 +128,17 @@ fn queues_fill_the_station_halls() {
     // instead of forming one line.
     let mut s = sim(2);
     let hall = area(&s, "station_north");
+    let r = s.areas[hall].rect;
     let mut best_rows = 0;
-    while !s.is_over() && s.time < 300.0 {
+    while !s.is_over() && s.time < 700.0 {
         s.step();
         if s.tick.is_multiple_of(100) {
-            let mut rows = [false; 20];
+            let mut rows = [false; 30];
             for i in 0..s.agents.len() {
                 if s.agents.area[i] as usize == hall {
-                    let r = ((s.agents.pos[i].y - 10.0) / 0.5) as usize;
-                    if r < 20 {
-                        rows[r] = true;
+                    let k = (s.agents.pos[i].y - r.y) as usize;
+                    if k < 30 {
+                        rows[k] = true;
                     }
                 }
             }
@@ -144,8 +146,8 @@ fn queues_fill_the_station_halls() {
         }
     }
     assert!(
-        best_rows >= 14,
-        "queue used only {best_rows} of 20 half-metre rows"
+        best_rows >= 20,
+        "queue used only {best_rows} of 30 one-metre rows"
     );
 }
 
@@ -158,10 +160,10 @@ fn play(seed: Option<u64>, hold: bool) -> score::Report {
         },
     )
     .unwrap();
-    let mut released = false;
+    let (mut held, mut released) = (false, false);
     while !s.is_over() {
         if hold {
-            operator(&mut s, &mut released);
+            operator(&mut s, &mut held, &mut released);
         }
         s.step();
     }
@@ -169,9 +171,9 @@ fn play(seed: Option<u64>, hold: bool) -> score::Report {
 }
 
 #[test]
-fn doing_nothing_fails_and_holding_the_crowd_passes() {
-    // The game plays the scenario's own seed: there, doing nothing must fail and a sensible hold
-    // must pass.
+fn doing_nothing_fails_and_managing_the_delay_passes() {
+    // The game plays the scenario's own seed: there, doing nothing must fail and a sensible
+    // operator must pass.
     let idle = play(None, false);
     assert_ne!(
         idle.outcome,
@@ -191,28 +193,24 @@ fn doing_nothing_fails_and_holding_the_crowd_passes() {
         "holding failed with {}",
         held.score
     );
-    // Other seeds (different delay timing and crowd; outcomes vary a lot between seeds): doing
-    // nothing fails on most of them and holding is clearly better on average.
-    let (mut idle_sum, mut held_sum, mut idle_passes) = (0, 0, 0);
-    for seed in 1..=6u64 {
+    // Other seeds (different delay timing and crowd): doing nothing fails and the same operator
+    // passes.
+    for seed in 1..=2u64 {
         let i = play(Some(seed), false);
+        assert_ne!(
+            i.outcome,
+            Outcome::Won,
+            "seed {seed}: nothing passed with {}",
+            i.score
+        );
         let h = play(Some(seed), true);
-        idle_sum += i.score;
-        held_sum += h.score;
-        if i.outcome == Outcome::Won {
-            idle_passes += 1;
-        }
+        assert_eq!(
+            h.outcome,
+            Outcome::Won,
+            "seed {seed}: holding failed with {}",
+            h.score
+        );
     }
-    assert!(
-        idle_passes <= 3,
-        "doing nothing passed on {idle_passes} of 6 seeds"
-    );
-    assert!(
-        held_sum - idle_sum > 6 * 150,
-        "holding {} vs nothing {} (sum of 6)",
-        held_sum,
-        idle_sum
-    );
 }
 
 #[test]

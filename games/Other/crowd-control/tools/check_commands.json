@@ -1,6 +1,6 @@
 [
   {"tick": 200, "cmd": {"type": "sign", "sign": "sign_n", "mode": "waits"}},
   {"tick": 600, "cmd": {"type": "gate", "gate": "gate_a", "mode": "metered", "level": 0.25}},
-  {"tick": 700, "cmd": {"type": "barrier_add", "a": [117, 64.5], "b": [117, 70]}},
+  {"tick": 700, "cmd": {"type": "barrier_add", "a": [294, 193.5], "b": [294, 210]}},
   {"tick": 1500, "cmd": {"type": "gate", "gate": "gate_a", "mode": "open"}}
 ]

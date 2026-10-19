@@ -184,8 +184,8 @@ fn signs_and_meter(sim: &mut Sim, st: &mut PolicyState) {
 fn ramp_pen(sim: &mut Sim, st: &mut PolicyState) {
     if st.once("barriers") {
         for (a, b) in [
-            ([117.0, 64.5], [117.0, 70.0]),
-            ([117.0, 70.0], [124.0, 70.0]),
+            ([297.0, 193.0], [297.0, 208.0]),
+            ([297.0, 208.0], [318.0, 208.0]),
         ] {
             cmd(sim, Command::BarrierAdd { a, b });
         }
@@ -203,18 +203,33 @@ fn pen_and_meter(sim: &mut Sim, st: &mut PolicyState) {
     }
 }
 
-/// What a sensible operator does: wait-time signs, and hold both plaza gates back (North 25%,
-/// South 50%) while the trains are delayed, so the queue waits in the open plaza rather than packed
-/// into the station halls. (Holding harder crushes people at the gates instead.)
+/// What a sensible operator does: wait-time signs; when the trains stop, close both station
+/// entrances (so the halls do not overfill) and hold both plaza gates at half rate (so the
+/// walkways do not either), then open everything again when service returns.
 fn expert(sim: &mut Sim, st: &mut PolicyState) {
     wait_signs(sim, st);
     if incident_active(sim) && st.once("meter") {
-        gate(sim, "gate_a", GateMode::Metered, Some(0.25));
+        gate(sim, "station_n", GateMode::Closed, None);
+        gate(sim, "station_r", GateMode::Closed, None);
+        gate(sim, "gate_a", GateMode::Metered, Some(0.5));
         gate(sim, "gate_b", GateMode::Metered, Some(0.5));
     }
     if incident_over(sim) && st.done.contains(&"meter") && st.once("reopen") {
-        gate(sim, "gate_a", GateMode::Open, None);
-        gate(sim, "gate_b", GateMode::Open, None);
+        for g in ["station_n", "station_r", "gate_a", "gate_b"] {
+            gate(sim, g, GateMode::Open, None);
+        }
+    }
+}
+
+/// Close only the station entrances during the delay (nothing in the plaza).
+fn station_only(sim: &mut Sim, st: &mut PolicyState) {
+    if incident_active(sim) && st.once("close") {
+        gate(sim, "station_n", GateMode::Closed, None);
+        gate(sim, "station_r", GateMode::Closed, None);
+    }
+    if incident_over(sim) && st.done.contains(&"close") && st.once("reopen") {
+        gate(sim, "station_n", GateMode::Open, None);
+        gate(sim, "station_r", GateMode::Open, None);
     }
 }
 
@@ -325,6 +340,12 @@ fn param(sim: &mut Sim, st: &mut PolicyState) {
     if incident_active(sim) && st.once("meter") {
         set(sim, "gate_a", num("a", 1.0));
         set(sim, "gate_b", num("b", 1.0));
+        // station entrance gates (when the scenario has them)
+        for (k, g) in [("sn", "station_n"), ("sr", "station_r")] {
+            if get(k).is_some() {
+                set(sim, g, num(k, 1.0));
+            }
+        }
     }
     if incident_over(sim) && st.done.contains(&"meter") {
         if st.once("half") {
@@ -340,6 +361,11 @@ fn param(sim: &mut Sim, st: &mut PolicyState) {
         if sim.time >= st.release_at && st.once("open") {
             set(sim, "gate_a", 1.0);
             set(sim, "gate_b", 1.0);
+            for (k, g) in [("sn", "station_n"), ("sr", "station_r")] {
+                if get(k).is_some() {
+                    set(sim, g, 1.0);
+                }
+            }
         }
     }
 }
@@ -384,8 +410,13 @@ pub fn policies() -> Vec<(&'static str, &'static str, Policy)> {
         ),
         (
             "expert",
-            "Wait signs + hold both gates in the delay",
+            "Close station, hold plaza at 50% in the delay",
             expert,
+        ),
+        (
+            "station_only",
+            "Close the station entrances in the delay",
+            station_only,
         ),
         ("adaptive", "Wait signs + meter by hall crowding", adaptive),
         (
@@ -600,7 +631,15 @@ pub fn trace(args: &[String]) {
         if let Some(path) = crate::arg(args, "--frames") {
             // --frames FILE: one JSON line per 0.5 s with every person's position, heading,
             // speed, destination and next node (for plotting / debugging movement).
-            if sim.tick.is_multiple_of(10) {
+            // --frames-at T1,T2,... limits the dump to those times (big crowds)
+            let at_ok = match crate::arg(args, "--frames-at") {
+                Some(list) => list
+                    .split(',')
+                    .filter_map(|x| x.parse::<f32>().ok())
+                    .any(|t| (sim.time - t).abs() < sim.dt * 0.5),
+                None => sim.tick.is_multiple_of(10),
+            };
+            if at_ok {
                 use std::io::Write;
                 let mut f = std::fs::OpenOptions::new()
                     .create(true)

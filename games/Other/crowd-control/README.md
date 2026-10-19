@@ -2,13 +2,15 @@
 
 *You don't control people. You control the system they move through.*
 
-A crowd-management game. In **Stadium Departure**, 1,200 fans leave a match for the trains and the
-car park. Every person picks their own route and walks it in a pedestrian simulation; you only
-change the infrastructure: meter or close gates, draw temporary barriers, and set the plaza signs.
-A train delay is likely, the station halls are only visible through a camera feed that refreshes
-every 30 s, and the score weighs journey times, the longest wait, congestion, dangerous crowding,
-money spent and how people feel. A run needs one star to pass: left alone, the delayed station
-fills, impatient people push, and the crowd crushes at the Station Ramp and the North Hall.
+A crowd-management game. In **Stadium Departure**, 12,000 fans leave a cup final for the trains and
+the car park. Every person picks their own route and walks it in a pedestrian simulation; you only
+change the infrastructure: meter or close the plaza gates and the station's own entrances, draw
+temporary barriers, and set the plaza signs. A long train delay is likely, the station halls are
+only visible through a camera feed that refreshes every 30 s, and the score weighs journey times,
+the longest wait, congestion, dangerous crowding, money spent and how people feel. A run needs one
+star to pass: left alone, the delayed station fills, impatient people push, and the halls crush.
+Holding people back works only if it is done in the right places: close the station entrances and
+the walkways still fill; hold only the plaza and the people already on their way overfill the halls.
 
 Play it on the GameTests page (`/crowd-control/`), or run it locally (below).
 
@@ -57,7 +59,8 @@ Esc cancel, F3 diagnostics (seed, checksum, per-system timing, true data toggle,
 ```bash
 cd sim && cargo test --workspace --release            # 35 Rust tests: unit, 10 behavioural reference
                                                       # geometries, invariants on random worlds, replay,
-                                                      # whole-scenario behaviour (tests/stadium.rs)
+                                                      # whole-scenario behaviour (tests/stadium.rs,
+                                                      # ~7 min: full 12,000-person evenings)
 godot --headless --path . -- --agent-run-tests        # 17 Godot tests, incl. an end-to-end playthrough
 xvfb-run godot --path . -- --capture=shots            # screenshot checkpoints
 python3 tools/compare_shots.py check shots tests/visual/baseline
@@ -71,8 +74,8 @@ and uploads screenshots, reports and a playable web build.
 
 ```bash
 cd sim && cargo build --release -p crowd_cli
-./target/release/crowd bench ../scenarios/stadium_departure.json --populations 500,1000,5000
-./target/release/crowd experiments ../scenarios/stadium_departure.json --seeds 6
+./target/release/crowd bench ../scenarios/stadium_departure.json --populations 1200,6000,12000
+./target/release/crowd experiments ../scenarios/stadium_departure.json --seeds 3 --only none,expert   # ~1 min per run
 ./target/release/crowd research ../scenarios/stadium_departure.json     # timestep & route-interval studies
 ./target/release/crowd trace ../scenarios/stadium_departure.json --strategy reactive --every 30
 ./target/release/crowd trace ../scenarios/stadium_departure.json --frames frames.jsonl   # positions every 0.5 s
@@ -113,5 +116,5 @@ interventions matter and whether one strategy dominates.
   Rust target); browser performance has not been measured.
 - Outcomes vary a lot between seeds: near the tipping point, small differences decide whether a
   queue compresses into a crush. The game always plays the scenario's own seed, so a retry is fair.
-- The 5,000-person option is a performance stress test, not a balanced game.
+- The 30,000-person title-screen option is a performance stress test, not a balanced game.
 - One scenario. Content, upgrades, daily challenges and larger maps are future work.

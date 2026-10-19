@@ -19,7 +19,7 @@ const TUTORIAL := [
 	"Tap a gate to change it. Metering the North Gate holds people in the roomy plaza instead of the narrow walkway.",
 	"Tap a sign in the plaza to point train passengers to a gate, or to show the wait at each station entrance.",
 	"Barrier tool: drag inside a yellow zone to place a temporary barrier. People route around it.",
-	"A train delay is likely. Tap any area to see why it is congested. Keep everyone out of the red.",
+	"A train delay is likely. When it comes, close the station entrances and hold the plaza gates back, or the halls overfill. Keep everyone out of the red.",
 ]
 
 const OBJECTIVE_W := 232.0
@@ -146,7 +146,7 @@ func _activate(id: String) -> void:
 	var parts := id.split(":")
 	match parts[0]:
 		"title_start":
-			main.population_override = 5000 if big_crowd else 0
+			main.population_override = 30000 if big_crowd else 0
 			main.start_scenario(true)
 		"title_big":
 			big_crowd = not big_crowd
@@ -282,7 +282,7 @@ func _draw_world_labels() -> void:
 				if d.id == at.id:
 					var top_mid: Vector2 = main.m_to_screen(Vector2(d.rect[0] + d.rect[2] * 0.5, d.rect[1]))
 					_pill_label(top_mid + Vector2(0, GTUI.dp(14)), "Dangerous crowding", Color("ff3b3b"))
-	if zoom < 0.4:
+	if zoom < main.fit_zoom() * 0.9:
 		return
 	var tg := {}
 	for g in main.telemetry.get("gates", []):
@@ -386,14 +386,16 @@ func _draw_hud() -> void:
 	# stats between title and controls
 	var sx := inner.position.x + title_w + GTUI.dp(GTUI.SP_L)
 	var room := pr.position.x - GTUI.dp(GTUI.SP_L) - sx
+	# most important first: on a narrow bar the last ones are left out rather than squeezed
 	var stats := [
 		["Home", "%d/%d" % [int(pop.get("completed", 0)), int(pop.get("total", 0))]],
+		["Budget", "$%d" % int(float(t.get("budget", 0)) - float(t.get("spent", 0)))],
 		["On site", str(int(pop.get("active", 0)))],
 		["In stadium", str(int(pop.get("inside", 0)))],
-		["Budget", "$%d" % int(float(t.get("budget", 0)) - float(t.get("spent", 0)))],
 	]
 	# each stat reserves room for its widest plausible value so nothing shifts or overlaps as numbers grow
-	var widest := ["0000/0000", "0000", "0000", "$0000"]
+	var digits := "0".repeat(maxi(4, str(int(pop.get("total", 0))).length()))
+	var widest := [digits + "/" + digits, "$0000", digits, digits]
 	var cx := sx
 	for i in stats.size():
 		var w := maxf(GTUI.text_width(String(stats[i][0]).to_upper(), GTUI.FS_CAPTION, true), GTUI.text_width(widest[i], GTUI.FS_HEADING, true)) + GTUI.dp(GTUI.SP_L)
@@ -705,10 +707,10 @@ func _draw_title() -> void:
 	var sc_r := Rect2(x, y, w, GTUI.dp(84))
 	GTUI.panel(self, sc_r, 1)
 	GTUI.text_in(self, Rect2(x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(GTUI.SP_S), w - GTUI.dp(GTUI.SP_M) * 2, GTUI.dp(24)), main.sc.get("title", ""), GTUI.FS_TITLE, GTUI.c("text"), -1, true)
-	GTUI.paragraph(self, x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(34), w - GTUI.dp(GTUI.SP_M) * 2, "1,000 fans after the match · 2 gates, 2 signs, barriers · a train delay is likely", GTUI.FS_LABEL, GTUI.c("text_muted"))
+	GTUI.paragraph(self, x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(34), w - GTUI.dp(GTUI.SP_M) * 2, "12,000 fans after the cup final · 4 gates, 2 signs, barriers · a long train delay is likely", GTUI.FS_LABEL, GTUI.c("text_muted"))
 	var btn := Rect2(x, card.end.y - p - GTUI.target(), w, GTUI.target())
 	var cols := GTUI.row(btn, 3, [1.3, 1, 1])
-	GTUI.chip(self, "title_big", cols[0], "Stress test: 5,000", big_crowd)
+	GTUI.chip(self, "title_big", cols[0], "Stress test: 30,000", big_crowd)
 	if big_crowd:
 		GTUI.paragraph(self, x, btn.position.y - GTUI.dp(GTUI.SP_L + 18), w, "Stress test: performance only, not balanced for a fair score.", GTUI.FS_CAPTION, GTUI.c("text_muted"))
 	GTUI.button(self, "help", cols[1], "How to play")
@@ -749,7 +751,7 @@ func _draw_help() -> void:
 	_modal = true
 	var lines := [
 		"People choose their own routes. You change gates, barriers and signs, and they react.",
-		"Gates: tap one, then Open, Meter (hold people back) or Close.",
+		"Gates: tap one, then Open, Meter (hold people back) or Close. The station's own entrances can be closed too, to protect its halls while trains are delayed.",
 		"Signs: point train passengers to a gate, or show live waits. Not everyone reads them.",
 		"Barriers: pick the Barrier tool and drag inside a yellow zone (pan with two fingers meanwhile).",
 		"Station halls are watched by cameras that refresh every 30 s: what you see there may be out of date.",

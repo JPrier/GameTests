@@ -58,14 +58,14 @@ func test_people_leave_the_stadium_and_render():
 
 func test_closing_a_gate_stops_its_flow_and_reopening_restores_it():
 	var g = await _game()
-	_run(g, 40.0)
+	_run(g, 90.0)
 	g.set_gate("gate_a", "closed")
 	assert_eq(_gate(g, "gate_a").mode, "closed")
-	_run(g, 70.0)
+	_run(g, 90.0)
 	assert_eq(int(_gate(g, "gate_a").flow_pm), 0, "nobody passes a closed gate")
 	assert_gt(int(_gate(g, "gate_b").flow_pm), 30, "people reroute through the South Gate")
 	g.set_gate("gate_a", "open")
-	_run(g, 60.0)
+	_run(g, 120.0)
 	assert_gt(int(_gate(g, "gate_a").flow_pm), 0, "flow resumes when reopened")
 
 
@@ -82,9 +82,9 @@ func test_barrier_is_validated_and_changes_geometry():
 	var g = await _game()
 	var bad = g.adapter.check_barrier(Vector2(10, 10), Vector2(15, 10))
 	assert_false(bad.ok, "barriers outside the zones are rejected")
-	var ok = g.adapter.check_barrier(Vector2(50, 30), Vector2(58, 30))
+	var ok = g.adapter.check_barrier(Vector2(150, 90), Vector2(174, 90))
 	assert_true(ok.ok, "a barrier in the plaza zone is allowed: %s" % str(ok))
-	var r = g.adapter.command({"type": "barrier_add", "a": [50, 30], "b": [58, 30]})
+	var r = g.adapter.command({"type": "barrier_add", "a": [150, 90], "b": [174, 90]})
 	assert_true(r.ok)
 	g.step_ticks(1)
 	assert_eq(g.telemetry.barriers.size(), 1)
@@ -187,32 +187,35 @@ func _play(g, interventions: bool) -> Dictionary:
 	g.paused = true
 	g.tutorial_step = -1
 	var started := false
-	var seen_delay := false
+	var held := false
 	var released := false
 	var guard := 0
-	while g.phase == g.Phase.PLAYING and guard < 2000:
+	while g.phase == g.Phase.PLAYING and guard < 5000:
 		if interventions and not started:
-			# the briefing warns of a likely train delay: post live waits and hold both plaza
-			# gates back from the start, so queues build in the open plaza, not the station halls
 			g.set_sign("sign_n", "waits")
 			g.set_sign("sign_s", "waits")
-			g.set_gate("gate_a", "metered", 0.25)
-			g.set_gate("gate_b", "metered", 0.5)
 			started = true
 		g.step_ticks(20)
 		guard += 1
 		if not interventions:
 			continue
 		var delayed: bool = not g.telemetry.get("incidents", []).is_empty()
-		seen_delay = seen_delay or delayed
-		if seen_delay and not delayed and not released:
-			g.set_gate("gate_a", "open")
-			g.set_gate("gate_b", "open")
+		if delayed and not held:
+			# trains stopped: close the station entrances so the halls do not overfill, and hold
+			# the plaza gates at half rate so the walkways do not either
+			g.set_gate("station_n", "closed")
+			g.set_gate("station_r", "closed")
+			g.set_gate("gate_a", "metered", 0.5)
+			g.set_gate("gate_b", "metered", 0.5)
+			held = true
+		elif held and not delayed and not released:
+			for id in ["station_n", "station_r", "gate_a", "gate_b"]:
+				g.set_gate(id, "open")
 			released = true
 	return g.report
 
 
-## End-to-end: the same scenario played with gate, barrier and sign interventions through an
+## End-to-end: the same scenario played with gate and sign interventions through an
 ## incident, compared with doing nothing. The interventions must change the outcome for the better.
 func test_playthrough_interventions_beat_doing_nothing():
 	var g = await _game(false)
