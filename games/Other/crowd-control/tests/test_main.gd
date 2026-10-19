@@ -37,7 +37,7 @@ func test_title_screen_then_scenario_loads():
 	assert_eq(g.phase, g.Phase.TITLE, "title first")
 	g.start_scenario(true)
 	assert_eq(g.phase, g.Phase.BRIEFING, "briefing before play")
-	assert_eq(int(g.telemetry.population.total), 1000)
+	assert_eq(int(g.telemetry.population.total), int(g.sc.spawn_schedules[0].population), "everyone from the scenario")
 	g.begin_play()
 	assert_eq(g.phase, g.Phase.PLAYING)
 
@@ -47,7 +47,7 @@ func test_people_leave_the_stadium_and_render():
 	_run(g, 30.0)
 	var pop: Dictionary = g.telemetry.population
 	assert_gt(int(pop.active), 50, "people are walking outside")
-	assert_lt(int(pop.inside), 1000, "the stadium is emptying")
+	assert_lt(int(pop.inside), int(pop.total), "the stadium is emptying")
 	# people in camera-delayed station halls are drawn from the last snapshot, so compare with
 	# perfect information on: then there is exactly one instance per person on site
 	g.set_perfect_info(true)
@@ -186,31 +186,29 @@ func _play(g, interventions: bool) -> Dictionary:
 	g.start_scenario(false)
 	g.paused = true
 	g.tutorial_step = -1
-	var placed := false
-	var signs := false
-	var metered := false
+	var started := false
+	var seen_delay := false
+	var released := false
 	var guard := 0
 	while g.phase == g.Phase.PLAYING and guard < 2000:
+		if interventions and not started:
+			# the briefing warns of a likely train delay: post live waits and hold both plaza
+			# gates back from the start, so queues build in the open plaza, not the station halls
+			g.set_sign("sign_n", "waits")
+			g.set_sign("sign_s", "waits")
+			g.set_gate("gate_a", "metered", 0.25)
+			g.set_gate("gate_b", "metered", 0.5)
+			started = true
 		g.step_ticks(20)
 		guard += 1
 		if not interventions:
 			continue
-		var t: float = g.telemetry.get("time", 0.0)
-		if not signs:
-			g.set_sign("sign_n", "waits")
-			g.set_sign("sign_s", "waits")
-			signs = true
-		if not placed and t > 20.0:
-			var r = g.adapter.command({"type": "barrier_add", "a": [117, 64.5], "b": [117, 70]})
-			assert_true(r.ok, "barrier placed: %s" % str(r))
-			placed = true
 		var delayed: bool = not g.telemetry.get("incidents", []).is_empty()
-		if delayed and not metered:
-			g.set_gate("gate_a", "metered", 0.25)
-			metered = true
-		elif metered and not delayed:
+		seen_delay = seen_delay or delayed
+		if seen_delay and not delayed and not released:
 			g.set_gate("gate_a", "open")
-			metered = false
+			g.set_gate("gate_b", "open")
+			released = true
 	return g.report
 
 
@@ -223,6 +221,8 @@ func test_playthrough_interventions_beat_doing_nothing():
 	var cost := float(played.cost)
 	assert_gt(cost, 0.0, "interventions were paid for")
 	assert_lt(float(played.danger_seconds), float(idle.danger_seconds), "less dangerous crowding")
-	assert_gt(int(played.score), int(idle.score), "better score (%d vs %d)" % [int(played.score), int(idle.score)])
+	assert_gt(int(played.score), int(idle.score) + 150, "much better score (%d vs %d)" % [int(played.score), int(idle.score)])
+	assert_ne(str(idle.outcome), "won", "doing nothing does not pass (%d points)" % int(idle.score))
+	assert_eq(str(played.outcome), "won", "holding the crowd passes (%d points)" % int(played.score))
 	assert_true(g.log_entries.any(func(e): return e.kind == "incident"), "the train delay happened")
 	assert_eq(g.phase, g.Phase.ENDED, "results screen reached")

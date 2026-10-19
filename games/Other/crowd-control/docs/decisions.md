@@ -125,3 +125,30 @@ randomised worlds (conservation, containment, service-rate bounds, no unserved c
 gates); replay round trips; Godot tests that drive the real simulation through the UI functions;
 screenshot checkpoints with tolerant comparison; benchmarks against a baseline; scripted strategy
 experiments that flag dominant strategies.
+
+## ADR 10: Playtest fixes: committed routes, crowd-aware fields, crushes from pushing
+
+A first human playtest found that doing nothing still "won", that dangerous crowding appeared in
+walkways that looked fine, and that people moved implausibly. Frame-by-frame traces
+(`crowd trace --frames`) showed why, and each cause got a model change:
+
+| Seen in play | Cause | Change |
+|---|---|---|
+| Danger flagged in half-empty walkways | People re-deciding every 4 s turned round mid-walkway to switch routes and met the opposite stream head on | Route changes only while crossing an open plaza (`Edge::open_choice`), at most two per person and costlier each time, never inside a crowd packed above 1.8 p/m²; otherwise only when the way ahead is cut |
+| Single-file "ant trails" hugging walls and inside corners | Every person followed the same shortest path to a single target point | Fields lead to portal lines (walkway ends, gate lines) instead of points, step cost rises within 1.2 m of walls, each person has a lane preference and a slow wobble, and walks to a personal spot on the platform or in the car park |
+| Held crowds piled into the corner of a walkway mouth while most of the mouth stood empty | Static fields ignore crowds | Dynamic navigation field: walking through dense crowd costs extra (1.2 per p/m² above 0.8), and one node's field is rebuilt every 8 ticks so each follows the crowd within about 4.5 s |
+| Queues as one long line | Blocked people stood still | Gap seeking: blocked people side-step up to 50° into free space that still takes them forward |
+| No real crushes; held queues stayed orderly forever | Queue spacing held regardless of frustration | Frustration grows up to 2.5x faster when packed; past their patience people drop their queue spacing and follow closer (`PUSH_TIME_GAP`), which is what compresses a confined crowd to dangerous densities |
+| Gate holds formed 6 m inside the walkways | Gate lines sat inside the walkways | Plaza gate lines moved to the walkway mouths, so held crowds queue in the open plaza |
+| A person stuck forever on a fare gate line | A step ending exactly on a line counted as neither side | Line crossings use signed sides with "on the line" counting as downstream |
+| Doing nothing scored 1 star and showed "Operation complete" | Scoring only failed on danger or time | A run needs one star to pass ("Not good enough" otherwise); larger crowd (1,200) leaving faster, a near-total train delay, and dangerous crowding costs 15 points a second |
+
+**Cost.** The rolling field refresh adds about 2.2 ms every 8th tick (p95 step time 0.25 → 2.6 ms
+at 500 people); well inside the 50 ms tick budget, so the benchmark baseline was re-recorded.
+
+**Result (scenario's own seed, the one the game plays).** Doing nothing: 424 points, 27 s of
+dangerous crowding at the Station Ramp and North Hall, fails. Holding both gates when the delay
+is announced: 693. Wait signs plus metering the North Gate in the delay: 862 (2 stars). Holding
+both gates from the start because the delay was forecast: 847 (2 stars, no dangerous crowding).
+Over other seeds outcomes vary a lot (crowd dynamics are chaotic near the tipping point); see
+`docs/benchmarks/experiments.txt`.

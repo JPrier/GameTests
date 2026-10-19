@@ -97,6 +97,16 @@ pub fn exp(x: f32) -> f32 {
 }
 
 #[inline]
+pub fn sin(x: f32) -> f32 {
+    libm::sinf(x)
+}
+
+#[inline]
+pub fn cos(x: f32) -> f32 {
+    libm::cosf(x)
+}
+
+#[inline]
 pub fn atan2(y: f32, x: f32) -> f32 {
     libm::atan2f(y, x)
 }

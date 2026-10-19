@@ -99,6 +99,22 @@ func _run() -> void:
 		main.step_ticks(400)
 		guard += 1
 	await _shot("results")
+	# hands-off run until the first dangerous crowding, shown with the risk overlay
+	main.start_scenario(false)
+	main.paused = true
+	main.tutorial_step = -1
+	guard = 0
+	while main.phase == main.Phase.PLAYING and float(main.telemetry.get("danger_seconds", 0.0)) < 3.0 and guard < 400:
+		main.step_ticks(20)
+		guard += 1
+	main.toggle_overlay("risk")
+	for a in main.telemetry.get("areas", []):
+		if int(a.level) >= 3:
+			main.select("area", a.id)
+			break
+	await _shot("danger")
+	main.toggle_overlay("risk")
+	main.selection = {}
 	main.debug = true
 	main.phase = main.Phase.PLAYING
 	main.help_open = true

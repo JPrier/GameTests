@@ -96,6 +96,11 @@ pub struct NodeDef {
     pub kind: String,
     #[serde(default)]
     pub name: String,
+    /// Optional line [x1, y1, x2, y2] across a walkway that counts as reaching this node, so people
+    /// head for the nearest point of it and keep their lane instead of converging on one spot.
+    /// Gate nodes use their gate line automatically.
+    #[serde(default)]
+    pub portal: Option<[f32; 4]>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

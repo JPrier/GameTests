@@ -33,6 +33,8 @@ pub struct Report {
     /// The three biggest losses, worst first.
     pub top_losses: Vec<String>,
     pub ended_at: f32,
+    /// Points needed for one, two and three stars (one star passes).
+    pub star_thresholds: [f32; 3],
 }
 
 fn mmss(s: f32) -> String {
@@ -227,8 +229,15 @@ pub fn report(sim: &Sim) -> Report {
             }
         })
         .collect();
+    // Getting everyone home is not enough on its own: a run must earn at least one star to pass.
+    let outcome = if sim.outcome == Outcome::Won && stars == 0 {
+        Outcome::FailedScore
+    } else {
+        sim.outcome
+    };
     Report {
-        outcome: sim.outcome,
+        outcome,
+        star_thresholds: rules.stars,
         score: score.round() as i32,
         stars,
         completed,

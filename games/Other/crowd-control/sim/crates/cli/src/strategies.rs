@@ -11,6 +11,7 @@ type Policy = fn(&mut Sim, &mut PolicyState);
 pub struct PolicyState {
     step: u32,
     done: Vec<&'static str>,
+    release_at: f32,
 }
 
 impl PolicyState {
@@ -202,9 +203,11 @@ fn pen_and_meter(sim: &mut Sim, st: &mut PolicyState) {
     }
 }
 
-/// Ramp pen plus holding both gates lightly during the delay.
+/// What a sensible operator does: wait-time signs, and hold both plaza gates back (North 25%,
+/// South 50%) while the trains are delayed, so the queue waits in the open plaza rather than packed
+/// into the station halls. (Holding harder crushes people at the gates instead.)
 fn expert(sim: &mut Sim, st: &mut PolicyState) {
-    ramp_pen(sim, st);
+    wait_signs(sim, st);
     if incident_active(sim) && st.once("meter") {
         gate(sim, "gate_a", GateMode::Metered, Some(0.25));
         gate(sim, "gate_b", GateMode::Metered, Some(0.5));
@@ -212,6 +215,132 @@ fn expert(sim: &mut Sim, st: &mut PolicyState) {
     if incident_over(sim) && st.done.contains(&"meter") && st.once("reopen") {
         gate(sim, "gate_a", GateMode::Open, None);
         gate(sim, "gate_b", GateMode::Open, None);
+    }
+}
+
+/// Anticipate the warned delay: wait-time signs and both plaza gates held (North 25%, South 50%)
+/// from the start, through the delay, then half rate for 40 s before opening fully.
+fn anticipate(sim: &mut Sim, st: &mut PolicyState) {
+    wait_signs(sim, st);
+    if st.once("hold") {
+        gate(sim, "gate_a", GateMode::Metered, Some(0.25));
+        gate(sim, "gate_b", GateMode::Metered, Some(0.5));
+    }
+    if incident_over(sim) && st.once("half") {
+        gate(sim, "gate_a", GateMode::Metered, Some(0.5));
+        st.release_at = sim.time + 40.0;
+    }
+    if st.done.contains(&"half") && sim.time >= st.release_at && st.once("open") {
+        gate(sim, "gate_a", GateMode::Open, None);
+        gate(sim, "gate_b", GateMode::Open, None);
+    }
+}
+
+/// Adaptive operator: every 5 s, compare each station hall's (camera-delayed) occupancy with a
+/// target and step that side's plaza gate down or up through the metering levels, so the queue
+/// waits in the open plaza while the trains are delayed. Uses only operator-visible information.
+fn adaptive(sim: &mut Sim, st: &mut PolicyState) {
+    wait_signs(sim, st);
+    if !st.step.is_multiple_of(100) {
+        return;
+    }
+    const LEVELS: [f32; 4] = [0.1, 0.25, 0.5, 1.0];
+    let target = std::env::var("CROWD_HALL_TARGET")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.4f32);
+    for (g, hall) in [("gate_a", "station_north"), ("gate_b", "station_south")] {
+        let i = sim.area_ids.iter().position(|a| a == hall).unwrap();
+        let d = if sim.reported[i].delayed && !sim.perfect_info {
+            sim.reported[i].density
+        } else {
+            sim.areas[i].density
+        };
+        let gi = sim.gates.iter().position(|x| x.id == g).unwrap();
+        let cur = match sim.gates[gi].mode {
+            GateMode::Open => 3,
+            GateMode::Closed => 0,
+            GateMode::Metered => LEVELS
+                .iter()
+                .position(|l| (*l - sim.gates[gi].level).abs() < 1e-3)
+                .unwrap_or(2),
+        };
+        let next = if d > target && cur > 1 {
+            cur - 1
+        } else if d < target * 0.6 && cur < 3 {
+            cur + 1
+        } else {
+            cur
+        };
+        if next != cur {
+            if next == 3 {
+                gate(sim, g, GateMode::Open, None);
+            } else {
+                gate(sim, g, GateMode::Metered, Some(LEVELS[next]));
+            }
+        }
+    }
+}
+
+/// Parametrised operator for tuning, configured by the CROWD_POLICY environment variable, e.g.
+/// `a=0.25,b=0.5,rel=30,signs=waits`: meter the North (a) and South (b) gates at these levels
+/// while the delay lasts (1 = leave open, 0 = close), keep them at half rate for `rel` seconds after
+/// service returns, and set both signs to `signs` (off / waits / trains_north / trains_south).
+fn param(sim: &mut Sim, st: &mut PolicyState) {
+    let spec = std::env::var("CROWD_POLICY").unwrap_or_default();
+    let get = |k: &str| -> Option<String> {
+        spec.split(',').find_map(|kv| {
+            kv.split_once('=')
+                .filter(|(a, _)| *a == k)
+                .map(|(_, v)| v.to_string())
+        })
+    };
+    let num = |k: &str, d: f32| get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
+    if st.once("signs") {
+        if let Some(m) = get("signs") {
+            if m != "off" {
+                sign(sim, "sign_n", &m);
+                sign(sim, "sign_s", &m);
+            }
+        }
+    }
+    let set = |sim: &mut Sim, g: &str, lv: f32| {
+        if lv >= 1.0 {
+            gate(sim, g, GateMode::Open, None);
+        } else if lv <= 0.0 {
+            gate(sim, g, GateMode::Closed, None);
+        } else {
+            gate(sim, g, GateMode::Metered, Some(lv));
+        }
+    };
+    // optional pre-emptive levels from the start (pa / pb), before any delay
+    if st.once("pre") {
+        if let Some(v) = get("pa").and_then(|v| v.parse::<f32>().ok()) {
+            set(sim, "gate_a", v);
+        }
+        if let Some(v) = get("pb").and_then(|v| v.parse::<f32>().ok()) {
+            set(sim, "gate_b", v);
+        }
+    }
+    if incident_active(sim) && st.once("meter") {
+        set(sim, "gate_a", num("a", 1.0));
+        set(sim, "gate_b", num("b", 1.0));
+    }
+    if incident_over(sim) && st.done.contains(&"meter") {
+        if st.once("half") {
+            let (a, b) = (num("a", 1.0), num("b", 1.0));
+            if a < 1.0 {
+                set(sim, "gate_a", 0.5);
+            }
+            if b < 1.0 {
+                set(sim, "gate_b", 0.5);
+            }
+            st.release_at = sim.time + num("rel", 0.0);
+        }
+        if sim.time >= st.release_at && st.once("open") {
+            set(sim, "gate_a", 1.0);
+            set(sim, "gate_b", 1.0);
+        }
     }
 }
 
@@ -253,7 +382,18 @@ pub fn policies() -> Vec<(&'static str, &'static str, Policy)> {
             "Ramp pen + meter North in the delay",
             pen_and_meter,
         ),
-        ("expert", "Ramp pen + hold both gates lightly", expert),
+        (
+            "expert",
+            "Wait signs + hold both gates in the delay",
+            expert,
+        ),
+        ("adaptive", "Wait signs + meter by hall crowding", adaptive),
+        (
+            "anticipate",
+            "Hold both gates from the start (warned delay)",
+            anticipate,
+        ),
+        ("param", "Parametrised (CROWD_POLICY)", param),
     ]
 }
 
@@ -303,6 +443,9 @@ pub fn experiments(args: &[String]) {
         "fails"
     );
     for (key, label, p) in policies() {
+        if key == "param" && only.is_none() {
+            continue; // tuning helper, configured from the environment
+        }
         if let Some(o) = &only {
             if !o.split(',').any(|x| x == key) {
                 continue;
@@ -437,6 +580,7 @@ pub fn trace(args: &[String]) {
     }
     while !sim.is_over() && sim.time < sim.sc.objectives.time_limit + 1.0 {
         policy(&mut sim, &mut st);
+        st.step += 1;
         sim.step();
         for e in &sim.log[log_seen..] {
             println!("        [{:>5.0}s] {}: {}", e.t, e.kind, e.text);
@@ -451,6 +595,46 @@ pub fn trace(args: &[String]) {
                         sim.inspect(sim.agents.pos[i])
                     );
                 }
+            }
+        }
+        if let Some(path) = crate::arg(args, "--frames") {
+            // --frames FILE: one JSON line per 0.5 s with every person's position, heading,
+            // speed, destination and next node (for plotting / debugging movement).
+            if sim.tick.is_multiple_of(10) {
+                use std::io::Write;
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .unwrap();
+                let people: Vec<serde_json::Value> = (0..sim.agents.len())
+                    .map(|i| {
+                        serde_json::json!([
+                            sim.agents.id[i],
+                            (sim.agents.pos[i].x * 100.0).round() / 100.0,
+                            (sim.agents.pos[i].y * 100.0).round() / 100.0,
+                            (sim.agents.heading[i].x * 100.0).round() / 100.0,
+                            (sim.agents.heading[i].y * 100.0).round() / 100.0,
+                            (sim.agents.speed[i] * 100.0).round() / 100.0,
+                            sim.agents.dest[i],
+                            sim.agents.next_node(i),
+                            sim.agents.leader[i],
+                        ])
+                    })
+                    .collect();
+                let dens: Vec<f32> = sim
+                    .density
+                    .density
+                    .iter()
+                    .map(|d| (d * 10.0).round() / 10.0)
+                    .collect();
+                let lv: Vec<u8> = sim.density.level.iter().map(|l| *l as u8).collect();
+                writeln!(
+                    f,
+                    "{}",
+                    serde_json::json!({"t": sim.time, "p": people, "danger": sim.danger_seconds, "d": dens, "lv": lv, "cols": sim.density.cols})
+                )
+                .unwrap();
             }
         }
         if let Some(spec) = crate::arg(args, "--dump") {

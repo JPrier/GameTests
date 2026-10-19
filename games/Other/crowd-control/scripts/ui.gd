@@ -251,6 +251,8 @@ func _ui_rects() -> Array:
 		out.append(_panel_rect(vs.y) if not _narrow() else Rect2(0, vs.y * 0.5, vs.x, vs.y * 0.5))
 	if main.debug:
 		out.append(Rect2(m, vs.y - bottom_bar_h() - GTUI.dp(250), GTUI.dp(300), GTUI.dp(250)))
+	for tl in _toast_layout():
+		out.append(tl.rect)
 	return out
 
 
@@ -268,7 +270,18 @@ func _draw_world_labels() -> void:
 	var zoom: float = main.camera.zoom.x
 	for l in sc.map.get("decor", {}).get("labels", []):
 		var p: Vector2 = main.m_to_screen(Vector2(l.pos[0], l.pos[1]))
+		var tw := GTUI.text_width(l.text, GTUI.FS_LABEL, true)
+		var lr := Rect2(p.x - tw / 2, p.y - GTUI.dp(12), tw, GTUI.dp(24))
+		if _reserved.any(func(o): return (o as Rect2).intersects(lr)):
+			continue  # never half-hidden behind the HUD or a toast
 		GTUI.text_in(self, Rect2(p.x - GTUI.dp(80), p.y - GTUI.dp(12), GTUI.dp(160), GTUI.dp(24)), l.text, GTUI.FS_LABEL, Color(1, 1, 1, 0.55), 0, true)  # gt:art
+	# dangerous crowding first, so it always gets its label
+	for at in main.telemetry.get("areas", []):
+		if at.get("alarm", false):
+			for d in sc.map.areas:
+				if d.id == at.id:
+					var top_mid: Vector2 = main.m_to_screen(Vector2(d.rect[0] + d.rect[2] * 0.5, d.rect[1]))
+					_pill_label(top_mid + Vector2(0, GTUI.dp(14)), "Dangerous crowding", Color("ff3b3b"))
 	if zoom < 0.4:
 		return
 	var tg := {}
@@ -291,7 +304,7 @@ func _draw_world_labels() -> void:
 			_pill_label(bp, "%d waiting" % int(t.queue), Color("f59f00"))
 		elif main.overlays.queues and int(t.get("queue", 0)) < 0:
 			var bp: Vector2 = main.m_to_screen(Vector2(maxf(a.x, b.x), maxf(a.y, b.y))) + Vector2(0, GTUI.dp(14))
-			_pill_label(bp, "camera: ~%d s wait" % int(t.get("wait", 0)), Color("f59f00"))
+			_pill_label(bp, "camera: ~%s wait" % _wait_text(t.get("wait", 0)), Color("f59f00"))
 	for s in sc.get("signs", []):
 		for st in main.telemetry.get("signs", []):
 			if st.id == s.id and st.mode != "off":
@@ -311,6 +324,8 @@ func _draw_world_labels() -> void:
 
 func _wait_text(w) -> String:
 	var s := int(round(float(w)))
+	if s >= 600:
+		return "10+ min"
 	return "%d s" % s if s < 90 else "%d min" % int(round(s / 60.0))
 
 
@@ -710,7 +725,7 @@ func _draw_briefing() -> void:
 	var items := [
 		"Get %d%% of people to the trains or the car park by %s." % [int(sc.objectives.clear_fraction * 100), _mmss(sc.objectives.time_limit)],
 		"%d seconds of dangerous crowding ends the operation." % int(sc.failure_conditions.max_danger_seconds),
-		"Your score counts journey times, the longest wait, congestion, money spent and how fans feel.",
+		"Your score counts journey times, the longest wait, congestion, money spent and how fans feel. You need %d points (one star) to pass." % int(sc.scoring_rules.stars[0]),
 	]
 	var h := GTUI.paragraph(null, 0, 0, content_w, sc.get("briefing", ""), GTUI.FS_BODY, Color.WHITE, false, false) + GTUI.dp(GTUI.SP_M)
 	for it in items:
@@ -777,7 +792,7 @@ func _draw_results() -> void:
 	var vs := _vs()
 	var narrow := _narrow()
 	var outcome: String = rep.get("outcome", "won")
-	var title := "Operation complete" if outcome == "won" else ("Operation halted" if outcome == "failed_danger" else "Time ran out")
+	var title: String = {"won": "Operation complete", "failed_score": "Not good enough", "failed_danger": "Operation halted"}.get(outcome, "Time ran out")
 	var card := GTUI.modal_rect(self, 720 if not narrow else 420, vs.y - GTUI.dp(GTUI.SP_L) * 2)
 	var c := GTUI.modal(self, card, title)
 	var left := Rect2(c.position, Vector2(c.size.x if narrow else c.size.x * 0.46, c.size.y - GTUI.target() - GTUI.dp(GTUI.SP_M)))
@@ -787,7 +802,10 @@ func _draw_results() -> void:
 	_stars(Vector2(left.position.x + GTUI.text_width(str(int(rep.get("score", 0))), GTUI.FS_DISPLAY, true) + GTUI.dp(GTUI.SP_L), y + GTUI.dp(22)), stars)
 	y += GTUI.dp(48)
 	var summary := "%d of %d home · average journey %s · longest wait %s" % [int(rep.get("completed", 0)), int(rep.get("total", 0)), _mmss(float(rep.get("avg_journey", 0))), _mmss(float(rep.get("max_wait", 0)))]
-	y = GTUI.paragraph(self, left.position.x, y, left.size.x, summary, GTUI.FS_LABEL, GTUI.c("text_muted")) + GTUI.dp(GTUI.SP_M)
+	y = GTUI.paragraph(self, left.position.x, y, left.size.x, summary, GTUI.FS_LABEL, GTUI.c("text_muted")) + GTUI.dp(GTUI.SP_S)
+	var verdict := _verdict(rep)
+	if verdict != "":
+		y = GTUI.paragraph(self, left.position.x, y, left.size.x, verdict, GTUI.FS_LABEL, GTUI.c("success") if outcome == "won" else GTUI.c("danger")) + GTUI.dp(GTUI.SP_M)
 	var losses: Array = rep.get("top_losses", [])
 	if not losses.is_empty():
 		y = GTUI.paragraph(self, left.position.x, y, left.size.x, "BIGGEST LOSSES", GTUI.FS_CAPTION, GTUI.c("text_muted"), true)
@@ -812,6 +830,26 @@ func _draw_results() -> void:
 	GTUI.button(self, "res_retry", cols[1], "Try again", "primary")
 
 
+## One sentence on whether the run passed and what was needed.
+func _verdict(rep: Dictionary) -> String:
+	var th: Array = rep.get("star_thresholds", [600, 800, 950])
+	var one := int(th[0]) if th.size() > 0 else 600
+	match str(rep.get("outcome", "won")):
+		"failed_score":
+			return "Everyone got out, but too slowly or unsafely to earn a star. You need %d points to pass." % one
+		"failed_danger":
+			return "Stopped: people were crushed in dangerous crowding for too long."
+		"failed_timeout":
+			return "Time ran out with people still on site."
+		"won":
+			var stars := int(rep.get("stars", 0))
+			if stars >= 3:
+				return "Passed with full marks."
+			if stars < th.size():
+				return "Passed. %d points for the next star." % int(th[stars])
+	return ""
+
+
 func _stars(pos: Vector2, n: int) -> void:
 	for i in 3:
 		var c := pos + Vector2(i * GTUI.dp(26), 0)
@@ -834,17 +872,37 @@ func _draw_error() -> void:
 
 
 func _draw_toasts() -> void:
-	if _modal or main.phase != main.Phase.PLAYING:
+	if _modal:
 		return
+	var lh := GTUI.line_height(GTUI.FS_LABEL)
+	var pad := GTUI.dp(GTUI.SP_M + 12)
+	for tl in _toast_layout():
+		var r: Rect2 = tl.rect
+		var lines: Array = tl.lines
+		var col: Color = tl.col
+		var h := r.size.y
+		GTUI.box(self, r, GTUI.c("text"), GTUI.R_CONTROL)
+		draw_rect(Rect2(r.position.x + GTUI.dp(GTUI.SP_M), r.position.y + GTUI.dp(GTUI.SP_M), GTUI.dp(6), h - GTUI.dp(GTUI.SP_M) * 2), col)
+		var ty: float = r.position.y + (h - lines.size() * lh) / 2
+		for l in lines:
+			GTUI.text_in(self, Rect2(r.position.x + pad, ty, r.size.x - pad - GTUI.dp(GTUI.SP_M), lh), l, GTUI.FS_LABEL, GTUI.c("bg"), -1, true)
+			ty += lh
+
+
+## Where this frame's toasts go (map labels avoid these rects too).
+func _toast_layout() -> Array:
+	var out := []
+	if main == null or main.phase != main.Phase.PLAYING:
+		return out
 	var vs := _vs()
 	var m := GTUI.dp(GTUI.SP_S)
-	var left := m + GTUI.dp(OBJECTIVE_W) + m
-	var right := vs.x - m
-	if not main.selection.is_empty() and not _narrow():
-		right = vs.x - m - GTUI.dp(300) - m
+	# Wide screens: stacked under the objective panel, over the stadium (the one part of the map
+	# that never needs watching). Narrow screens: full width under the objective panel.
+	var left := m
+	var right := m + GTUI.dp(OBJECTIVE_W)
 	if _narrow():
-		left = m
-	var y := top_bar_h() + (objective_h() + m if _narrow() else 0.0)
+		right = vs.x - m
+	var y := top_bar_h() + objective_h() + m
 	var pad := GTUI.dp(GTUI.SP_M + 12)
 	for tst in main.toasts:
 		var msg: String = tst.text
@@ -855,13 +913,9 @@ func _draw_toasts() -> void:
 		var h := maxf(GTUI.target(), lines.size() * lh + GTUI.dp(GTUI.SP_S) * 2)
 		var r := Rect2(left + (max_w - w) / 2, y, w, h)
 		var col := GTUI.c("danger") if tst.kind in ["danger", "error"] else (Color("ff922b") if tst.kind in ["warning", "incident"] else GTUI.c("success") if tst.kind == "incident_end" else GTUI.c("surface_high"))
-		GTUI.box(self, r, GTUI.c("text"), GTUI.R_CONTROL)
-		draw_rect(Rect2(r.position.x + GTUI.dp(GTUI.SP_M), r.position.y + GTUI.dp(GTUI.SP_M), GTUI.dp(6), h - GTUI.dp(GTUI.SP_M) * 2), col)
-		var ty := r.position.y + (h - lines.size() * lh) / 2
-		for l in lines:
-			GTUI.text_in(self, Rect2(r.position.x + pad, ty, r.size.x - pad - GTUI.dp(GTUI.SP_M), lh), l, GTUI.FS_LABEL, GTUI.c("bg"), -1, true)
-			ty += lh
+		out.append({"rect": r, "lines": lines, "col": col})
 		y += h + GTUI.dp(GTUI.SP_XS)
+	return out
 
 
 static func _mmss(s: float) -> String:

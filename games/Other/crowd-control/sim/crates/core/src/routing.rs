@@ -13,8 +13,11 @@ pub const MAX_NODES: usize = 64;
 pub const SIGN_BONUS: f32 = 45.0;
 /// Route-cost bonus for the option most nearby people take (s, scaled by crowd_following * share).
 pub const HERD_BONUS: f32 = 25.0;
-/// Hysteresis: bonus for keeping the current next node (s).
+/// Hysteresis: bonus for keeping the current next node (s), plus more for every change of mind
+/// already made; after `MAX_SWITCHES` changes people stick with their choice.
 pub const COMMIT_BONUS: f32 = 8.0;
+pub const COMMIT_PER_SWITCH: f32 = 25.0;
+pub const MAX_SWITCHES: u8 = 2;
 /// Extra cost an impatient agent puts on the queue it is standing in (s).
 pub const IMPATIENCE_PENALTY: f32 = 40.0;
 /// Turning back against your own direction of travel (s); impatient people pay much less.
@@ -37,6 +40,8 @@ pub struct Node {
     pub id: String,
     pub pos: Vec2,
     pub radius: f32,
+    /// What the node's distance field leads to (a disc, a portal line or a gate line).
+    pub target: crate::grid::FieldTarget,
     pub gate: Option<u16>,
     pub dest: Option<u16>,
     pub door: bool,
@@ -49,6 +54,10 @@ pub struct Edge {
     pub one_way: bool,
     pub stairs: bool,
     pub area: Option<u8>,
+    /// Walking this edge happens in open space (a plaza) where people can still change their mind.
+    /// On other edges (walkways, halls, ramps) they are committed and do not turn back unless the
+    /// way ahead is cut.
+    pub open_choice: bool,
     /// Geodesic length (m); infinite when the connection is cut.
     pub length: f32,
 }
@@ -91,6 +100,10 @@ pub struct ChoiceInput<'a> {
     pub stairs_aversion: f32,
     pub sign_via: u16,
     pub impatient: bool,
+    /// False once the agent is committed to its current next node (see `Edge::open_choice`).
+    pub may_switch: bool,
+    /// Route changes this agent has already made.
+    pub switches: u8,
     /// Geodesic distance from the agent to each node (INF if unreachable).
     pub dist_to_node: &'a [f32],
     /// Measured queue wait at each node (s), 0 where there is no queue.
@@ -186,11 +199,11 @@ pub fn choose_route(inp: &ChoiceInput, out: &mut Vec<u16>) -> bool {
     // Candidate first hops: the current next node and every neighbour of the last node passed.
     let mut best_total = f32::INFINITY;
     let mut best_first = u16::MAX;
-    let mut consider = |u: u16, via_edge: Option<&Edge>| {
+    let cost_of = |u: u16, via_edge: Option<&Edge>| -> Option<f32> {
         let ui = u as usize;
         let d = inp.dist_to_node[ui];
         if !d.is_finite() || !togo[ui].is_finite() {
-            return;
+            return None;
         }
         let mut c = match via_edge {
             Some(e) => edge_time(e, d),
@@ -198,7 +211,7 @@ pub fn choose_route(inp: &ChoiceInput, out: &mut Vec<u16>) -> bool {
         };
         c += wait_at(ui) + togo[ui];
         if u == inp.current_next {
-            c -= COMMIT_BONUS;
+            c -= COMMIT_BONUS + COMMIT_PER_SWITCH * inp.switches as f32;
             if inp.impatient && inp.node_wait[ui] > 5.0 {
                 c += IMPATIENCE_PENALTY;
             }
@@ -231,10 +244,7 @@ pub fn choose_route(inp: &ChoiceInput, out: &mut Vec<u16>) -> bool {
                 hops += 1;
             }
         }
-        if c < best_total {
-            best_total = c;
-            best_first = u;
-        }
+        Some(c)
     };
     if (inp.current_next as usize) < n {
         let e = g
@@ -242,12 +252,23 @@ pub fn choose_route(inp: &ChoiceInput, out: &mut Vec<u16>) -> bool {
             .get(inp.last_node as usize)
             .and_then(|o| o.iter().find(|(_, b)| *b == inp.current_next))
             .map(|(ei, _)| &g.edges[*ei as usize]);
-        consider(inp.current_next, e);
+        if let Some(c) = cost_of(inp.current_next, e) {
+            best_total = c;
+            best_first = inp.current_next;
+        }
     }
-    if (inp.last_node as usize) < n {
+    // Committed people only reconsider when the way ahead is gone.
+    let forced = best_first == u16::MAX;
+    let may_switch = inp.may_switch && inp.switches < MAX_SWITCHES;
+    if (may_switch || forced) && (inp.last_node as usize) < n {
         for &(ei, b) in &g.out[inp.last_node as usize] {
             if g.edges[ei as usize].length.is_finite() && b != inp.current_next {
-                consider(b, Some(&g.edges[ei as usize]));
+                if let Some(c) = cost_of(b, Some(&g.edges[ei as usize])) {
+                    if c < best_total {
+                        best_total = c;
+                        best_first = b;
+                    }
+                }
             }
         }
     }

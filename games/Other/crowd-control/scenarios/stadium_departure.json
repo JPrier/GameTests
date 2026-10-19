@@ -2,7 +2,7 @@
   "schema_version": 1,
   "scenario_id": "stadium_departure",
   "title": "Stadium Departure",
-  "briefing": "The match is over and 1,000 fans are leaving. Get them to the trains and the car park quickly and safely. A train delay is likely tonight.",
+  "briefing": "The match is over and 1,200 fans are leaving. Get them to the trains and the car park quickly and safely. A train delay is likely tonight.",
   "seed": 20261018,
   "map": {
     "size": [150, 90],
@@ -61,11 +61,11 @@
     {"id": "door3", "name": "Exit 3", "pos": [36.5, 65], "radius": 2, "kind": "door"},
     {"id": "gate_a", "name": "North Gate", "pos": [88, 16.5], "radius": 1.5, "kind": "gate"},
     {"id": "gate_b", "name": "South Gate", "pos": [88.5, 70], "radius": 2, "kind": "gate"},
-    {"id": "north_end", "name": "Station North Entrance", "pos": [116, 16.5], "radius": 2, "kind": "corridor"},
+    {"id": "north_end", "name": "Station North Entrance", "pos": [116, 16.5], "radius": 2, "kind": "corridor", "portal": [116, 13, 116, 20]},
     {"id": "fare_n", "name": "North Fare Gates", "pos": [132, 15], "radius": 1.5, "kind": "faregate"},
     {"id": "fare_s", "name": "South Fare Gates", "pos": [132, 55], "radius": 1.5, "kind": "faregate"},
     {"id": "platform", "name": "Platforms", "pos": [138, 34], "radius": 3, "kind": "destination"},
-    {"id": "ramp", "name": "Station Ramp", "pos": [122, 62], "radius": 1.5, "kind": "corridor"},
+    {"id": "ramp", "name": "Station Ramp", "pos": [122, 62], "radius": 1.5, "kind": "corridor", "portal": [119, 62, 125, 62]},
     {"id": "parking", "name": "Car Park", "pos": [138, 76], "radius": 4, "kind": "destination"}
   ],
   "edges": [
@@ -85,9 +85,9 @@
     {"a": "fare_s", "b": "platform", "one_way": true, "area": "platform"}
   ],
   "gates": [
-    {"id": "gate_a", "name": "North Gate", "node": "gate_a", "line": [86, 13, 86, 20], "lanes": 5, "lane_rate": 1.0,
+    {"id": "gate_a", "name": "North Gate", "node": "gate_a", "line": [81, 13, 81, 20], "lanes": 5, "lane_rate": 1.0,
      "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 20},
-    {"id": "gate_b", "name": "South Gate", "node": "gate_b", "line": [86, 64, 86, 76], "lanes": 8, "lane_rate": 1.0,
+    {"id": "gate_b", "name": "South Gate", "node": "gate_b", "line": [81, 64, 81, 76], "lanes": 8, "lane_rate": 1.0,
      "controllable": true, "default_mode": "open", "meter_levels": [0.5, 0.25, 0.1], "staff_cost_per_min": 20},
     {"id": "fare_n", "name": "North Fare Gates", "node": "fare_n", "line": [130, 11, 130, 19], "lanes": 5, "lane_rate": 0.6,
      "default_mode": "metered", "one_way": true},
@@ -111,11 +111,11 @@
      "sign_compliance": [0.6, 0.9], "crowd_following": [0.1, 0.3], "patience": [200, 400], "stairs_aversion": 2.0, "radius": 0.25}
   ],
   "spawn_schedules": [
-    {"id": "stadium", "name": "Stadium", "population": 1000, "start": 3,
+    {"id": "stadium", "name": "Stadium", "population": 1200, "start": 3,
      "doors": [
-       {"node": "door1", "spawn": [34.5, 21, 4, 8], "rate": 1.8},
-       {"node": "door2", "spawn": [34.5, 41, 4, 8], "rate": 1.8},
-       {"node": "door3", "spawn": [34.5, 61, 4, 8], "rate": 1.8}
+       {"node": "door1", "spawn": [34.5, 21, 4, 8], "rate": 2.16},
+       {"node": "door2", "spawn": [34.5, 41, 4, 8], "rate": 2.16},
+       {"node": "door3", "spawn": [34.5, 61, 4, 8], "rate": 2.16}
      ],
      "destination_mix": [["station", 0.6], ["parking", 0.4]]}
   ],
@@ -139,13 +139,13 @@
     {"id": "trains", "name": "Station", "gates": ["fare_n", "fare_s"], "destination": "station"}
   ],
   "event_schedule": [
-    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.18,
-     "start": [100, 170], "duration": [110, 160], "probability": 1.0}
+    {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.05,
+     "start": [75, 105], "duration": [130, 160], "probability": 1.0}
   ],
   "player_resources": {"budget": 1500, "barrier_cost": 150, "barrier_max_len": 10, "max_barriers": 6, "undo_window": 10},
   "objectives": {"time_limit": 900, "clear_fraction": 0.95, "target_journey": 150, "target_max_wait": 150},
-  "failure_conditions": {"max_danger_seconds": 90},
+  "failure_conditions": {"max_danger_seconds": 75},
   "scoring_rules": {"base": 1000, "per_journey_second": 2, "per_wait_second": 1, "per_heavy_second": 1,
-    "per_danger_second": 10, "per_cost": 0.2, "per_stranded": 3, "per_satisfaction": 2, "stars": [600, 800, 950]},
+    "per_danger_second": 15, "per_cost": 0.2, "per_stranded": 3, "per_satisfaction": 2, "stars": [680, 800, 880]},
   "information": {"delayed": [{"area": "station_north", "period": 30}, {"area": "station_south", "period": 30}]}
 }

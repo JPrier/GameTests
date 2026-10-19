@@ -23,6 +23,7 @@ const C_TREE_DARK := Color("234530")
 const C_OPEN := Color("2f9e44")
 const C_METER := Color("f59f00")
 const C_CLOSED := Color("e03131")
+const C_DANGER := Color("ff3b3b")
 const C_FARE := Color("5c6f82")
 const C_BARRIER := Color("ffd43b")
 const C_BARRIER_DARK := Color("2b2b2b")
@@ -319,6 +320,14 @@ func _draw_top() -> void:
 		top.draw_line(a, b, Color(C_BARRIER, 0.55) if ok else Color(C_CLOSED, 0.75), lw * 4.0)
 		top.draw_circle(a, lw * 3.0, Color.WHITE)
 		top.draw_circle(b, lw * 3.0, Color.WHITE)
+	# dangerous crowding (staff alarm, never delayed): the whole area outlined in red
+	for at in t.get("areas", []):
+		if at.get("alarm", false):
+			for a in sc.map.areas:
+				if a.id == at.id:
+					var ar := rect_px(a.rect)
+					top.draw_rect(ar, Color(C_DANGER, 0.14))
+					top.draw_rect(ar, C_DANGER, false, lw * 3.0)
 	# selected area outline
 	var sel: Dictionary = main.selection
 	if sel.get("kind", "") == "area":

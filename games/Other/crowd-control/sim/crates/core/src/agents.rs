@@ -62,6 +62,15 @@ pub struct Agents {
     pub ideal_time: Vec<f32>,
     /// Group leader should slow down this tick (members fell behind).
     pub leader_slow: Vec<bool>,
+    /// Personal walking style: [lane preference -1..1, wobble phase, wobble angular frequency,
+    /// unused], so people spread across the width of a walkway instead of walking single file on
+    /// the shortest line.
+    pub wander: Vec<[f32; 4]>,
+    /// Personal spot inside the destination area (where they stand on the platform / their car).
+    pub spot: Vec<Vec2>,
+    /// How many times this person has changed their mind about the route (each change makes the
+    /// next one less likely; people rarely flip-flop).
+    pub switches: Vec<u8>,
 }
 
 pub struct NewAgent {
@@ -122,6 +131,9 @@ impl Agents {
         self.satisfaction.push(100.0);
         self.ideal_time.push(0.0);
         self.leader_slow.push(false);
+        self.wander.push([0.0; 4]);
+        self.spot.push(a.pos);
+        self.switches.push(0);
     }
 
     pub fn swap_remove(&mut self, i: usize) {
@@ -156,6 +168,9 @@ impl Agents {
         self.satisfaction.swap_remove(i);
         self.ideal_time.swap_remove(i);
         self.leader_slow.swap_remove(i);
+        self.wander.swap_remove(i);
+        self.spot.swap_remove(i);
+        self.switches.swap_remove(i);
     }
 
     #[inline]
