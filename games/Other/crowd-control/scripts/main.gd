@@ -29,7 +29,12 @@ var speed_idx := 1
 var paused := true
 var acc := 0.0
 var dt := 0.05
-var tool := "select"               # "select" | "barrier"
+## Player tools: id, toolbar label, command kind. Fences and arrows are drawn as strokes (simplified
+## to their corners), steward lines as a straight drag.
+const TOOLS := [["select", "Select"], ["fence", "Fence"], ["stewards", "Stewards"], ["arrow", "Arrow"], ["oneway", "One-way"]]
+const DRAW_TOOLS := ["fence", "stewards", "arrow", "oneway"]
+const MAX_POINTS := 24
+var tool := "select"
 var selection: Dictionary = {}     # {kind: gate|sign|barrier|area|person, id}
 var overlays := {"density": false, "risk": false, "flow": false, "queues": true, "routes": false}
 var color_mode := 0                # 0 destination, 1 stress, 2 profile
@@ -41,12 +46,13 @@ var tutorial_step := -1
 var help_open := false
 var error_text := ""
 
-# barrier drawing
+# drawing fences, steward lines and arrows
 var drag_active := false
-var drag_from := Vector2.ZERO
-var drag_to := Vector2.ZERO
+var drag_points := PackedVector2Array()   # raw stroke (m)
+var draw_points := PackedVector2Array()   # simplified: what would be placed
 var preview_ok := false
 var preview_error := ""
+var preview_cost := 0.0
 var _preview_t := 0.0
 
 # pointer / camera
@@ -290,7 +296,45 @@ func remove_barrier(id: int) -> void:
 	if r.get("ok", false):
 		selection = {}
 		if float(r.get("refund", 0.0)) > 0.0:
-			toast("Barrier undone, refunded")
+			toast("Undone, refunded")
+
+
+func set_stewards(id: int, hold: bool) -> void:
+	_command({"type": "stewards_hold", "id": id, "hold": hold})
+
+
+func is_drawing_tool() -> bool:
+	return tool in DRAW_TOOLS
+
+
+## Longest stroke the current tool allows (m).
+func tool_max_len() -> float:
+	var res: Dictionary = sc.get("player_resources", {})
+	match tool:
+		"fence":
+			return float(res.get("fence_max_len", 100))
+		"stewards":
+			return float(res.get("stewards_max_len", 40))
+		"arrow", "oneway":
+			return float(res.get("arrow_max_len", 100))
+	return 0.0
+
+
+## The command the current drawing would send.
+func draw_command() -> Dictionary:
+	var pts := []
+	for p in draw_points:
+		pts.append([p.x, p.y])
+	match tool:
+		"fence":
+			return {"type": "fence_add", "points": pts}
+		"stewards":
+			return {"type": "stewards_add", "a": pts[0], "b": pts[pts.size() - 1]}
+		"arrow":
+			return {"type": "arrow_add", "points": pts, "one_way": false}
+		"oneway":
+			return {"type": "arrow_add", "points": pts, "one_way": true}
+	return {}
 
 
 func set_perfect_info(on: bool) -> void:
@@ -309,7 +353,7 @@ func _command(cmd: Dictionary) -> Dictionary:
 func set_tool(t: String) -> void:
 	tool = t
 	drag_active = false
-	if t == "barrier":
+	if t != "select":
 		selection = {}
 
 
@@ -427,9 +471,9 @@ func _key(ev: InputEventKey) -> void:
 		KEY_1, KEY_2, KEY_3, KEY_4:
 			if phase == Phase.PLAYING:
 				speed_idx = ev.keycode - KEY_1
-		KEY_B:
+		KEY_B, KEY_F:
 			if phase == Phase.PLAYING:
-				set_tool("select" if tool == "barrier" else "barrier")
+				set_tool("select" if tool == "fence" else "fence")
 		KEY_EQUAL, KEY_PLUS, KEY_KP_ADD:
 			zoom_at(get_viewport().get_visible_rect().size * 0.5, 1.25)
 		KEY_MINUS, KEY_KP_SUBTRACT:
@@ -448,7 +492,7 @@ func _mouse_button(ev: InputEventMouseButton) -> void:
 		zoom_at(ev.position, 1.0 / 1.12)
 	elif ev.button_index in [MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
 		if ev.pressed and drag_active:
-			drag_active = false   # right click cancels a barrier in progress
+			drag_active = false   # right click cancels a drawing in progress
 			return
 		_panning = ev.pressed
 	elif ev.button_index == MOUSE_BUTTON_LEFT:
@@ -497,31 +541,46 @@ func _pointer(pos: Vector2, pressed: bool) -> void:
 	if pressed:
 		_pressing = true
 		_press_pos = pos
-		if tool == "barrier":
+		if is_drawing_tool():
 			drag_active = true
-			drag_from = _snap(screen_to_m(pos))
-			drag_to = drag_from
+			drag_points = PackedVector2Array([_snap(screen_to_m(pos))])
+			draw_points = drag_points.duplicate()
 			preview_ok = false
 			preview_error = ""
+			preview_cost = 0.0
 		return
 	if not _pressing:
 		return
 	_pressing = false
-	if tool == "barrier":
+	if is_drawing_tool():
 		if drag_active:
 			drag_active = false
 			_update_preview(true)
 			if preview_ok:
-				var r := _command({"type": "barrier_add", "a": [drag_from.x, drag_from.y], "b": [drag_to.x, drag_to.y]})
+				var r := _command(draw_command())
 				if r.get("ok", false):
-					selection = {"kind": "barrier", "id": int(r.id)}
-					tool = "select"
-			elif preview_error != "" and drag_from.distance_to(drag_to) > 0.5:
+					toast("%s placed ($%d)" % [tool_name(tool), int(r.get("cost", 0))])
+					if not ui._narrow():
+						selection = {"kind": "barrier", "id": int(r.id)}
+			elif preview_error != "" and _stroke_len(draw_points) > 0.5:
 				toast(preview_error, "error")
 		return
 	if _panning_touch_moved(pos):
 		return
 	_tap(screen_to_m(pos))
+
+
+static func tool_name(t: String) -> String:
+	match t:
+		"fence":
+			return "Fence"
+		"stewards":
+			return "Steward line"
+		"arrow":
+			return "Direction arrow"
+		"oneway":
+			return "One-way lane"
+	return ""
 
 
 var _moved := false
@@ -534,13 +593,22 @@ func _panning_touch_moved(_pos: Vector2) -> bool:
 
 
 func _pointer_move(pos: Vector2, rel: Vector2) -> void:
-	if tool == "barrier" and drag_active:
+	if is_drawing_tool() and drag_active:
 		var p := _snap(screen_to_m(pos))
-		var max_len := float(sc.player_resources.barrier_max_len)
-		if p.distance_to(drag_from) > max_len:
-			p = drag_from + (p - drag_from).normalized() * max_len
-		drag_to = p
-		_preview_t -= 1.0
+		var max_len := tool_max_len()
+		if tool == "stewards":
+			var a := drag_points[0]
+			if p.distance_to(a) > max_len:
+				p = a + (p - a).normalized() * max_len
+			drag_points = PackedVector2Array([a, p])
+		else:
+			var last := drag_points[drag_points.size() - 1]
+			var room := max_len - _stroke_len(drag_points)
+			if room > 0.05 and p.distance_to(last) >= 0.5:
+				if p.distance_to(last) > room:
+					p = last + (p - last).normalized() * room
+				drag_points.append(p)
+		draw_points = simplify(drag_points) if tool != "stewards" else drag_points
 		_update_preview(false)
 		return
 	if _moved:
@@ -557,18 +625,68 @@ func _snap(p: Vector2) -> Vector2:
 	return (p * 2.0).round() / 2.0
 
 
+static func _stroke_len(pts: PackedVector2Array) -> float:
+	var l := 0.0
+	for i in range(1, pts.size()):
+		l += pts[i - 1].distance_to(pts[i])
+	return l
+
+
+## A drawn stroke reduced to its corners (Ramer-Douglas-Peucker), at most MAX_POINTS points.
+static func simplify(pts: PackedVector2Array) -> PackedVector2Array:
+	if pts.size() <= 2:
+		return pts
+	var tol := 1.0
+	var out := _rdp(pts, tol)
+	while out.size() > MAX_POINTS:
+		tol *= 1.5
+		out = _rdp(pts, tol)
+	return out
+
+
+static func _rdp(pts: PackedVector2Array, tol: float) -> PackedVector2Array:
+	var keep := []
+	keep.resize(pts.size())
+	keep.fill(false)
+	keep[0] = true
+	keep[pts.size() - 1] = true
+	var stack := [[0, pts.size() - 1]]
+	while not stack.is_empty():
+		var span: Array = stack.pop_back()
+		var i0: int = span[0]
+		var i1: int = span[1]
+		var best := -1.0
+		var bi := -1
+		for i in range(i0 + 1, i1):
+			var d := pts[i].distance_to(Geometry2D.get_closest_point_to_segment(pts[i], pts[i0], pts[i1]))
+			if d > best:
+				best = d
+				bi = i
+		if bi >= 0 and best > tol:
+			keep[bi] = true
+			stack.append([i0, bi])
+			stack.append([bi, i1])
+	var out := PackedVector2Array()
+	for i in pts.size():
+		if keep[i]:
+			out.append(pts[i])
+	return out
+
+
 func _update_preview(force: bool) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if not force and now - _preview_t < 0.08:
 		return
 	_preview_t = now
-	if drag_from.distance_to(drag_to) < 1.0:
+	if _stroke_len(draw_points) < 1.0:
 		preview_ok = false
-		preview_error = "Drag to draw a barrier"
+		preview_error = "Drag to draw"
+		preview_cost = 0.0
 		return
-	var r := adapter.check_barrier(drag_from, drag_to)
+	var r := adapter.check_command(draw_command())
 	preview_ok = r.get("ok", false)
 	preview_error = str(r.get("error", ""))
+	preview_cost = float(r.get("cost", 0.0))
 
 
 ## Select whatever is under a world point (metres): gate, sign, barrier, person (debug) or area.
@@ -586,10 +704,13 @@ func _tap(p: Vector2) -> void:
 			best_d = d
 			best = {"kind": "sign", "id": s.id}
 	for b in telemetry.get("barriers", []):
-		var d := _seg_dist(p, Vector2(b.a.x, b.a.y), Vector2(b.b.x, b.b.y))
-		if d < minf(best_d, 1.8):
-			best_d = d
-			best = {"kind": "barrier", "id": int(b.id)}
+		var pts: Array = b.get("points", [b.a, b.b])
+		var reach := 3.0 if b.get("kind", "fence") == "arrow" else 1.8
+		for i in range(1, pts.size()):
+			var d := _seg_dist(p, Vector2(pts[i - 1].x, pts[i - 1].y), Vector2(pts[i].x, pts[i].y))
+			if d < minf(best_d, reach):
+				best_d = d
+				best = {"kind": "barrier", "id": int(b.id)}
 	if best.is_empty() and debug:
 		var who = adapter.inspect(p)
 		if who is Dictionary and not who.is_empty():

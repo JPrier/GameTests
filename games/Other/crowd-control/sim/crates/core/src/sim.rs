@@ -19,7 +19,7 @@ const PUSH_SQUEEZE: f32 = 0.85;
 const WANDER_ANGLE: f32 = 0.45;
 
 use crate::grid::{
-    build_field_to, clearance, reachable, wall_cost, Field, FieldTarget, NavGrid, WallOwner,
+    build_field_to, clearance, reachable, wall_cost, Field, FieldTarget, Flow, NavGrid, WallOwner,
 };
 use crate::math::{closest_on_segment, cos, exp, segments_intersect, sin, Rect, Vec2};
 use crate::metrics::{
@@ -31,7 +31,7 @@ use crate::scenario::{Scenario, SignModeDef, ValidationError};
 use serde::{Deserialize, Serialize};
 
 /// Bumped whenever simulation behaviour changes; part of every replay.
-pub const SIM_VERSION: u32 = 2;
+pub const SIM_VERSION: u32 = 3;
 /// Distance fields rebuilt per tick after a geometry change (amortises barrier placement).
 const FIELDS_PER_TICK: usize = 3;
 /// How far upstream of a metered line people behave as an orderly queue (m).
@@ -183,13 +183,79 @@ pub struct Sign {
     pub shown_waits: Vec<f32>,
 }
 
+/// What the player can put on the map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceKind {
+    /// Crowd-control fencing: a solid polyline people walk around.
+    Fence,
+    /// Stewards holding a line: stops people while holding, opens on command.
+    Stewards,
+    /// A marked lane with a direction people prefer to walk (or a one-way lane).
+    Arrow,
+}
+
+impl PlaceKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            PlaceKind::Fence => "fence",
+            PlaceKind::Stewards => "steward line",
+            PlaceKind::Arrow => "direction arrow",
+        }
+    }
+}
+
+/// Most points in one fence or arrow.
+pub const MAX_POINTS: usize = 24;
+/// Stewards cannot form (or re-form) a line through a crowd denser than this (p/m²).
+pub const STEWARDS_MAX_DENSITY: f32 = 2.0;
+/// People within this distance (m) of a holding steward line are in a managed crowd: stewards keep
+/// it orderly, as at a staffed gate.
+const STEWARDS_REACH: f32 = 30.0;
+/// Navigation cost multiplier of a cell under a holding steward line (the maximum): routes still
+/// lead through it, so people wait at the line unless walking round is less than ~40 m longer.
+const STEWARDS_HOLD_COST: f32 = 20.0;
+
+/// A fence, steward line or arrow the player placed. `a`/`b` are the first and last points.
 #[derive(Clone, Debug, Serialize)]
 pub struct Barrier {
     pub id: u32,
+    pub kind: PlaceKind,
+    pub points: Vec<Vec2>,
     pub a: Vec2,
     pub b: Vec2,
+    pub length: f32,
     pub placed_at: f32,
     pub cost: f32,
+    /// Steward lines: holding the crowd back (true) or stood aside (false).
+    pub hold: bool,
+    /// Arrows: a one-way lane rather than guidance only.
+    pub one_way: bool,
+}
+
+impl Barrier {
+    pub fn segments(&self) -> Vec<(Vec2, Vec2)> {
+        self.points.windows(2).map(|w| (w[0], w[1])).collect()
+    }
+}
+
+fn polyline_len(pts: &[Vec2]) -> f32 {
+    pts.windows(2).map(|w| (w[1] - w[0]).len()).sum()
+}
+
+/// Shortest distance between two segments.
+fn segment_distance(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> f32 {
+    if segments_intersect(a, b, c, d) {
+        return 0.0;
+    }
+    [
+        (closest_on_segment(a, c, d) - a).len(),
+        (closest_on_segment(b, c, d) - b).len(),
+        (closest_on_segment(c, a, b) - c).len(),
+        (closest_on_segment(d, a, b) - d).len(),
+    ]
+    .into_iter()
+    .fold(f32::INFINITY, f32::min)
 }
 
 pub struct Incident {
@@ -259,10 +325,29 @@ pub enum Command {
         #[serde(default)]
         level: Option<f32>,
     },
+    /// A straight fence (kept for old replays and scripts; same as a two-point `fence_add`).
     BarrierAdd {
         a: [f32; 2],
         b: [f32; 2],
     },
+    FenceAdd {
+        points: Vec<[f32; 2]>,
+    },
+    StewardsAdd {
+        a: [f32; 2],
+        b: [f32; 2],
+    },
+    /// Steward line holds the crowd (true) or stands aside (false).
+    StewardsHold {
+        id: u32,
+        hold: bool,
+    },
+    ArrowAdd {
+        points: Vec<[f32; 2]>,
+        #[serde(default)]
+        one_way: bool,
+    },
+    /// Remove any fence, steward line or arrow.
     BarrierRemove {
         id: u32,
     },
@@ -307,6 +392,8 @@ pub struct Sim {
     clear: Vec<f32>,
     clear_dirty: bool,
     cost: Vec<f32>,
+    /// Direction lanes marked by arrows, per nav cell.
+    flow: Vec<Flow>,
     cost_tick: u64,
     pub graph: Graph,
     pub agents: Agents,
@@ -707,6 +794,7 @@ impl Sim {
             clear: Vec::new(),
             clear_dirty: true,
             cost: Vec::new(),
+            flow: Vec::new(),
             cost_tick: 0,
             graph,
             agents: Agents::default(),
@@ -869,13 +957,53 @@ impl Sim {
                     + CROWD_COST * (rho - CROWD_FREE_DENSITY).max(0.0);
             }
         }
+        for b in &self.barriers {
+            if b.kind == PlaceKind::Stewards && b.hold {
+                for (a, c) in b.segments() {
+                    for j in self.grid.cells_near_segment(a, c) {
+                        self.cost[j] = STEWARDS_HOLD_COST;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Direction lanes from the arrows on the map (later arrows win where lanes overlap).
+    fn refresh_flow(&mut self) {
+        let n = self.grid.cols * self.grid.rows;
+        self.flow.clear();
+        if !self.barriers.iter().any(|b| b.kind == PlaceKind::Arrow) {
+            return;
+        }
+        self.flow.resize(n, Flow::default());
+        let half = self.sc.player_resources.arrow_width * 0.5;
+        for b in &self.barriers {
+            if b.kind != PlaceKind::Arrow {
+                continue;
+            }
+            for (a, c) in b.segments() {
+                let dir = (c - a).norm();
+                for j in self.grid.cells_in_band(a, c, half) {
+                    self.flow[j] = Flow {
+                        dir,
+                        strict: b.one_way,
+                    };
+                }
+            }
+        }
     }
 
     fn rebuild_field(&mut self, i: usize) {
         self.refresh_cost();
         let n = &self.graph.nodes[i];
-        self.fields[i] =
-            build_field_to(&self.grid, &self.grid.walkable, &n.target, Some(&self.cost));
+        let flow = (!self.flow.is_empty()).then_some(self.flow.as_slice());
+        self.fields[i] = build_field_to(
+            &self.grid,
+            &self.grid.walkable,
+            &n.target,
+            Some(&self.cost),
+            flow,
+        );
         self.fields_dirty[i] = false;
     }
 
@@ -994,29 +1122,39 @@ impl Sim {
                 self.log_event("gate", text, (area != u8::MAX).then_some(area as usize));
                 Ok(serde_json::json!({}))
             }
-            Command::BarrierAdd { a, b } => {
-                let (a, b) = (Vec2::new(a[0], a[1]), Vec2::new(b[0], b[1]));
-                self.check_barrier(a, b)?;
-                let cost = self.sc.player_resources.barrier_cost;
-                let id = self.next_barrier;
-                self.next_barrier += 1;
-                self.grid.add_wall(a, b, WallOwner::Barrier(id));
-                self.barriers.push(Barrier {
-                    id,
-                    a,
-                    b,
-                    placed_at: self.time,
-                    cost,
-                });
-                self.spent += cost;
+            Command::BarrierAdd { a, b } => self.place(PlaceKind::Fence, &[*a, *b], false),
+            Command::FenceAdd { points } => self.place(PlaceKind::Fence, points, false),
+            Command::StewardsAdd { a, b } => self.place(PlaceKind::Stewards, &[*a, *b], false),
+            Command::ArrowAdd { points, one_way } => self.place(PlaceKind::Arrow, points, *one_way),
+            Command::StewardsHold { id, hold } => {
+                let i = self
+                    .barriers
+                    .iter()
+                    .position(|x| x.id == *id && x.kind == PlaceKind::Stewards)
+                    .ok_or("unknown steward line")?;
+                if self.barriers[i].hold == *hold {
+                    return Ok(serde_json::json!({"unchanged": true}));
+                }
+                let segs = self.barriers[i].segments();
+                if *hold {
+                    self.check_stewards_room(&segs)?;
+                    self.grid.add_walls(&segs, WallOwner::Stewards(*id));
+                } else {
+                    self.grid.remove_walls(WallOwner::Stewards(*id));
+                }
+                self.barriers[i].hold = *hold;
                 self.mark_geometry_changed();
-                let area = self.area_at(a);
+                let area = self.area_at(self.barriers[i].a);
                 self.log_event(
                     "barrier",
-                    format!("Barrier placed ({:.0} m)", (b - a).len()),
+                    if *hold {
+                        "Stewards holding the line".into()
+                    } else {
+                        "Stewards stood aside: the line is open".into()
+                    },
                     area,
                 );
-                Ok(serde_json::json!({"id": id}))
+                Ok(serde_json::json!({}))
             }
             Command::BarrierRemove { id } => {
                 let i = self
@@ -1025,7 +1163,15 @@ impl Sim {
                     .position(|x| x.id == *id)
                     .ok_or("unknown barrier")?;
                 let bar = self.barriers.remove(i);
-                self.grid.remove_walls(WallOwner::Barrier(*id));
+                match bar.kind {
+                    PlaceKind::Fence => {
+                        self.grid.remove_walls(WallOwner::Barrier(*id));
+                    }
+                    PlaceKind::Stewards => {
+                        self.grid.remove_walls(WallOwner::Stewards(*id));
+                    }
+                    PlaceKind::Arrow => self.refresh_flow(),
+                }
                 let refund = if self.time - bar.placed_at <= self.sc.player_resources.undo_window {
                     bar.cost
                 } else {
@@ -1034,12 +1180,15 @@ impl Sim {
                 self.spent -= refund;
                 self.mark_geometry_changed();
                 let area = self.area_at(bar.a);
+                let what = bar.kind.label();
+                let mut what = what.to_string();
+                what[..1].make_ascii_uppercase();
                 self.log_event(
                     "barrier",
                     if refund > 0.0 {
-                        "Barrier undone (refunded)".into()
+                        format!("{what} undone (refunded)")
                     } else {
-                        "Barrier removed".into()
+                        format!("{what} removed")
                     },
                     area,
                 );
@@ -1091,61 +1240,216 @@ impl Sim {
         self.areas.iter().position(|a| a.rect.contains(p))
     }
 
-    /// Placement rules: inside one barrier zone, sensible length, clear of gates and nodes, within
-    /// budget, and it must not trap anyone (every person and door keeps a path to its destination).
+    fn place(
+        &mut self,
+        kind: PlaceKind,
+        points: &[[f32; 2]],
+        one_way: bool,
+    ) -> Result<serde_json::Value, String> {
+        let pts: Vec<Vec2> = points.iter().map(|p| Vec2::new(p[0], p[1])).collect();
+        let cost = self.check_place(kind, &pts)?;
+        let id = self.next_barrier;
+        self.next_barrier += 1;
+        let length = polyline_len(&pts);
+        let bar = Barrier {
+            id,
+            kind,
+            a: pts[0],
+            b: *pts.last().unwrap(),
+            points: pts,
+            length,
+            placed_at: self.time,
+            cost,
+            hold: kind == PlaceKind::Stewards,
+            one_way: kind == PlaceKind::Arrow && one_way,
+        };
+        let segs = bar.segments();
+        let area = self.area_at(bar.a);
+        self.barriers.push(bar);
+        match kind {
+            PlaceKind::Fence => self.grid.add_walls(&segs, WallOwner::Barrier(id)),
+            PlaceKind::Stewards => self.grid.add_walls(&segs, WallOwner::Stewards(id)),
+            PlaceKind::Arrow => self.refresh_flow(),
+        }
+        self.spent += cost;
+        self.mark_geometry_changed();
+        let text = match kind {
+            PlaceKind::Fence => format!("Fence placed ({:.0} m)", length),
+            PlaceKind::Stewards => format!("Stewards holding a {:.0} m line", length),
+            PlaceKind::Arrow if one_way => format!("One-way lane marked ({:.0} m)", length),
+            PlaceKind::Arrow => format!("Direction arrow placed ({:.0} m)", length),
+        };
+        self.log_event("barrier", text, area);
+        Ok(serde_json::json!({"id": id, "cost": cost}))
+    }
+
+    /// Legacy check for a straight fence.
     pub fn check_barrier(&self, a: Vec2, b: Vec2) -> Result<(), String> {
-        let res = &self.sc.player_resources;
-        let len = (b - a).len();
-        if len < 1.0 {
-            return Err("barrier too short".into());
+        self.check_place(PlaceKind::Fence, &[a, b]).map(|_| ())
+    }
+
+    /// Whether a command could be applied now, without applying it: `Ok(cost)` for placements.
+    pub fn check_command(&self, cmd: &Command) -> Result<f32, String> {
+        let pts =
+            |v: &[[f32; 2]]| -> Vec<Vec2> { v.iter().map(|p| Vec2::new(p[0], p[1])).collect() };
+        match cmd {
+            Command::BarrierAdd { a, b } => self.check_place(PlaceKind::Fence, &pts(&[*a, *b])),
+            Command::FenceAdd { points } => self.check_place(PlaceKind::Fence, &pts(points)),
+            Command::StewardsAdd { a, b } => self.check_place(PlaceKind::Stewards, &pts(&[*a, *b])),
+            Command::ArrowAdd { points, .. } => self.check_place(PlaceKind::Arrow, &pts(points)),
+            _ => Ok(0.0),
         }
-        if len > res.barrier_max_len + 1e-3 {
-            return Err(format!(
-                "barriers are at most {:.0} m long",
-                res.barrier_max_len
-            ));
+    }
+
+    /// Ground the player can build on: walkable from the scenario geometry, or within a metre of it
+    /// (so a fence can end against a wall and seal the gap).
+    fn buildable(&self, p: Vec2) -> bool {
+        let w = self.grid.cols as f32 * self.grid.cell;
+        let h = self.grid.rows as f32 * self.grid.cell;
+        if p.x < -1.0 || p.y < -1.0 || p.x > w + 1.0 || p.y > h + 1.0 {
+            return false;
         }
-        if self.barriers.len() as u32 >= res.max_barriers {
-            return Err(format!("at most {} barriers", res.max_barriers));
-        }
-        if res.barrier_cost > self.budget_left() + 1e-3 {
-            return Err("not enough budget".into());
-        }
-        let inside = self.sc.map.barrier_zones.iter().any(|z| {
-            let zr = r(z.rect);
-            zr.contains(a) && zr.contains(b)
-        });
-        if !inside {
-            return Err("barriers go in the marked zones".into());
-        }
-        for g in &self.gates {
-            if segments_intersect(a, b, g.a, g.b)
-                || (closest_on_segment(g.mid, a, b) - g.mid).len() < 1.5
-            {
-                return Err("too close to a gate".into());
-            }
-        }
-        for n in &self.graph.nodes {
-            if (closest_on_segment(n.pos, a, b) - n.pos).len() < n.radius.max(1.0) {
-                return Err("blocks a walkway point".into());
-            }
-        }
-        for s in &self.sources {
-            for d in &s.doors {
-                if segments_intersect(
-                    a,
-                    b,
-                    Vec2::new(d.spawn.x, d.spawn.y),
-                    Vec2::new(d.spawn.x + d.spawn.w, d.spawn.y + d.spawn.h),
-                ) || d.spawn.contains(a)
-                    || d.spawn.contains(b)
+        let p = Vec2::new(p.x.clamp(0.0, w - 1e-3), p.y.clamp(0.0, h - 1e-3));
+        let Some((cx, cy)) = self.grid.cell_of(p) else {
+            return false;
+        };
+        let r = (1.0 / self.grid.cell).ceil() as isize;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let (x, y) = (cx as isize + dx, cy as isize + dy);
+                if x >= 0
+                    && y >= 0
+                    && (x as usize) < self.grid.cols
+                    && (y as usize) < self.grid.rows
+                    && self
+                        .grid
+                        .is_base_walkable(self.grid.center(x as usize, y as usize))
                 {
-                    return Err("too close to a stadium exit".into());
+                    return true;
                 }
             }
         }
-        // connectivity check on the candidate geometry
-        let mask = self.grid.walkable_with(a, b);
+        false
+    }
+
+    /// Stewards need room to stand: the crowd along the line must not be too dense.
+    fn check_stewards_room(&self, segs: &[(Vec2, Vec2)]) -> Result<(), String> {
+        for &(a, b) in segs {
+            let n = ((b - a).len() / 1.0).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                let p = a + (b - a) * (k as f32 / n as f32);
+                let rho = self.density.density[self.density.index(p)];
+                if rho > STEWARDS_MAX_DENSITY {
+                    return Err("too crowded here for stewards to form a line".into());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Placement rules. Everything: on public ground, within the length and budget limits (and the
+    /// scenario's zones, if it has any). Fences and steward lines: clear of gates and stadium exits.
+    /// Fences: clear of walkway points and never trapping anyone (every person and exit keeps a
+    /// path to its destination). Steward lines: room for the stewards to stand. Returns the cost.
+    pub fn check_place(&self, kind: PlaceKind, pts: &[Vec2]) -> Result<f32, String> {
+        let res = &self.sc.player_resources;
+        if pts.len() < 2 || pts.len() > MAX_POINTS {
+            return Err(format!("use 2 to {MAX_POINTS} points"));
+        }
+        if kind == PlaceKind::Stewards && pts.len() != 2 {
+            return Err("a steward line is straight".into());
+        }
+        if pts.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+            return Err("bad point".into());
+        }
+        let len = polyline_len(pts);
+        let (min_len, max_len, per_m) = match kind {
+            PlaceKind::Fence => (1.0, res.fence_max_len, res.fence_cost_per_m),
+            PlaceKind::Stewards => (2.0, res.stewards_max_len, res.stewards_cost_per_m),
+            PlaceKind::Arrow => (4.0, res.arrow_max_len, res.arrow_cost_per_m),
+        };
+        let what = kind.label();
+        if len < min_len {
+            return Err(format!("{what} too short"));
+        }
+        if len > max_len + 1e-3 {
+            return Err(format!("a {what} is at most {max_len:.0} m long"));
+        }
+        if self.barriers.len() as u32 >= res.max_placed {
+            return Err(format!(
+                "at most {} fences, steward lines and arrows",
+                res.max_placed
+            ));
+        }
+        let cost = (len * per_m).round();
+        if cost > self.budget_left() + 1e-3 {
+            return Err("not enough budget".into());
+        }
+        if !self.sc.map.barrier_zones.is_empty() {
+            let inside = pts.iter().all(|p| {
+                self.sc
+                    .map
+                    .barrier_zones
+                    .iter()
+                    .any(|z| r(z.rect).contains(*p))
+            });
+            if !inside {
+                return Err("place it in the marked zones".into());
+            }
+        }
+        // every point and every metre along the line on (or right next to) public ground
+        for w in pts.windows(2) {
+            let n = ((w[1] - w[0]).len() / 1.0).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                if !self.buildable(w[0] + (w[1] - w[0]) * (k as f32 / n as f32)) {
+                    return Err("only on open ground".into());
+                }
+            }
+        }
+        if kind == PlaceKind::Arrow {
+            return Ok(cost);
+        }
+        let segs: Vec<(Vec2, Vec2)> = pts.windows(2).map(|w| (w[0], w[1])).collect();
+        for &(a, b) in &segs {
+            for g in &self.gates {
+                if segment_distance(a, b, g.a, g.b) < 1.0 {
+                    return Err("too close to a gate".into());
+                }
+            }
+            for s in &self.sources {
+                for d in &s.doors {
+                    let sp = d.spawn;
+                    let corners = [
+                        Vec2::new(sp.x, sp.y),
+                        Vec2::new(sp.x + sp.w, sp.y),
+                        Vec2::new(sp.x + sp.w, sp.y + sp.h),
+                        Vec2::new(sp.x, sp.y + sp.h),
+                    ];
+                    let hit = sp.contains(a)
+                        || sp.contains(b)
+                        || (0..4).any(|k| {
+                            segment_distance(a, b, corners[k], corners[(k + 1) % 4]) < 1.0
+                        });
+                    if hit {
+                        return Err("too close to a stadium exit".into());
+                    }
+                }
+            }
+        }
+        if kind == PlaceKind::Stewards {
+            self.check_stewards_room(&segs)?;
+            return Ok(cost);
+        }
+        for n in &self.graph.nodes {
+            for &(a, b) in &segs {
+                if (closest_on_segment(n.pos, a, b) - n.pos).len() < n.radius.max(1.0) {
+                    return Err("blocks a walkway point".into());
+                }
+            }
+        }
+        // connectivity check on the candidate geometry: fences only (closed gates and holding
+        // steward lines open again, so they do not count as cutting anyone off)
+        let mask = self.grid.fence_mask_with(&segs);
         let reach: Vec<Vec<bool>> = self
             .dest_nodes
             .iter()
@@ -1188,7 +1492,7 @@ impl Sim {
                 return Err("would trap people".into());
             }
         }
-        Ok(())
+        Ok(cost)
     }
 
     // ------------------------------------------------------------------ step
@@ -1773,6 +2077,12 @@ impl Sim {
     fn movement(&mut self) {
         let n = self.agents.len();
         let tuning = self.sc.tuning.clone();
+        let steward_segs: Vec<(Vec2, Vec2)> = self
+            .barriers
+            .iter()
+            .filter(|b| b.kind == PlaceKind::Stewards && b.hold)
+            .flat_map(|b| b.segments())
+            .collect();
         let dt = self.dt;
         let t_gap = tuning.time_gap;
         self.new_dir.clear();
@@ -2011,14 +2321,19 @@ impl Sim {
                 None
             };
             // A gate the operator meters is staffed (that is what the staff cost pays for):
-            // stewards keep its queue orderly. Frustration still costs satisfaction.
-            let staffed = held_gate.is_some_and(|g| g.controllable);
+            // stewards keep its queue orderly; so does a holding steward line nearby. Frustration
+            // still costs satisfaction.
+            let by_stewards = steward_segs
+                .iter()
+                .any(|&(a, b)| (closest_on_segment(p, a, b) - p).len() < STEWARDS_REACH);
+            let staffed = held_gate.is_some_and(|g| g.controllable) || by_stewards;
             let pushing = !staffed && ag.wait_now[i] > ag.patience[i];
             let in_queue = !pushing
-                && held_gate.is_some_and(|g| {
-                    let s = g.side(p);
-                    g.mode == GateMode::Metered && s < 0.0 && s > -QUEUE_REACH
-                });
+                && (by_stewards
+                    || held_gate.is_some_and(|g| {
+                        let s = g.side(p);
+                        g.mode == GateMode::Metered && s < 0.0 && s > -QUEUE_REACH
+                    }));
             // pushing people squeeze bodies together (what makes a crush)
             let squeeze = if pushing { PUSH_SQUEEZE } else { 1.0 };
             let free_along = |d: Vec2| -> f32 {

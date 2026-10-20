@@ -236,17 +236,40 @@ fn barrier_placement_rules() {
         sim.step();
     }
     let add = |sim: &mut Sim, a: [f32; 2], b: [f32; 2]| sim.apply(Command::BarrierAdd { a, b });
+    let fence = |sim: &mut Sim, points: Vec<[f32; 2]>| sim.apply(Command::FenceAdd { points });
     assert!(
         add(&mut sim, [5.0, 5.0], [10.0, 5.0]).is_err(),
-        "outside zones"
+        "off open ground"
     );
     assert!(
-        add(&mut sim, [130.0, 60.0], [170.0, 60.0]).is_err(),
-        "too long"
+        fence(
+            &mut sim,
+            vec![[125.0, 45.0], [235.0, 45.0], [235.0, 115.0], [125.0, 115.0]]
+        )
+        .is_err(),
+        "too long (290 m)"
     );
     assert!(
         add(&mut sim, [290.0, 200.0], [290.1, 200.0]).is_err(),
         "too short"
+    );
+    assert!(
+        add(&mut sim, [245.5, 45.0], [245.5, 55.0]).is_err(),
+        "on top of a gate"
+    );
+    // anywhere on open ground, any shape: a bent fence in the south walkway (no zone there)
+    let spent = sim.spent;
+    let bent = fence(
+        &mut sim,
+        vec![[255.0, 196.0], [262.0, 200.0], [262.0, 206.0]],
+    );
+    assert!(bent.is_ok(), "{bent:?}");
+    assert!(sim.spent > spent, "fences cost money");
+    let id = bent.unwrap()["id"].as_u64().unwrap() as u32;
+    sim.apply(Command::BarrierRemove { id }).unwrap();
+    assert!(
+        (sim.spent - spent).abs() < 1e-3,
+        "undone straight away: refunded"
     );
     // a barrier across the whole north walkway would cut the north route but not trap anyone
     // (they can still go south), so it is allowed, and the route graph sees the cut

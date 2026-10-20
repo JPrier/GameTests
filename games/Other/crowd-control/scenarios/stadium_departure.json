@@ -41,12 +41,7 @@
       {"id": "south_corridor", "name": "South Walkway", "rect": [240, 192, 45, 36], "kind": "corridor"},
       {"id": "parking", "name": "Car Park", "rect": [321, 192, 66, 66], "kind": "parking"}
     ],
-    "barrier_zones": [
-      {"id": "plaza_north", "rect": [120, 42, 120, 78]},
-      {"id": "plaza_south", "rect": [120, 150, 120, 78]},
-      {"id": "north_walkway", "rect": [270, 39, 21, 21]},
-      {"id": "junction", "rect": [285, 192, 36, 54]}
-    ],
+    "barrier_zones": [],
     "decor": {
       "stadium": [6, 18, 90, 234],
       "buildings": [
@@ -133,7 +128,7 @@
   "event_schedule": [
     {"id": "train_delay", "name": "Train delay", "kind": "service_reduction", "target": "trains", "factor": 0.05, "start": [300, 420], "duration": [200, 240], "probability": 1}
   ],
-  "player_resources": {"budget": 1500, "barrier_cost": 150, "barrier_max_len": 30, "max_barriers": 6, "undo_window": 10},
+  "player_resources": {"budget": 3000, "fence_cost_per_m": 4, "fence_max_len": 240, "stewards_cost_per_m": 8, "stewards_max_len": 60, "arrow_cost_per_m": 1, "arrow_max_len": 200, "arrow_width": 8, "max_placed": 24, "undo_window": 10},
   "objectives": {"time_limit": 2700, "clear_fraction": 0.95, "target_journey": 330, "target_max_wait": 420},
   "failure_conditions": {"max_danger_seconds": 75},
   "scoring_rules": {"base": 1000, "per_journey_second": 2, "per_wait_second": 1, "per_heavy_second": 0.25, "per_danger_second": 15, "per_cost": 0.2, "per_stranded": 0.3, "per_satisfaction": 2, "stars": [680, 800, 880]},

@@ -49,6 +49,7 @@
     inspect(x, y) { this.e.cc_inspect(x, y); return this._text(); },
     report() { this.e.cc_report(); return this._text(); },
     replay() { this.e.cc_replay(); return this._text(); },
+    checkCommand(json) { this._put(0, json); this.e.cc_check_command(); return this._text(); },
     checkBarrier(ax, ay, bx, by) { this.e.cc_check_barrier(ax, ay, bx, by); return this._text(); },
     tick() { return this.e.cc_tick(); },
     isOver() { return this.e.cc_is_over() === 1; },

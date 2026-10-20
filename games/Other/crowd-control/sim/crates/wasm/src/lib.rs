@@ -150,6 +150,13 @@ pub extern "C" fn cc_replay() {
     with_session(|s| s.replay().into_bytes());
 }
 
+/// Command JSON in input 0.
+#[no_mangle]
+pub extern "C" fn cc_check_command() {
+    let c = input(0);
+    with_session(|s| s.check_command(&c).into_bytes());
+}
+
 #[no_mangle]
 pub extern "C" fn cc_check_barrier(ax: f32, ay: f32, bx: f32, by: f32) {
     with_session(|s| s.check_barrier(ax, ay, bx, by).into_bytes());

@@ -12,6 +12,8 @@ pub struct PolicyState {
     step: u32,
     done: Vec<&'static str>,
     release_at: f32,
+    /// Ids of things this policy placed (steward lines to release later).
+    ids: Vec<u32>,
 }
 
 impl PolicyState {
@@ -221,6 +223,33 @@ fn expert(sim: &mut Sim, st: &mut PolicyState) {
     }
 }
 
+/// Stewards instead of gate staff: wait-time signs; in the delay close the station entrances and
+/// cordon off the plaza corners in front of both gates with steward lines, so the crowd waits in
+/// the open plaza; release everything after.
+fn stewards(sim: &mut Sim, st: &mut PolicyState) {
+    wait_signs(sim, st);
+    if incident_active(sim) && st.once("hold") {
+        gate(sim, "station_n", GateMode::Closed, None);
+        gate(sim, "station_r", GateMode::Closed, None);
+        for (a, b) in [
+            ([226.0, 42.5], [239.5, 72.0]),
+            ([226.0, 227.5], [239.5, 178.0]),
+        ] {
+            if let Ok(v) = sim.apply(Command::StewardsAdd { a, b }) {
+                st.ids.push(v["id"].as_u64().unwrap_or(0) as u32);
+            }
+        }
+    }
+    if incident_over(sim) && st.done.contains(&"hold") && st.once("release") {
+        for g in ["station_n", "station_r"] {
+            gate(sim, g, GateMode::Open, None);
+        }
+        for id in st.ids.clone() {
+            let _ = sim.apply(Command::StewardsHold { id, hold: false });
+        }
+    }
+}
+
 /// Close only the station entrances during the delay (nothing in the plaza).
 fn station_only(sim: &mut Sim, st: &mut PolicyState) {
     if incident_active(sim) && st.once("close") {
@@ -417,6 +446,11 @@ pub fn policies() -> Vec<(&'static str, &'static str, Policy)> {
             "station_only",
             "Close the station entrances in the delay",
             station_only,
+        ),
+        (
+            "stewards",
+            "Close station, stewards hold walkways in delay",
+            stewards,
         ),
         ("adaptive", "Wait signs + meter by hall crowding", adaptive),
         (

@@ -112,6 +112,20 @@ impl Session {
     pub fn replay(&self) -> String {
         serde_json::to_string(&replay::Replay::record(&self.sim, &self.opts)).unwrap_or_default()
     }
+    /// Dry run of a command (placement preview): {"ok", "cost"} or {"ok": false, "error"}.
+    pub fn check_command(&self, json_text: &str) -> String {
+        let cmd: Command = match serde_json::from_str(json_text) {
+            Ok(c) => c,
+            Err(e) => {
+                return json!({"ok": false, "error": format!("bad command: {e}")}).to_string()
+            }
+        };
+        match self.sim.check_command(&cmd) {
+            Ok(cost) => json!({"ok": true, "cost": cost}).to_string(),
+            Err(e) => json!({"ok": false, "error": e}).to_string(),
+        }
+    }
+
     pub fn check_barrier(&self, ax: f32, ay: f32, bx: f32, by: f32) -> String {
         match self
             .sim

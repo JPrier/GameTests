@@ -140,6 +140,12 @@ func replay_text() -> String:
 	return ""
 
 
+## Dry run of a command (placement preview): {ok, cost} or {ok: false, error}.
+func check_command(cmd: Dictionary) -> Dictionary:
+	var text := JSON.stringify(cmd)
+	return _text_call("check_command", [text], "checkCommand(%s)" % _q(text))
+
+
 func check_barrier(a: Vector2, b: Vector2) -> Dictionary:
 	return _text_call("check_barrier", [a.x, a.y, b.x, b.y], "checkBarrier(%f, %f, %f, %f)" % [a.x, a.y, b.x, b.y])
 
