@@ -37,7 +37,7 @@ func test_title_screen_then_scenario_loads():
 	assert_eq(g.phase, g.Phase.TITLE, "title first")
 	g.start_scenario(true)
 	assert_eq(g.phase, g.Phase.BRIEFING, "briefing before play")
-	assert_eq(int(g.telemetry.population.total), 1000)
+	assert_eq(int(g.telemetry.population.total), int(g.sc.spawn_schedules[0].population), "everyone from the scenario")
 	g.begin_play()
 	assert_eq(g.phase, g.Phase.PLAYING)
 
@@ -47,7 +47,7 @@ func test_people_leave_the_stadium_and_render():
 	_run(g, 30.0)
 	var pop: Dictionary = g.telemetry.population
 	assert_gt(int(pop.active), 50, "people are walking outside")
-	assert_lt(int(pop.inside), 1000, "the stadium is emptying")
+	assert_lt(int(pop.inside), int(pop.total), "the stadium is emptying")
 	# people in camera-delayed station halls are drawn from the last snapshot, so compare with
 	# perfect information on: then there is exactly one instance per person on site
 	g.set_perfect_info(true)
@@ -58,14 +58,14 @@ func test_people_leave_the_stadium_and_render():
 
 func test_closing_a_gate_stops_its_flow_and_reopening_restores_it():
 	var g = await _game()
-	_run(g, 40.0)
+	_run(g, 90.0)
 	g.set_gate("gate_a", "closed")
 	assert_eq(_gate(g, "gate_a").mode, "closed")
-	_run(g, 70.0)
+	_run(g, 90.0)
 	assert_eq(int(_gate(g, "gate_a").flow_pm), 0, "nobody passes a closed gate")
 	assert_gt(int(_gate(g, "gate_b").flow_pm), 30, "people reroute through the South Gate")
 	g.set_gate("gate_a", "open")
-	_run(g, 60.0)
+	_run(g, 120.0)
 	assert_gt(int(_gate(g, "gate_a").flow_pm), 0, "flow resumes when reopened")
 
 
@@ -82,9 +82,9 @@ func test_barrier_is_validated_and_changes_geometry():
 	var g = await _game()
 	var bad = g.adapter.check_barrier(Vector2(10, 10), Vector2(15, 10))
 	assert_false(bad.ok, "barriers outside the zones are rejected")
-	var ok = g.adapter.check_barrier(Vector2(50, 30), Vector2(58, 30))
+	var ok = g.adapter.check_barrier(Vector2(150, 90), Vector2(174, 90))
 	assert_true(ok.ok, "a barrier in the plaza zone is allowed: %s" % str(ok))
-	var r = g.adapter.command({"type": "barrier_add", "a": [50, 30], "b": [58, 30]})
+	var r = g.adapter.command({"type": "barrier_add", "a": [150, 90], "b": [174, 90]})
 	assert_true(r.ok)
 	g.step_ticks(1)
 	assert_eq(g.telemetry.barriers.size(), 1)
@@ -186,35 +186,36 @@ func _play(g, interventions: bool) -> Dictionary:
 	g.start_scenario(false)
 	g.paused = true
 	g.tutorial_step = -1
-	var placed := false
-	var signs := false
-	var metered := false
+	var started := false
+	var held := false
+	var released := false
 	var guard := 0
-	while g.phase == g.Phase.PLAYING and guard < 2000:
+	while g.phase == g.Phase.PLAYING and guard < 5000:
+		if interventions and not started:
+			g.set_sign("sign_n", "waits")
+			g.set_sign("sign_s", "waits")
+			started = true
 		g.step_ticks(20)
 		guard += 1
 		if not interventions:
 			continue
-		var t: float = g.telemetry.get("time", 0.0)
-		if not signs:
-			g.set_sign("sign_n", "waits")
-			g.set_sign("sign_s", "waits")
-			signs = true
-		if not placed and t > 20.0:
-			var r = g.adapter.command({"type": "barrier_add", "a": [117, 64.5], "b": [117, 70]})
-			assert_true(r.ok, "barrier placed: %s" % str(r))
-			placed = true
 		var delayed: bool = not g.telemetry.get("incidents", []).is_empty()
-		if delayed and not metered:
-			g.set_gate("gate_a", "metered", 0.25)
-			metered = true
-		elif metered and not delayed:
-			g.set_gate("gate_a", "open")
-			metered = false
+		if delayed and not held:
+			# trains stopped: close the station entrances so the halls do not overfill, and hold
+			# the plaza gates at half rate so the walkways do not either
+			g.set_gate("station_n", "closed")
+			g.set_gate("station_r", "closed")
+			g.set_gate("gate_a", "metered", 0.5)
+			g.set_gate("gate_b", "metered", 0.5)
+			held = true
+		elif held and not delayed and not released:
+			for id in ["station_n", "station_r", "gate_a", "gate_b"]:
+				g.set_gate(id, "open")
+			released = true
 	return g.report
 
 
-## End-to-end: the same scenario played with gate, barrier and sign interventions through an
+## End-to-end: the same scenario played with gate and sign interventions through an
 ## incident, compared with doing nothing. The interventions must change the outcome for the better.
 func test_playthrough_interventions_beat_doing_nothing():
 	var g = await _game(false)
@@ -223,6 +224,8 @@ func test_playthrough_interventions_beat_doing_nothing():
 	var cost := float(played.cost)
 	assert_gt(cost, 0.0, "interventions were paid for")
 	assert_lt(float(played.danger_seconds), float(idle.danger_seconds), "less dangerous crowding")
-	assert_gt(int(played.score), int(idle.score), "better score (%d vs %d)" % [int(played.score), int(idle.score)])
+	assert_gt(int(played.score), int(idle.score) + 150, "much better score (%d vs %d)" % [int(played.score), int(idle.score)])
+	assert_ne(str(idle.outcome), "won", "doing nothing does not pass (%d points)" % int(idle.score))
+	assert_eq(str(played.outcome), "won", "holding the crowd passes (%d points)" % int(played.score))
 	assert_true(g.log_entries.any(func(e): return e.kind == "incident"), "the train delay happened")
 	assert_eq(g.phase, g.Phase.ENDED, "results screen reached")

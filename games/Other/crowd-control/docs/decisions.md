@@ -125,3 +125,74 @@ randomised worlds (conservation, containment, service-rate bounds, no unserved c
 gates); replay round trips; Godot tests that drive the real simulation through the UI functions;
 screenshot checkpoints with tolerant comparison; benchmarks against a baseline; scripted strategy
 experiments that flag dominant strategies.
+
+## ADR 10: Playtest fixes: committed routes, crowd-aware fields, crushes from pushing
+
+A first human playtest found that doing nothing still "won", that dangerous crowding appeared in
+walkways that looked fine, and that people moved implausibly. Frame-by-frame traces
+(`crowd trace --frames`) showed why, and each cause got a model change:
+
+| Seen in play | Cause | Change |
+|---|---|---|
+| Danger flagged in half-empty walkways | People re-deciding every 4 s turned round mid-walkway to switch routes and met the opposite stream head on | Route changes only while crossing an open plaza (`Edge::open_choice`), at most two per person and costlier each time, never inside a crowd packed above 1.8 p/m²; otherwise only when the way ahead is cut |
+| Single-file "ant trails" hugging walls and inside corners | Every person followed the same shortest path to a single target point | Fields lead to portal lines (walkway ends, gate lines) instead of points, step cost rises within 1.2 m of walls, each person has a lane preference and a slow wobble, and walks to a personal spot on the platform or in the car park |
+| Held crowds piled into the corner of a walkway mouth while most of the mouth stood empty | Static fields ignore crowds | Dynamic navigation field: walking through dense crowd costs extra (1.2 per p/m² above 0.8), and one node's field is rebuilt every 8 ticks so each follows the crowd within about 4.5 s |
+| Queues as one long line | Blocked people stood still | Gap seeking: blocked people side-step up to 50° into free space that still takes them forward |
+| No real crushes; held queues stayed orderly forever | Queue spacing held regardless of frustration | Frustration grows up to 2.5x faster when packed; past their patience people drop their queue spacing and follow closer (`PUSH_TIME_GAP`), which is what compresses a confined crowd to dangerous densities |
+| Gate holds formed 6 m inside the walkways | Gate lines sat inside the walkways | Plaza gate lines moved to the walkway mouths, so held crowds queue in the open plaza |
+| A person stuck forever on a fare gate line | A step ending exactly on a line counted as neither side | Line crossings use signed sides with "on the line" counting as downstream |
+| Doing nothing scored 1 star and showed "Operation complete" | Scoring only failed on danger or time | A run needs one star to pass ("Not good enough" otherwise); larger crowd (1,200) leaving faster, a near-total train delay, and dangerous crowding costs 15 points a second |
+
+**Cost.** The rolling field refresh adds about 2.2 ms every 8th tick (p95 step time 0.25 → 2.6 ms
+at 500 people); well inside the 50 ms tick budget, so the benchmark baseline was re-recorded.
+
+**Result at 1,200 people (superseded by ADR 11).** Doing nothing: 424 points, 27 s of
+dangerous crowding at the Station Ramp and North Hall, fails. Holding both gates when the delay
+is announced: 693. Wait signs plus metering the North Gate in the delay: 862 (2 stars). Holding
+both gates from the start because the delay was forecast: 847 (2 stars, no dangerous crowding).
+Over other seeds outcomes vary a lot (crowd dynamics are chaotic near the tipping point); see
+`docs/benchmarks/experiments.txt`.
+
+## ADR 11: Ten times the crowd (12,000 people)
+
+**Decision.** Stadium Departure now has 12,000 fans. The layout keeps its topology but is scaled
+×3 (plaza 138 × 186 m; walkways 21 and 36 m wide), with the walkways shortened so the station sits
+57 m closer to the plaza; the navigation grid is 1 m. The stadium empties over about 15 minutes
+(three exits at 4.4 people/s), the station's fare lines are sized to that flow, and a 3.5-4 minute
+train delay arrives while the crowd is still coming. The station has two new controllable gates,
+the **North Entrance** and the **Ramp Gate**.
+
+**Why not just scale everything.** A uniform ×3 scale multiplies areas by 9 but bottleneck widths by
+only 3 while the crowd grows 10×, so every opening became the limit, the train delay barely
+mattered and no intervention changed the outcome. Real venues of this size empty over 15-30
+minutes; with that pace the station-to-crowd ratios match the original game, and the long
+walkways (100 m) no longer swallow the backlog where the player cannot reach it.
+
+**Why station entrance gates.** At this size several hundred people are always between the plaza
+gates and the station. Holding the plaza alone cannot protect the halls during a long delay; real
+stations close their entrances when overcrowded ("station control"). The two decisions now
+interact: closing only the station fills the walkways, holding only the plaza overfills the halls.
+
+**Problems found and fixed while scaling (all affected the small map too):**
+
+| Seen | Cause | Fix |
+|---|---|---|
+| Group members milled around gates | A member who crossed first was sent back to the leader's next waypoint | Members past it continue on the leader's route and wait for the leader |
+| People past a busy fare line never "arrived" | Arrival used the crowd-weighted field distance | Arrival is geometric: across the gate line, or at the portal/disc |
+| Queues piled into one end of the fare line | Service ignored where people stood | Lanes are physical: a person can only use a lane in front of them |
+| Danger flagged at gate exits at 3 p/m² | Turbulence indicator from 3 p/m² fires where served people stride past waiting ones | Indicator needs ≥ 4 p/m² (Helbing's onset is denser still) |
+| "Platform crush" with 14 people | Density cells cut by wall stubs had a sliver of floor | Cells count at least half their area |
+| People crossing a whole platform to random spots | Spots anywhere in a 170 m platform | Spots within 30 m of where they walk in |
+| One person stuck for 22 minutes on a fare line | Pushed back across a line they had already passed | Someone already through a gate may cross it again |
+| Crowds crushed against the plaza wall corner beside the walkway mouths | 90° inside corner | 6 m stepped flares at both mouths (gate lines 6 m inside) |
+| Gate-switchers and group members pushed through queues | Route changes inside queues and crowds | Changes only while walking in the open plaza, more than 25 m from the current target, at most once, and only if the whole group can turn |
+| Held crowds crushed when released | Frustration from the hold carried into the station | Getting through a gate relieves most frustration; staffed (player-metered) holds keep order |
+| Doorway flow fell to 1.04 p/m/s | The personal wobble applied in dense crowds | Wobble only while walking freely; group followers do not wobble on their own |
+| Unmanaged crowds never crushed | Pushers could not compress below body contact | Pushing people accept 15% body overlap and follow at a quarter of the time gap |
+
+**Scoring at this scale.** Target journey 330 s and longest wait 420 s (walks are three times
+longer); heavy congestion weighs 0.25 points a second because some of it is unavoidable with
+12,000 people.
+
+**Cost.** About 5,000 people on site at the peak; ~2-3 ms per step natively. A full evening takes
+about a minute of CPU, so CI runs a focused set of strategies.

@@ -6,8 +6,6 @@
 //! heading there (a reverse shortest-path tree), so there is no per-agent path search.
 
 use crate::math::{closest_on_segment, Rect, Vec2};
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 
 pub const INF: f32 = f32::INFINITY;
 
@@ -153,6 +151,35 @@ impl NavGrid {
     #[inline]
     pub fn center(&self, cx: usize, cy: usize) -> Vec2 {
         Vec2::new((cx as f32 + 0.5) * self.cell, (cy as f32 + 0.5) * self.cell)
+    }
+
+    /// Cells within one cell of a one-way line (only steps between two such cells can cross one).
+    pub fn one_way_cells(&self) -> Vec<bool> {
+        let mut m = vec![false; self.cols * self.rows];
+        for l in &self.one_way {
+            for i in self.cells_near_segment(l.a, l.b) {
+                let (x, y) = ((i % self.cols) as isize, (i / self.cols) as isize);
+                for dy in -2..=2isize {
+                    for dx in -2..=2isize {
+                        let (nx, ny) = (x + dx, y + dy);
+                        if nx >= 0
+                            && ny >= 0
+                            && (nx as usize) < self.cols
+                            && (ny as usize) < self.rows
+                        {
+                            m[ny as usize * self.cols + nx as usize] = true;
+                        }
+                    }
+                }
+            }
+        }
+        m
+    }
+
+    /// Whether the straight segment a-b stays on currently walkable cells (sampled every 0.2 m).
+    pub fn line_clear(&self, a: Vec2, b: Vec2) -> bool {
+        let n = ((b - a).len() / 0.2).ceil().max(1.0) as usize;
+        (0..=n).all(|k| self.is_walkable(a + (b - a) * (k as f32 / n as f32)))
     }
 
     pub fn is_walkable(&self, p: Vec2) -> bool {
@@ -390,11 +417,37 @@ impl NavGrid {
     }
 }
 
-/// Geodesic distance (m) from every cell to a target disc, plus a smoothed descent direction.
+/// Where a distance field leads: a disc (a == b) or a portal segment (a line across a walkway, a
+/// gate line). With `side` set, only cells on that side of the segment count as arrived, so people
+/// walk *through* a gate line instead of stopping on it.
+#[derive(Clone, Copy, Debug)]
+pub struct FieldTarget {
+    pub a: Vec2,
+    pub b: Vec2,
+    pub radius: f32,
+    pub side: Option<Vec2>,
+}
+
+impl FieldTarget {
+    pub fn disc(p: Vec2, radius: f32) -> FieldTarget {
+        FieldTarget {
+            a: p,
+            b: p,
+            radius,
+            side: None,
+        }
+    }
+    #[inline]
+    pub fn closest(&self, p: Vec2) -> Vec2 {
+        closest_on_segment(p, self.a, self.b)
+    }
+}
+
+/// Geodesic distance (m) from every cell to a target, plus a smoothed descent direction.
 pub struct Field {
     pub dist: Vec<f32>,
     pub dir: Vec<Vec2>,
-    pub target: Vec2,
+    pub target: FieldTarget,
 }
 
 impl Field {
@@ -402,36 +455,135 @@ impl Field {
         Field {
             dist: vec![INF; n],
             dir: vec![Vec2::ZERO; n],
-            target,
+            target: FieldTarget::disc(target, 0.0),
         }
     }
 }
 
-/// 8-connected Dijkstra (no corner cutting) from all walkable cells inside `radius` of `target`.
-/// Ties resolve by cell index, so the result is deterministic.
-pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> Field {
-    let n = grid.cols * grid.rows;
-    let mut f = Field::empty(n, target);
-    let mut heap: BinaryHeap<Reverse<(u32, u32)>> = BinaryHeap::new();
-    let c = grid.cell;
-    let r = radius.max(c * 0.75);
-    let (tx, ty) = (target.x / c, target.y / c);
-    let span = (r / c).ceil() as isize + 1;
-    for dy in -span..=span {
-        for dx in -span..=span {
-            let cx = tx as isize + dx;
-            let cy = ty as isize + dy;
-            if cx < 0 || cy < 0 || cx >= grid.cols as isize || cy >= grid.rows as isize {
-                continue;
+/// People keep about this far from walls when they have the room (m); cells closer to a wall cost
+/// more to walk through, so paths run down walkways instead of hugging walls and inside corners.
+pub const WALL_COMFORT: f32 = 1.2;
+pub const WALL_COST: f32 = 1.5;
+
+/// Approximate distance (m) from each cell centre to the nearest blocked cell (two-pass chamfer).
+pub fn clearance(grid: &NavGrid, mask: &[bool]) -> Vec<f32> {
+    let (cols, rows, c) = (grid.cols, grid.rows, grid.cell);
+    let big = 1e6f32;
+    let mut d: Vec<f32> = mask.iter().map(|m| if *m { big } else { 0.0 }).collect();
+    let diag = c * std::f32::consts::SQRT_2;
+    for y in 0..rows {
+        for x in 0..cols {
+            let i = y * cols + x;
+            let mut v = d[i];
+            if x == 0 || y == 0 || x + 1 == cols {
+                v = v.min(c * 0.5);
             }
-            let i = grid.idx(cx as usize, cy as usize);
+            if x > 0 {
+                v = v.min(d[i - 1] + c);
+            }
+            if y > 0 {
+                v = v.min(d[i - cols] + c);
+                if x > 0 {
+                    v = v.min(d[i - cols - 1] + diag);
+                }
+                if x + 1 < cols {
+                    v = v.min(d[i - cols + 1] + diag);
+                }
+            }
+            d[i] = v;
+        }
+    }
+    for y in (0..rows).rev() {
+        for x in (0..cols).rev() {
+            let i = y * cols + x;
+            let mut v = d[i];
+            if y + 1 == rows {
+                v = v.min(c * 0.5);
+            }
+            if x + 1 < cols {
+                v = v.min(d[i + 1] + c);
+            }
+            if y + 1 < rows {
+                v = v.min(d[i + cols] + c);
+                if x + 1 < cols {
+                    v = v.min(d[i + cols + 1] + diag);
+                }
+                if x > 0 {
+                    v = v.min(d[i + cols - 1] + diag);
+                }
+            }
+            d[i] = v;
+        }
+    }
+    // distance from a blocked cell's centre to the free cell's centre, minus half a cell
+    for v in d.iter_mut() {
+        *v = (*v - c * 0.5).max(0.0);
+    }
+    d
+}
+
+/// Disc-target field (kept for tests and simple uses).
+pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> Field {
+    build_field_to(grid, mask, &FieldTarget::disc(target, radius), None)
+}
+
+/// Extra cost of stepping into a cell this close to a wall (fraction of a free step).
+#[inline]
+pub fn wall_cost(clearance: f32) -> f32 {
+    WALL_COST * ((WALL_COMFORT - clearance) / WALL_COMFORT).max(0.0)
+}
+
+/// 8-connected Dijkstra (no corner cutting) from every walkable cell within `radius` of the target
+/// (on its `side`, if set). `cost` multiplies the length of a step into each cell (>= 1: near walls,
+/// through dense crowd). Ties resolve by cell index, so the result is deterministic.
+pub fn build_field_to(
+    grid: &NavGrid,
+    mask: &[bool],
+    target: &FieldTarget,
+    cost: Option<&[f32]>,
+) -> Field {
+    let n = grid.cols * grid.rows;
+    let mut f = Field::empty(n, target.a);
+    f.target = *target;
+    // Dial's bucket queue: every step costs at least one cell * 1.0, so with buckets narrower than
+    // that no cell can improve another in the same bucket and the result equals exact Dijkstra.
+    let c = grid.cell;
+    let width = c * 0.5;
+    const RING: usize = 128;
+    let mut ring: Vec<Vec<u32>> = vec![Vec::new(); RING];
+    let mut pending = 0usize;
+    let mut done = vec![false; n];
+    let r = target.radius.max(c * 0.75);
+    let lo = Vec2::new(
+        target.a.x.min(target.b.x) - r,
+        target.a.y.min(target.b.y) - r,
+    );
+    let hi = Vec2::new(
+        target.a.x.max(target.b.x) + r,
+        target.a.y.max(target.b.y) + r,
+    );
+    let x0 = ((lo.x / c).floor().max(0.0)) as usize;
+    let y0 = ((lo.y / c).floor().max(0.0)) as usize;
+    let x1 = ((hi.x / c).ceil() as usize).min(grid.cols - 1);
+    let y1 = ((hi.y / c).ceil() as usize).min(grid.rows - 1);
+    for cy in y0..=y1 {
+        for cx in x0..=x1 {
+            let i = grid.idx(cx, cy);
             if !mask[i] {
                 continue;
             }
-            let d = (grid.center(cx as usize, cy as usize) - target).len();
+            let p = grid.center(cx, cy);
+            let q = target.closest(p);
+            if let Some(nrm) = target.side {
+                if (p - q).dot(nrm) < 0.0 {
+                    continue;
+                }
+            }
+            let d = (p - q).len();
             if d <= r {
                 f.dist[i] = d;
-                heap.push(Reverse((d.to_bits(), i as u32)));
+                ring[(d / width) as usize % RING].push(i as u32);
+                pending += 1;
             }
         }
     }
@@ -447,46 +599,62 @@ pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> 
     ];
     let cols = grid.cols as isize;
     let rows = grid.rows as isize;
-    while let Some(Reverse((dbits, i))) = heap.pop() {
-        let d = f32::from_bits(dbits);
-        let i = i as usize;
-        if d > f.dist[i] {
-            continue;
-        }
-        let cx = (i % grid.cols) as isize;
-        let cy = (i / grid.cols) as isize;
-        for (dx, dy, w) in DIRS {
-            let nx = cx + dx;
-            let ny = cy + dy;
-            if nx < 0 || ny < 0 || nx >= cols || ny >= rows {
+    // one-way lines only matter for steps between cells next to them
+    let ow_near = grid.one_way_cells();
+    let mut bucket = 0usize;
+    let mut items: Vec<u32> = Vec::new();
+    while pending > 0 {
+        std::mem::swap(&mut items, &mut ring[bucket % RING]);
+        for &item in &items {
+            pending -= 1;
+            let i = item as usize;
+            if done[i] || (f.dist[i] / width) as usize != bucket {
                 continue;
             }
-            let j = (ny * cols + nx) as usize;
-            if !mask[j] {
-                continue;
-            }
-            if dx != 0 && dy != 0 {
-                // no corner cutting
-                let a = (cy * cols + nx) as usize;
-                let b = (ny * cols + cx) as usize;
-                if !mask[a] || !mask[b] {
+            done[i] = true;
+            let d = f.dist[i];
+            let cx = (i % grid.cols) as isize;
+            let cy = (i / grid.cols) as isize;
+            for (dx, dy, w) in DIRS {
+                let nx = cx + dx;
+                let ny = cy + dy;
+                if nx < 0 || ny < 0 || nx >= cols || ny >= rows {
                     continue;
                 }
-            }
-            // the agent would walk j -> i: never against a one-way line
-            if !grid.one_way.is_empty() {
-                let ci = grid.center(cx as usize, cy as usize);
-                let cj = grid.center(nx as usize, ny as usize);
-                if grid.one_way.iter().any(|l| l.blocks(cj, ci)) {
+                let j = (ny * cols + nx) as usize;
+                if !mask[j] || done[j] {
                     continue;
                 }
-            }
-            let nd = d + w * c;
-            if nd < f.dist[j] {
-                f.dist[j] = nd;
-                heap.push(Reverse((nd.to_bits(), j as u32)));
+                if dx != 0 && dy != 0 {
+                    // no corner cutting
+                    let a = (cy * cols + nx) as usize;
+                    let b = (ny * cols + cx) as usize;
+                    if !mask[a] || !mask[b] {
+                        continue;
+                    }
+                }
+                // the agent would walk j -> i: never against a one-way line
+                if ow_near[i] && ow_near[j] {
+                    let ci = grid.center(cx as usize, cy as usize);
+                    let cj = grid.center(nx as usize, ny as usize);
+                    if grid.one_way.iter().any(|l| l.blocks(cj, ci)) {
+                        continue;
+                    }
+                }
+                let mut step = w * c;
+                if let Some(k) = cost {
+                    step *= k[j].clamp(1.0, 20.0);
+                }
+                let nd = d + step;
+                if nd < f.dist[j] {
+                    f.dist[j] = nd;
+                    ring[(nd / width) as usize % RING].push(j as u32);
+                    pending += 1;
+                }
             }
         }
+        items.clear();
+        bucket += 1;
     }
     // Descent directions: weighted sum over finite neighbours of (d_here - d_there) along the offset.
     for cy in 0..rows {
@@ -512,7 +680,11 @@ pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> 
             }
             let dir = g.norm();
             f.dir[i] = if dir == Vec2::ZERO {
-                (target - grid.center(cx as usize, cy as usize)).norm()
+                let p = grid.center(cx as usize, cy as usize);
+                match target.side {
+                    Some(nrm) => nrm,
+                    None => (target.closest(p) - p).norm(),
+                }
             } else {
                 dir
             };
@@ -560,16 +732,17 @@ impl Field {
     /// Desired walking direction at `p`: the bilinearly blended descent direction of the four
     /// surrounding cells (straight at the target only in its immediate vicinity).
     pub fn direction(&self, grid: &NavGrid, p: Vec2) -> Vec2 {
-        let to_target = self.target - p;
-        let straight = to_target.len();
         let d = self.dist_at(grid, p);
         if !d.is_finite() {
             return Vec2::ZERO;
         }
         // Very close to the target the straight line is safe and avoids grid artefacts; farther
-        // away a straight line could cut through a wall corner, so follow the field.
-        if straight < 2.5 && d <= straight + 0.6 {
-            return to_target.norm();
+        // away a straight line could cut through a wall corner, so follow the field. For a portal
+        // the straight line goes to the nearest point of it (people keep their lane).
+        let q = self.target.closest(p);
+        let straight = (q - p).len();
+        if straight < 2.5 && d <= straight + 0.6 && straight > 1e-3 && grid.line_clear(p, q) {
+            return (q - p).norm();
         }
         let c = grid.cell;
         let fx = p.x / c - 0.5;

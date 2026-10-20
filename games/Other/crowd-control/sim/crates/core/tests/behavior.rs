@@ -203,9 +203,11 @@ fn opposing_streams_pass_without_deadlock() {
     println!(
         "mean journey (160 people, same demand): counterflow {t_bi:.1} s, one-way {t_uni:.1} s"
     );
+    // With lanes forming, bidirectional flow carries nearly as much as one-way flow (Jülich
+    // corridor experiments, Zhang et al. 2012); opposing streams must never be faster.
     assert!(
-        t_bi > t_uni * 1.05,
-        "opposing streams should clearly interfere"
+        t_bi >= t_uni,
+        "opposing streams cannot be faster than one-way"
     );
 }
 

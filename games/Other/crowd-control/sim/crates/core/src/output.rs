@@ -153,6 +153,9 @@ impl Sim {
                     "level": level_name(if delayed { r.level } else { a.level as u8 }),
                     "age": if delayed { self.time - r.at } else { 0.0 },
                     "delayed": delayed,
+                    // Staff on the ground radio dangerous crowding at once, even where the camera
+                    // feed is delayed.
+                    "alarm": a.level as u8 >= 3,
                     "in_pm": if delayed { r.in_pm } else { a.inflow.per_minute() },
                     "out_pm": if delayed { r.out_pm } else { a.outflow.per_minute() },
                 })

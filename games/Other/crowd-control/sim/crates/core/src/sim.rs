@@ -1,8 +1,27 @@
 //! The simulation: world state, the fixed-step update, and player commands.
 
 use crate::agents::{Agents, NewAgent, State, NONE16, NONE32};
-use crate::grid::{build_field, reachable, Field, NavGrid, WallOwner};
-use crate::math::{closest_on_segment, exp, segments_intersect, Rect, Vec2};
+/// Dynamic navigation field: every this many ticks one node's field is rebuilt with the current
+/// crowd, so each field follows the crowd within about (nodes x this) ticks.
+const FIELD_REFRESH_TICKS: u64 = 8;
+/// Walking through crowd denser than this costs extra, `CROWD_COST` per p/m² above it.
+const CROWD_FREE_DENSITY: f32 = 0.8;
+const CROWD_COST: f32 = 3.0;
+/// Within this distance (m) of their next waypoint people no longer change route.
+const COMMIT_DISTANCE: f32 = 25.0;
+/// Smoothed density (p/m²) above which people no longer change route (they cannot turn around).
+const PACKED_NO_SWITCH: f32 = 1.8;
+/// Impatient people follow closer (fraction of the normal time gap), keep no queue spacing and
+/// squeeze bodies (fraction of the contact distance they accept).
+const PUSH_TIME_GAP: f32 = 0.25;
+const PUSH_SQUEEZE: f32 = 0.85;
+/// Largest personal wobble angle away from the field direction (rad).
+const WANDER_ANGLE: f32 = 0.45;
+
+use crate::grid::{
+    build_field_to, clearance, reachable, wall_cost, Field, FieldTarget, NavGrid, WallOwner,
+};
+use crate::math::{closest_on_segment, cos, exp, segments_intersect, sin, Rect, Vec2};
 use crate::metrics::{
     AreaStats, DensityGrid, Level, RateRing, AREA_DANGER_CELLS, AREA_HEAVY_CELLS,
 };
@@ -12,11 +31,11 @@ use crate::scenario::{Scenario, SignModeDef, ValidationError};
 use serde::{Deserialize, Serialize};
 
 /// Bumped whenever simulation behaviour changes; part of every replay.
-pub const SIM_VERSION: u32 = 1;
+pub const SIM_VERSION: u32 = 2;
 /// Distance fields rebuilt per tick after a geometry change (amortises barrier placement).
 const FIELDS_PER_TICK: usize = 3;
 /// How far upstream of a metered line people behave as an orderly queue (m).
-const QUEUE_REACH: f32 = 30.0;
+const QUEUE_REACH: f32 = 80.0;
 /// Seconds between checksum records in a replay.
 pub const CHECKSUM_EVERY: u64 = 100;
 
@@ -226,6 +245,8 @@ pub enum Outcome {
     Won,
     FailedDanger,
     FailedTimeout,
+    /// Everyone got home but the run earned no star (only in reports, never the live state).
+    FailedScore,
 }
 
 /// A player command. Commands are applied between ticks and recorded with the tick they precede.
@@ -282,6 +303,11 @@ pub struct Sim {
     pub grid: NavGrid,
     pub fields: Vec<Field>,
     fields_dirty: Vec<bool>,
+    /// Distance to the nearest wall per nav cell (for wall-shy paths), rebuilt with the geometry.
+    clear: Vec<f32>,
+    clear_dirty: bool,
+    cost: Vec<f32>,
+    cost_tick: u64,
     pub graph: Graph,
     pub agents: Agents,
     /// Stable id -> index (NONE32 when gone).
@@ -294,6 +320,8 @@ pub struct Sim {
     pub area_names: Vec<String>,
     pub area_speed: Vec<f32>,
     pub area_static: Vec<f32>,
+    /// Areas where people can still change their minds (kind "plaza").
+    pub area_open: Vec<bool>,
     profile_traits: Vec<Traits>,
     pub area_center: Vec<Vec2>,
     pub gates: Vec<Gate>,
@@ -304,6 +332,8 @@ pub struct Sim {
     pub incidents: Vec<Incident>,
     pub transits: Vec<Transit>,
     pub dest_nodes: Vec<u16>,
+    /// Destination area per destination (people walk to a personal spot inside it).
+    pub dest_rect: Vec<Option<Rect>>,
     pub dest_names: Vec<String>,
     pub dest_ids: Vec<String>,
     pub log: Vec<LogEntry>,
@@ -330,6 +360,7 @@ pub struct Sim {
     pub reported_gate_flow: Vec<u32>,
     delayed_period: Vec<f32>,
     area_last_warn: Vec<f32>,
+    area_last_danger: Vec<f32>,
     pub area_prev_level: Vec<Level>,
     second_acc: f32,
     /// Agent believed waits from a wait_times sign: (sign index, values per compare node).
@@ -385,6 +416,7 @@ impl Sim {
                 outflow: RateRing::default(),
                 level: Level::Comfortable,
                 heavy_cells: 0,
+                heavy_needed: AREA_HEAVY_CELLS,
                 danger_cells: 0,
                 heavy_seconds: 0.0,
                 danger_seconds: 0.0,
@@ -398,6 +430,14 @@ impl Sim {
         let area_rects: Vec<Rect> = areas.iter().map(|a| a.rect).collect();
         let (dc, dr, dwa) = grid.coarse_walkable_area(t.density_cell);
         let density = DensityGrid::new(t.density_cell, dc, dr, dwa, &area_rects);
+        for (ai, a) in areas.iter_mut().enumerate() {
+            let cells = density
+                .area_of
+                .iter()
+                .filter(|x| **x as usize == ai)
+                .count() as f32;
+            a.heavy_needed = AREA_HEAVY_CELLS.max((cells * 0.015).ceil() as u32);
+        }
 
         // graph
         if sc.nodes.len() > MAX_NODES {
@@ -411,6 +451,15 @@ impl Sim {
                 id: n.id.clone(),
                 pos: Vec2::new(n.pos[0], n.pos[1]),
                 radius: n.radius,
+                target: match n.portal {
+                    Some(l) => FieldTarget {
+                        a: Vec2::new(l[0], l[1]),
+                        b: Vec2::new(l[2], l[3]),
+                        radius: 0.75,
+                        side: None,
+                    },
+                    None => FieldTarget::disc(Vec2::new(n.pos[0], n.pos[1]), n.radius.min(1.5)),
+                },
                 gate: None,
                 dest: None,
                 door: false,
@@ -424,6 +473,11 @@ impl Sim {
                 one_way: e.one_way,
                 stairs: e.stairs,
                 area: e.area.as_ref().map(|a| sc.area_index(a).unwrap() as u8),
+                open_choice: e
+                    .area
+                    .as_ref()
+                    .map(|a| sc.map.areas[sc.area_index(a).unwrap()].kind == "plaza")
+                    .unwrap_or(true),
                 length: f32::INFINITY,
             });
         }
@@ -446,6 +500,13 @@ impl Sim {
                 ));
             }
             nodes[node as usize].gate = Some(gi as u16);
+            // people walk to (and through) the nearest point of the gate line
+            nodes[node as usize].target = FieldTarget {
+                a,
+                b,
+                radius: 1.0,
+                side: Some(normal),
+            };
             let mode = match g.default_mode.as_str() {
                 "metered" => GateMode::Metered,
                 "closed" => GateMode::Closed,
@@ -643,6 +704,10 @@ impl Sim {
             dt: t.dt,
             fields: Vec::new(),
             fields_dirty: vec![true; n_nodes],
+            clear: Vec::new(),
+            clear_dirty: true,
+            cost: Vec::new(),
+            cost_tick: 0,
             graph,
             agents: Agents::default(),
             slot_of: Vec::new(),
@@ -654,6 +719,7 @@ impl Sim {
             area_names,
             area_speed: vec![1.0; n_areas],
             area_static: sc_area_static,
+            area_open: sc.map.areas.iter().map(|a| a.kind == "plaza").collect(),
             profile_traits: sc.population_profiles.iter().map(Traits::from).collect(),
             area_center,
             gates,
@@ -663,6 +729,16 @@ impl Sim {
             next_barrier: 1,
             incidents,
             transits,
+            dest_rect: sc
+                .destinations
+                .iter()
+                .map(|d| {
+                    d.area
+                        .as_ref()
+                        .and_then(|a| sc.area_index(a))
+                        .map(|a| r(sc.map.areas[a].rect))
+                })
+                .collect(),
             dest_nodes,
             dest_names: sc.destinations.iter().map(|d| d.name.clone()).collect(),
             dest_ids: sc.destinations.iter().map(|d| d.id.clone()).collect(),
@@ -689,6 +765,7 @@ impl Sim {
             reported_gate_flow: vec![0; n_gates],
             delayed_period,
             area_last_warn: vec![-1e9; n_areas],
+            area_last_danger: vec![-1e9; n_areas],
             area_prev_level: vec![Level::Comfortable; n_areas],
             second_acc: 0.0,
             belief_sign: Vec::new(),
@@ -764,9 +841,41 @@ impl Sim {
         Ok(sim)
     }
 
+    /// Step cost per nav cell: walls (people keep off them) and crowd (people walk around dense
+    /// patches instead of all funnelling into the shortest line — a dynamic navigation field).
+    fn refresh_cost(&mut self) {
+        // The crowd moves slowly compared with the refresh cycle: recompute at most every 2 s
+        // (always after geometry changes).
+        if !self.clear_dirty && !self.cost.is_empty() && self.tick < self.cost_tick + 40 {
+            return;
+        }
+        self.cost_tick = self.tick;
+        if self.clear_dirty {
+            self.clear = clearance(&self.grid, &self.grid.walkable);
+            self.clear_dirty = false;
+        }
+        let n = self.clear.len();
+        self.cost.resize(n, 1.0);
+        let (cols, rows) = (self.grid.cols, self.grid.rows);
+        for y in 0..rows {
+            for x in 0..cols {
+                let j = y * cols + x;
+                if !self.grid.walkable[j] {
+                    continue;
+                }
+                let rho = self.density.density[self.density.index(self.grid.center(x, y))];
+                self.cost[j] = 1.0
+                    + wall_cost(self.clear[j])
+                    + CROWD_COST * (rho - CROWD_FREE_DENSITY).max(0.0);
+            }
+        }
+    }
+
     fn rebuild_field(&mut self, i: usize) {
+        self.refresh_cost();
         let n = &self.graph.nodes[i];
-        self.fields[i] = build_field(&self.grid, &self.grid.walkable, n.pos, n.radius.min(1.5));
+        self.fields[i] =
+            build_field_to(&self.grid, &self.grid.walkable, &n.target, Some(&self.cost));
         self.fields_dirty[i] = false;
     }
 
@@ -779,6 +888,7 @@ impl Sim {
     }
 
     fn mark_geometry_changed(&mut self) {
+        self.clear_dirty = true;
         for d in self.fields_dirty.iter_mut() {
             *d = true;
         }
@@ -1122,6 +1232,11 @@ impl Sim {
                         self.agents.next_decision[i].min(self.time + jitter);
                 }
             }
+        } else if self.tick.is_multiple_of(FIELD_REFRESH_TICKS) && !self.agents.is_empty() {
+            // rolling refresh so the fields follow the crowd (one field at a time)
+            let i = (self.tick / FIELD_REFRESH_TICKS) as usize % self.fields.len();
+            self.rebuild_field(i);
+            self.update_edge_lengths();
         }
         let t1 = now();
         self.spatial.rebuild(&self.agents.pos);
@@ -1364,6 +1479,26 @@ impl Sim {
                         let dn = self.dest_nodes[dest as usize] as usize;
                         self.agents.ideal_time[idx] = self.fields[dn].dist_at(&self.grid, p)
                             / self.agents.desired_speed[idx].max(0.3);
+                        // presentation-free personal traits from a per-person stream (does not
+                        // shift any other random sequence)
+                        let mut pr = crate::rng::Rng::new(
+                            self.seed ^ (id as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                        );
+                        pr.next_u64();
+                        self.agents.wander[idx] = [
+                            pr.range(-1.0, 1.0),
+                            pr.range(0.0, std::f32::consts::TAU),
+                            pr.range(0.1, 0.3),
+                            pr.range(0.0, std::f32::consts::TAU),
+                        ];
+                        if id != leader_id {
+                            // a group walks in step: same lane and wobble as its leader
+                            let li = self.slot_of[leader_id as usize] as usize;
+                            self.agents.wander[idx] = self.agents.wander[li];
+                        }
+                        // where in the destination area they will stand, as fractions; fixed
+                        // relative to where they walk in (negative x = not placed yet)
+                        self.agents.spot[idx] = Vec2::new(-1.0 - pr.f32(), pr.f32());
                         self.slot_of.push(idx as u32);
                         self.belief_sign.push(u8::MAX);
                         self.belief.push([-1.0; 4]);
@@ -1476,7 +1611,16 @@ impl Sim {
                     let (lp, ll) = (self.agents.route_pos[li], self.agents.route_len[li]);
                     // adopt the leader's remaining route (skipping nodes this member already passed)
                     let lnext = self.agents.next_node(li);
-                    if lnext != self.agents.next_node(i) || self.agents.route_len[i] == 0 {
+                    if lnext != NONE16 && lnext == self.agents.last_node[i] {
+                        // This member already passed the leader's next waypoint (e.g. crossed a
+                        // gate first): carry on along the rest of the leader's route instead of
+                        // turning back to it; cohesion lets the leader catch up.
+                        if lp + 1 < ll && self.agents.next_node(i) != lr[lp as usize + 1] {
+                            self.agents.route[i] = lr;
+                            self.agents.route_pos[i] = lp + 1;
+                            self.agents.route_len[i] = ll;
+                        }
+                    } else if lnext != self.agents.next_node(i) || self.agents.route_len[i] == 0 {
                         self.agents.route[i] = lr;
                         self.agents.route_pos[i] = lp;
                         self.agents.route_len[i] = ll;
@@ -1533,6 +1677,40 @@ impl Sim {
                 };
             }
             let impatient = self.agents.wait_now[i] > self.agents.patience[i];
+            let cur = self.agents.next_node(i);
+            let last = self.agents.last_node[i];
+            // Nobody turns around inside a packed crowd: they could not get out against it.
+            let packed = self.density.density[self.density.index(p)] >= PACKED_NO_SWITCH;
+            // ...and only while actually standing in the open plaza (not already in a walkway)
+            let in_open = self
+                .area_open
+                .get(self.agents.area[i] as usize)
+                .copied()
+                .unwrap_or(false)
+                // people standing in a queue do not turn round through it
+                && self.agents.state[i] == State::Walking
+                // and they choose while approaching, not at the target's queue
+                && ((cur as usize) >= n_nodes || dist[cur as usize] > COMMIT_DISTANCE)
+                // a group changes its mind only if every member is free to turn too
+                && (1..4u32).all(|k| {
+                    let mid = id as usize + k as usize;
+                    match self.slot_of.get(mid) {
+                        Some(&s) if s != NONE32 && self.agents.leader[s as usize] == id => {
+                            let s = s as usize;
+                            self.agents.state[s] == State::Walking
+                                && self.density.density[self.density.index(self.agents.pos[s])]
+                                    < PACKED_NO_SWITCH
+                        }
+                        _ => true,
+                    }
+                });
+            let may_switch = (cur as usize) >= n_nodes
+                || (last as usize) >= n_nodes
+                || self.graph.out[last as usize]
+                    .iter()
+                    .find(|(_, b)| *b == cur)
+                    .map(|(ei, _)| self.graph.edges[*ei as usize].open_choice && in_open && !packed)
+                    .unwrap_or(true);
             let inp = ChoiceInput {
                 graph: &self.graph,
                 pos: p,
@@ -1546,6 +1724,8 @@ impl Sim {
                 stairs_aversion: self.agents.stairs_aversion[i],
                 sign_via: self.agents.sign_via[i],
                 impatient,
+                may_switch,
+                switches: self.agents.switches[i],
                 dist_to_node: &dist[..n_nodes],
                 node_wait: &node_wait[..n_nodes],
                 believed_wait: &believed[..n_nodes],
@@ -1557,7 +1737,11 @@ impl Sim {
             };
             if choose_route(&inp, &mut route) {
                 let old_next = self.agents.next_node(i);
-                if old_next != route[0] || self.agents.route_len[i] == 0 {
+                let switched = old_next != route[0];
+                if switched && (old_next as usize) < n_nodes {
+                    self.agents.switches[i] = self.agents.switches[i].saturating_add(1);
+                }
+                if switched || self.agents.route_len[i] == 0 {
                     self.agents.set_route(i, &route);
                     self.agents.gate_pass[i] = if self.agents.gate_pass[i] != NONE16
                         && self.graph.nodes[route[0] as usize].gate
@@ -1574,7 +1758,7 @@ impl Sim {
                 if self.agents.state[i] == State::Stuck {
                     self.agents.state[i] = State::Walking;
                 }
-                if impatient {
+                if impatient && switched {
                     // they acted on their frustration; give the new choice time to work
                     self.agents.wait_now[i] = 0.0;
                 }
@@ -1663,9 +1847,16 @@ impl Sim {
             if rate <= 0.0 {
                 continue;
             }
-            // earliest free lane (lowest index on ties)
-            let mut best = 0;
-            for l in 1..g.lane_free.len() {
+            // Lanes are physical: a person can only use a lane in front of them (within about
+            // 1 m of where they stand along the line); the earliest free one, lowest index on ties.
+            let n_lanes = g.lane_free.len();
+            let lane_w = (g.half_len * 2.0 / n_lanes as f32).max(0.1);
+            let u = (self.agents.pos[i] - g.a).dot(g.tangent);
+            let reach = lane_w * 0.5 + 1.0;
+            let lo = (((u - reach) / lane_w).floor().max(0.0) as usize).min(n_lanes - 1);
+            let hi = (((u + reach) / lane_w).floor().max(0.0) as usize).min(n_lanes - 1);
+            let mut best = lo;
+            for l in lo + 1..=hi {
                 if g.lane_free[l] < g.lane_free[best] {
                     best = l;
                 }
@@ -1690,8 +1881,50 @@ impl Sim {
             let nn = ag.next_node(i);
             let mut e0 = Vec2::ZERO;
             let mut v0 = ag.desired_speed[i];
-            if (nn as usize) < self.fields.len() {
-                e0 = self.fields[nn as usize].direction(grid, p);
+            let dest = ag.dest[i] as usize;
+            let final_leg = ag.spot[i].x >= 0.0
+                && (nn as usize) < self.graph.nodes.len()
+                && self.graph.nodes[nn as usize].dest == Some(ag.dest[i])
+                && self.dest_rect[dest].is_some_and(|r| r.contains(p));
+            if final_leg {
+                // inside the destination area: walk to a personal spot, slowing as they arrive
+                let to = ag.spot[i] - p;
+                e0 = to.norm();
+                v0 *= (to.len() / 2.0).clamp(0.4, 1.0);
+            } else if (nn as usize) < self.fields.len() {
+                let f = &self.fields[nn as usize];
+                e0 = f.direction(grid, p);
+                // personal wobble (see Agents::wander), faded out near the target and near walls
+                let w = ag.wander[i];
+                let d_target = f.dist_at(grid, p);
+                // nobody wanders while pressed in a crowd: only when walking freely last tick
+                // (group members do not wander on their own: they follow their leader)
+                let follower = ag.leader[i] != ag.id[i]
+                    && self
+                        .slot_of
+                        .get(ag.leader[i] as usize)
+                        .is_some_and(|&li| li != NONE32);
+                let free = if follower {
+                    0.0
+                } else {
+                    ((ag.speed[i] / ag.desired_speed[i].max(0.1) - 0.6) / 0.3).clamp(0.0, 1.0)
+                };
+                let fade = ((d_target - 1.5) / 4.0).clamp(0.0, 1.0) * free;
+                if fade > 0.0 && e0 != Vec2::ZERO {
+                    let th =
+                        WANDER_ANGLE * fade * (0.5 * w[0] + 0.5 * sin(w[2] * self.time + w[1]));
+                    let (s, c) = (sin(th), cos(th));
+                    let rot = Vec2::new(e0.x * c - e0.y * s, e0.x * s + e0.y * c);
+                    let clear_at = |q: Vec2| match grid.cell_of(q) {
+                        Some((x, y)) => self.clear[grid.idx(x, y)],
+                        None => 0.0,
+                    };
+                    let here = clear_at(p);
+                    let ahead = clear_at(p + rot * 0.8);
+                    if ahead >= 0.9 || ahead >= here {
+                        e0 = rot;
+                    }
+                }
             }
             let area = ag.area[i];
             if (area as usize) < self.areas.len() {
@@ -1708,9 +1941,14 @@ impl Sim {
                     let to = ag.pos[li as usize] - p;
                     let d = to.len();
                     if d > 2.0 && e0 != Vec2::ZERO {
-                        e0 = (e0 + to.norm() * 0.6).norm();
-                        if d > 3.0 {
-                            v0 *= 1.3;
+                        if to.dot(e0) < 0.0 {
+                            // ahead of the leader (e.g. through a gate first): wait for them
+                            v0 *= 0.3;
+                        } else {
+                            e0 = (e0 + to.norm() * 0.6).norm();
+                            if d > 3.0 {
+                                v0 *= 1.3;
+                            }
                         }
                     }
                 }
@@ -1720,7 +1958,6 @@ impl Sim {
             }
             // --- collision-free speed model: direction
             let mut dir = e0;
-            let mut spacing = f32::INFINITY;
             let hi = ag.heading[i];
             // Neighbours within the cutoff, gathered once and reused for the spacing pass.
             near.clear();
@@ -1756,60 +1993,95 @@ impl Sim {
             }
             let e = dir.norm();
             let e = if e == Vec2::ZERO { e0 } else { e };
-            // --- speed: spacing to the nearest person ahead (within body width of the path)
-            for &(j, d) in near.iter() {
-                let j = j as usize;
-                let dv = ag.pos[j] - p;
-                if dv.dot(e) <= 0.0 {
-                    continue;
+            // --- speed: free distance ahead along a direction: nearest person within body width of
+            // the path, a little personal space in managed queues, and a metered gate's hold line.
+            //
+            // Queue discipline (gameplay approximation): people knowingly waiting for a metered or
+            // fare gate keep a little personal space instead of pressing into body contact, as
+            // managed queues do in practice (Fruin queue LOS C-D). Once they have waited longer than
+            // their patience they stop doing so and press forward (`pushing`); that compression in a
+            // confined space is what produces dangerous densities.
+            let held_gate = if (nn as usize) < self.graph.nodes.len() {
+                self.graph.nodes[nn as usize]
+                    .gate
+                    .filter(|&gi| ag.gate_pass[i] != gi)
+                    .map(|gi| &self.gates[gi as usize])
+                    .filter(|g| g.mode != GateMode::Open)
+            } else {
+                None
+            };
+            // A gate the operator meters is staffed (that is what the staff cost pays for):
+            // stewards keep its queue orderly. Frustration still costs satisfaction.
+            let staffed = held_gate.is_some_and(|g| g.controllable);
+            let pushing = !staffed && ag.wait_now[i] > ag.patience[i];
+            let in_queue = !pushing
+                && held_gate.is_some_and(|g| {
+                    let s = g.side(p);
+                    g.mode == GateMode::Metered && s < 0.0 && s > -QUEUE_REACH
+                });
+            // pushing people squeeze bodies together (what makes a crush)
+            let squeeze = if pushing { PUSH_SQUEEZE } else { 1.0 };
+            let free_along = |d: Vec2| -> f32 {
+                let mut s = f32::INFINITY;
+                for &(j, dist) in near.iter() {
+                    let j = j as usize;
+                    let dv = ag.pos[j] - p;
+                    if dv.dot(d) <= 0.0 {
+                        continue;
+                    }
+                    let l = (ri + ag.radius[j]) * squeeze;
+                    if dv.cross(d).abs() >= l {
+                        continue;
+                    }
+                    s = s.min(dist - l);
                 }
-                let l = ri + ag.radius[j];
-                if dv.cross(e).abs() >= l {
-                    continue;
+                if in_queue && s.is_finite() {
+                    // only the gap to the person ahead grows; the hold line itself is unchanged
+                    s -= tuning.queue_gap;
                 }
-                let s = d - l;
-                if s < spacing {
-                    spacing = s;
-                }
-            }
-            // Queue discipline (gameplay approximation): people knowingly waiting for a metered or fare
-            // gate keep a little personal space instead of pressing into body contact, as managed
-            // queues do in practice (Fruin queue LOS C-D). Uncontrolled jams still compress fully.
-            if (nn as usize) < self.graph.nodes.len() {
-                if let Some(gi) = self.graph.nodes[nn as usize].gate {
-                    let g = &self.gates[gi as usize];
-                    if g.mode == GateMode::Metered && ag.gate_pass[i] != gi {
-                        let s = g.side(p);
-                        // only the gap to the person ahead grows; the hold line itself is unchanged
-                        if s < 0.0 && s > -QUEUE_REACH && spacing.is_finite() {
-                            spacing -= tuning.queue_gap;
+                // (As in JuPedSim's CFSM, walls act only through the direction term; the hard
+                // collision pass below keeps bodies out of walls.)
+                // unserved people stop at a metered gate's hold line
+                if let Some(g) = held_gate {
+                    if g.lateral(p) < g.half_len + 1.0 {
+                        let sd = g.side(p);
+                        let along = d.dot(g.normal);
+                        if along > 0.05 && sd < 0.0 {
+                            let avail = (-sd - tuning.gate_hold - ri).max(0.0);
+                            s = s.min(avail / along);
                         }
                     }
                 }
-            }
-            // (As in JuPedSim's CFSM, walls act only through the direction term above; the hard
-            // collision pass below keeps bodies out of walls.)
-            // unserved people stop at a metered gate's hold line
-            if (nn as usize) < self.graph.nodes.len() {
-                if let Some(gi) = self.graph.nodes[nn as usize].gate {
-                    let g = &self.gates[gi as usize];
-                    if g.mode != GateMode::Open
-                        && ag.gate_pass[i] != gi
-                        && g.lateral(p) < g.half_len + 1.0
-                    {
-                        let s = g.side(p);
-                        let along = e.dot(g.normal);
-                        if along > 0.05 && s < 0.0 {
-                            let avail = (-s - tuning.gate_hold - ri).max(0.0);
-                            let sp = avail / along;
-                            if sp < spacing {
-                                spacing = sp;
-                            }
-                        }
+                s
+            };
+            let t_i = if pushing {
+                t_gap * PUSH_TIME_GAP
+            } else {
+                t_gap
+            };
+            let spacing = free_along(e);
+            let mut e = e;
+            let mut v = v0.min((spacing / t_i).max(0.0));
+            // Gap seeking: someone blocked by the person ahead side-steps into free space that
+            // still takes them forward, so queues fill the room they have instead of forming a
+            // single file, and fewer people press into a neck when there is space beside it.
+            if v < 0.35 * v0 {
+                let mut best = v * e.dot(e0).max(0.0);
+                for &ang in &[0.45f32, -0.45, 0.9, -0.9] {
+                    let (sn, cs) = (sin(ang), cos(ang));
+                    let d = Vec2::new(e0.x * cs - e0.y * sn, e0.x * sn + e0.y * cs);
+                    if !grid.is_walkable(p + d * (ri + 0.45)) {
+                        continue;
+                    }
+                    let vd = v0.min((free_along(d) / t_i).max(0.0)) * 0.6;
+                    let score = vd * d.dot(e0);
+                    if score > best + 0.05 {
+                        best = score;
+                        e = d;
+                        v = vd;
                     }
                 }
             }
-            let v = v0.min((spacing / t_gap).max(0.0));
             self.new_dir[i] = e;
             self.new_speed[i] = v;
         }
@@ -1879,14 +2151,25 @@ impl Sim {
             // service at a metered gate; crossing upstream is impossible at a one-way gate.
             for gi in 0..self.gates.len() {
                 let g = &self.gates[gi];
-                if (closest_on_segment(old, g.a, g.b) - old).len() > 2.5
-                    || !segments_intersect(old, p, g.a, g.b)
-                {
+                if (closest_on_segment(old, g.a, g.b) - old).len() > 2.5 {
                     continue;
                 }
-                let forward = (p - old).dot(g.normal) > 0.0;
+                // Signed sides, with "on the line" counting as downstream, so a step that ends
+                // exactly on the line (e.g. after being pushed out of a wall stub) is a crossing.
+                let (so, sn) = (g.side(old), g.side(p));
+                let forward = so < 0.0 && sn >= 0.0;
+                if !forward && !(so >= 0.0 && sn < 0.0) {
+                    continue;
+                }
+                let x = old + (p - old) * (so / (so - sn));
+                if g.lateral(x) > g.half_len {
+                    continue;
+                }
                 let allowed = if forward {
-                    g.mode == GateMode::Open || self.agents.gate_pass[i] == gi as u16
+                    g.mode == GateMode::Open
+                        || self.agents.gate_pass[i] == gi as u16
+                        // already through this gate once (and nudged back over the line)
+                        || self.agents.last_node[i] == g.node
                 } else {
                     !g.one_way
                 };
@@ -1900,15 +2183,12 @@ impl Sim {
                         }
                     }
                 } else {
+                    // blocked: slide along the line (keeps the side the person started on)
                     let t = g.tangent;
-                    let slid = old + t * (p - old).dot(t);
-                    p = if segments_intersect(old, slid, g.a, g.b) {
-                        old
-                    } else {
-                        slid
-                    };
-                    if segments_intersect(old, p, g.a, g.b) {
+                    p = old + t * (p - old).dot(t);
+                    if (g.side(p) >= 0.0) != (so >= 0.0) {
                         self.gates[gi].violations += 1;
+                        p = old;
                     }
                 }
             }
@@ -1930,8 +2210,47 @@ impl Sim {
             }
             let p = self.agents.pos[i];
             let node = &self.graph.nodes[nn as usize];
-            let mut reached = (p - node.pos).len() <= node.radius
-                || self.fields[nn as usize].dist_at(&self.grid, p) <= node.radius * 0.8;
+            let dest = self.agents.dest[i];
+            if node.dest == Some(dest) {
+                if let Some(r) = self.dest_rect[dest as usize] {
+                    if r.contains(p) && self.agents.spot[i].x < 0.0 {
+                        // Just walked in: pick a spot anywhere across the area's short side and
+                        // within 30 m of the entry along its long side, so people spread out near
+                        // where they come in instead of criss-crossing a whole platform.
+                        let (fa, fb) = (-1.0 - self.agents.spot[i].x, self.agents.spot[i].y);
+                        let near = |c: f32, lo: f32, hi: f32| {
+                            (c + (fb - 0.5) * 60.0).clamp(lo + 1.0, hi - 1.0)
+                        };
+                        self.agents.spot[i] = if r.w <= r.h {
+                            Vec2::new(r.x + 1.0 + fa * (r.w - 2.0), near(p.y, r.y, r.y + r.h))
+                        } else {
+                            Vec2::new(near(p.x, r.x, r.x + r.w), r.y + 1.0 + fa * (r.h - 2.0))
+                        };
+                    }
+                    // arrived when standing at their spot inside the destination area
+                    if r.contains(p)
+                        && self.agents.spot[i].x >= 0.0
+                        && (self.agents.spot[i] - p).len() < 1.0
+                    {
+                        self.agents.last_node[i] = nn;
+                        self.agents.route_pos[i] += 1;
+                        self.remove_buf.push(i);
+                    }
+                    continue;
+                }
+            }
+            // Arrival is judged on the ground, not on the (crowd-weighted) field distance: a gate
+            // is passed once the person is across its line, a portal or disc once they are at it.
+            let mut reached = match node.gate {
+                Some(gi) => {
+                    let g = &self.gates[gi as usize];
+                    g.side(p) >= 0.0 && (closest_on_segment(p, g.a, g.b) - p).len() <= 2.5
+                }
+                None => {
+                    (p - node.pos).len() <= node.radius
+                        || (node.target.closest(p) - p).len() <= node.target.radius.max(0.75)
+                }
+            };
             if !reached {
                 // Progress rule for intermediate waypoints: once the agent is (geodesically) closer to
                 // the following node than this waypoint is, it has passed it. Without this, a
@@ -1954,6 +2273,10 @@ impl Sim {
             if reached && gate_ok {
                 self.agents.last_node[i] = nn;
                 self.agents.route_pos[i] += 1;
+                if node.gate.is_some() {
+                    // through a checkpoint: relief, most of the built-up frustration goes
+                    self.agents.wait_now[i] *= 0.25;
+                }
                 if node.dest == Some(self.agents.dest[i]) {
                     self.remove_buf.push(i);
                 } else if self.agents.next_node(i) == NONE16 {
@@ -1990,7 +2313,11 @@ impl Sim {
                 if (a as usize) < self.areas.len() {
                     self.areas[a as usize].wait_person_seconds += dt;
                 }
-                self.agents.wait_now[i] += dt;
+                // Frustration builds faster when standing packed in a crowd than when waiting with
+                // room around you (an open plaza): x1 below 1.5 p/m², up to x2.5 at 3 p/m².
+                let rho = self.density.density[self.density.index(self.agents.pos[i])];
+                let packed = ((rho - 1.5) / 1.0).clamp(0.0, 1.5);
+                self.agents.wait_now[i] += dt * (1.0 + packed);
                 self.agents.wait_total[i] += dt;
                 let over = (self.agents.wait_now[i] / self.agents.patience[i]).min(2.0);
                 self.agents.satisfaction[i] -= dt * (0.05 + 0.25 * over);
@@ -2123,7 +2450,7 @@ impl Sim {
             };
             a.level = if a.danger_cells >= AREA_DANGER_CELLS {
                 Level::Danger
-            } else if a.heavy_cells >= AREA_HEAVY_CELLS {
+            } else if a.heavy_cells >= a.heavy_needed {
                 Level::Heavy
             } else if a.density >= crate::metrics::CROWDED_DENSITY || a.heavy_cells > 0 {
                 Level::Crowded
@@ -2149,11 +2476,19 @@ impl Sim {
         // warnings when an area gets worse
         for ai in 0..self.areas.len() {
             let lvl = self.areas[ai].level;
-            if lvl > self.area_prev_level[ai]
-                && lvl >= Level::Heavy
-                && self.time - self.area_last_warn[ai] > 20.0
+            // a new warning for the same area at most every 90 s (danger: every 30 s)
+            let quiet = if lvl == Level::Danger {
+                self.area_last_danger[ai]
+            } else {
+                self.area_last_warn[ai]
+            };
+            let cooldown = if lvl == Level::Danger { 30.0 } else { 90.0 };
+            if lvl > self.area_prev_level[ai] && lvl >= Level::Heavy && self.time - quiet > cooldown
             {
                 self.area_last_warn[ai] = self.time;
+                if lvl == Level::Danger {
+                    self.area_last_danger[ai] = self.time;
+                }
                 let text = match lvl {
                     Level::Danger => format!("{}: dangerous crowding", self.area_names[ai]),
                     _ => format!("{}: heavy congestion", self.area_names[ai]),

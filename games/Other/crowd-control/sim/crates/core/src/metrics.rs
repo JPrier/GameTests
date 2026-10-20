@@ -24,7 +24,7 @@ pub const HEAVY_DENSITY: f32 = 2.0;
 pub const DANGER_DENSITY: f32 = 4.5;
 /// Helbing et al. 2007: crowd turbulence when density * velocity variance exceeds 0.02 1/s².
 pub const DANGER_PRESSURE: f32 = 0.02;
-pub const PRESSURE_MIN_DENSITY: f32 = 3.0;
+pub const PRESSURE_MIN_DENSITY: f32 = 4.0;
 /// Smoothing time constant for densities (s).
 pub const SMOOTH_TAU: f32 = 1.5;
 /// Cells needed before an area counts as heavily congested / dangerous (avoids single-cell noise).
@@ -78,6 +78,9 @@ pub struct AreaStats {
     pub outflow: RateRing,
     pub level: Level,
     pub heavy_cells: u32,
+    /// Heavy cells needed before the area counts as heavily congested: at least
+    /// `AREA_HEAVY_CELLS`, and 1.5% of the area (so a tiny jam in a huge plaza is not "heavy").
+    pub heavy_needed: u32,
     pub danger_cells: u32,
     pub heavy_seconds: f32,
     pub danger_seconds: f32,
@@ -167,7 +170,9 @@ impl DensityGrid {
         }
         let k = (dt / SMOOTH_TAU).min(1.0);
         for i in 0..self.count.len() {
-            let area = self.walk_area[i].max(1.0);
+            // A cell cut by walls has only a sliver of floor: count at least half a cell so a few people
+            // standing at a wall end or gate line do not read as a crush.
+            let area = self.walk_area[i].max(self.cell * self.cell * 0.5);
             let n = self.count[i] as f32;
             let rho = n / area;
             self.density[i] += (rho - self.density[i]) * k;

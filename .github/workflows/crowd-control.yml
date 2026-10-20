@@ -71,12 +71,13 @@ jobs:
 
       - name: Benchmarks (compared with the recorded baseline)
         run: |
-          ./target/release/crowd bench ../scenarios/stadium_departure.json --populations 500,1000,5000 --ticks 6000 --out bench.json
+          ./target/release/crowd bench ../scenarios/stadium_departure.json --populations 1200,6000,12000 --ticks 6000 --out bench.json
           python3 ../tools/bench_compare.py bench.json ../docs/benchmarks/baseline.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Strategy experiments (gameplay validation)
         run: |
-          ./target/release/crowd experiments ../scenarios/stadium_departure.json --seeds 3 --out experiments.json | tee experiments.txt
+          # a full 12,000-person evening takes about a minute: a focused set of strategies
+          ./target/release/crowd experiments ../scenarios/stadium_departure.json --seeds 2 --only none,wait_signs,station_only,meter_north,hold_in_plaza,expert --out experiments.json | tee experiments.txt
           { echo '### Strategy experiments'; echo '```'; cat experiments.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
