@@ -78,20 +78,53 @@ func test_metering_limits_gate_throughput():
 	assert_gt(int(_gate(g, "gate_a").queue), 0, "a queue forms upstream of the metered gate")
 
 
-func test_barrier_is_validated_and_changes_geometry():
+func test_tools_are_validated_and_placed():
 	var g = await _game()
-	var bad = g.adapter.check_barrier(Vector2(10, 10), Vector2(15, 10))
-	assert_false(bad.ok, "barriers outside the zones are rejected")
-	var ok = g.adapter.check_barrier(Vector2(150, 90), Vector2(174, 90))
-	assert_true(ok.ok, "a barrier in the plaza zone is allowed: %s" % str(ok))
-	var r = g.adapter.command({"type": "barrier_add", "a": [150, 90], "b": [174, 90]})
+	var bad = g.adapter.check_command({"type": "fence_add", "points": [[10, 10], [15, 10]]})
+	assert_false(bad.ok, "fences off open ground are rejected")
+	var ok = g.adapter.check_command({"type": "fence_add", "points": [[150, 90], [174, 90], [174, 100]]})
+	assert_true(ok.ok, "a bent fence in the plaza is allowed: %s" % str(ok))
+	assert_gt(float(ok.cost), 0.0, "the preview quotes a cost")
+	var r = g.adapter.command({"type": "fence_add", "points": [[150, 90], [174, 90], [174, 100]]})
 	assert_true(r.ok)
 	g.step_ticks(1)
 	assert_eq(g.telemetry.barriers.size(), 1)
-	assert_gt(float(g.telemetry.spent), 0.0, "barriers cost money")
+	assert_gt(float(g.telemetry.spent), 0.0, "fences cost money")
 	g.remove_barrier(int(r.id))
 	assert_eq(g.telemetry.barriers.size(), 0)
 	assert_near(float(g.telemetry.spent), 0.0, 0.01, "undo within the window refunds")
+	# stewards hold and release; arrows mark lanes
+	var s = g.adapter.command({"type": "stewards_add", "a": [262, 40], "b": [262, 59]})
+	assert_true(s.ok, str(s))
+	g.set_stewards(int(s.id), false)
+	var st: Dictionary = {}
+	for b in g.telemetry.barriers:
+		if int(b.id) == int(s.id):
+			st = b
+	assert_eq(st.get("kind", ""), "stewards")
+	assert_false(bool(st.get("hold", true)), "released")
+	var a = g.adapter.command({"type": "arrow_add", "points": [[135, 175], [228, 205]], "one_way": true})
+	assert_true(a.ok, str(a))
+
+
+func test_drawing_a_fence_with_the_pointer():
+	var g = await _game()
+	g.begin_play()
+	g.tutorial_step = -1
+	g.paused = true
+	g.set_tool("fence")
+	# an L-shaped stroke: the corner survives simplification
+	g._pointer(g.m_to_screen(Vector2(150, 96)), true)
+	for k in 23:
+		g._pointer_move(g.m_to_screen(Vector2(151 + k, 96)), Vector2.ZERO)
+	for k in 10:
+		g._pointer_move(g.m_to_screen(Vector2(173, 95 - k)), Vector2.ZERO)
+	g._preview_t = -10.0
+	g._pointer(g.m_to_screen(Vector2(173, 86)), false)
+	assert_eq(g.telemetry.barriers.size(), 1, "the drawn fence was placed: %s" % g.preview_error)
+	var pts: Array = g.telemetry.barriers[0].points
+	assert_eq(pts.size(), 3, "a straight run and a corner: %s" % str(pts))
+	assert_eq(g.tool, "fence", "the tool stays on for the next stroke")
 
 
 func test_sign_changes_are_read_by_people():
@@ -159,10 +192,14 @@ func test_ui_tools_and_pause():
 	g.begin_play()
 	g.tutorial_step = -1
 	g.paused = false
-	g.set_tool("barrier")
-	assert_eq(g.tool, "barrier")
+	g.set_tool("fence")
+	assert_eq(g.tool, "fence")
 	g.ui._activate("tool:0")
 	assert_eq(g.tool, "select")
+	g.ui._activate("tool:2")
+	assert_eq(g.tool, "stewards")
+	g.ui._cancel()
+	assert_eq(g.tool, "select", "Escape leaves a drawing tool")
 	g.ui._activate("pause")
 	assert_true(g.paused, "pause button pauses")
 	g.ui._activate("speed:3")

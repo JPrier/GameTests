@@ -5,7 +5,8 @@
 A crowd-management game. In **Stadium Departure**, 12,000 fans leave a cup final for the trains and
 the car park. Every person picks their own route and walks it in a pedestrian simulation; you only
 change the infrastructure: meter or close the plaza gates and the station's own entrances, draw
-temporary barriers, and set the plaza signs. A long train delay is likely, the station halls are
+fences anywhere people walk to build the routes you want, put stewards in a line to hold a crowd
+until you release it, mark lanes with direction arrows (or one-way lanes), and set the plaza signs. A long train delay is likely, the station halls are
 only visible through a camera feed that refreshes every 30 s, and the score weighs journey times,
 the longest wait, congestion, dangerous crowding, money spent and how people feel. A run needs one
 star to pass: left alone, the delayed station fills, impatient people push, and the halls crush.
@@ -51,7 +52,7 @@ godot --path .                 # play (desktop)
 The GameTests site build runs `prebuild.sh` (both scripts) before importing the project, then tests
 and exports it like every other game.
 
-Controls: drag / WASD to pan, scroll / pinch / +− to zoom, Space pause, 1–4 speed, B barrier tool,
+Controls: drag / WASD to pan, scroll / pinch / +− to zoom, Space pause, 1–4 speed, F fence tool,
 Esc cancel, F3 diagnostics (seed, checksum, per-system timing, true data toggle, person inspector).
 
 ## Test
@@ -89,7 +90,8 @@ Copy `scenarios/stadium_departure.json` and validate with `crowd validate`. The 
 is defined and documented in `sim/crates/core/src/scenario.rs`:
 
 - `map`: walkable rectangles, extra walls, named measurement `areas` (with optional stairs
-  `speed_factor`), `barrier_zones`, presentation-only `decor`.
+  `speed_factor`), optional `barrier_zones` (when present, placements must stay inside them; the
+  stadium has none), presentation-only `decor`.
 - `nodes` and `edges`: the route-choice graph (edges may be one-way, stairs, and point at the area
   whose crowding prices them).
 - `gates`: a line, lanes × lane rate, controllable or a fixed service point (fare gates), meter

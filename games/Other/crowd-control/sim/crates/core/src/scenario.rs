@@ -284,10 +284,21 @@ pub struct EventDef {
 #[serde(deny_unknown_fields)]
 pub struct Resources {
     pub budget: f32,
-    pub barrier_cost: f32,
-    pub barrier_max_len: f32,
-    pub max_barriers: u32,
-    /// Barriers removed within this many seconds of placement are refunded in full.
+    /// Crowd-control fencing: cost per metre and longest single fence (m).
+    pub fence_cost_per_m: f32,
+    pub fence_max_len: f32,
+    /// Steward lines (staff holding the crowd back): cost per metre and longest line (m).
+    pub stewards_cost_per_m: f32,
+    pub stewards_max_len: f32,
+    /// Direction arrows (floor markings and portable signs): cost per metre and longest lane (m).
+    pub arrow_cost_per_m: f32,
+    pub arrow_max_len: f32,
+    /// Width of the lane an arrow marks (m).
+    #[serde(default = "default_arrow_width")]
+    pub arrow_width: f32,
+    /// Fences, steward lines and arrows on the map at once.
+    pub max_placed: u32,
+    /// Anything removed within this many seconds of placement is refunded in full.
     #[serde(default = "default_undo")]
     pub undo_window: f32,
 }
@@ -407,6 +418,9 @@ fn default_radius() -> f32 {
 }
 fn default_undo() -> f32 {
     10.0
+}
+fn default_arrow_width() -> f32 {
+    8.0
 }
 fn open_mode() -> String {
     "open".into()
@@ -768,8 +782,17 @@ impl Scenario {
             }
         }
         let r = &self.player_resources;
-        if r.budget < 0.0 || r.barrier_cost < 0.0 || !(r.barrier_max_len > 0.5) {
-            return err("player_resources has a negative value or tiny barrier_max_len".into());
+        if r.budget < 0.0
+            || r.fence_cost_per_m < 0.0
+            || r.stewards_cost_per_m < 0.0
+            || r.arrow_cost_per_m < 0.0
+            || !(r.fence_max_len > 1.0 && r.stewards_max_len > 2.0 && r.arrow_max_len > 4.0)
+            || !(r.arrow_width >= 2.0)
+        {
+            return err(
+                "player_resources has a negative cost, a tiny maximum length or arrow_width < 2"
+                    .into(),
+            );
         }
         let o = &self.objectives;
         if !(o.time_limit > 0.0) || !(o.clear_fraction > 0.0 && o.clear_fraction <= 1.0) {

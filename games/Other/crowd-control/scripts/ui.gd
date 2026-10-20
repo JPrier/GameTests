@@ -18,11 +18,17 @@ const TUTORIAL := [
 	"Fans pour out of the stadium on the left. Teal people want the trains, orange people the car park.",
 	"Tap a gate to change it. Metering the North Gate holds people in the roomy plaza instead of the narrow walkway.",
 	"Tap a sign in the plaza to point train passengers to a gate, or to show the wait at each station entrance.",
-	"Barrier tool: drag inside a yellow zone to place a temporary barrier. People route around it.",
+	"Build routes with the tools at the bottom: draw fences anywhere people walk, steward lines that hold a crowd until you release it, and arrows that mark the way (or a one-way lane).",
 	"A train delay is likely. When it comes, close the station entrances and hold the plaza gates back, or the halls overfill. Keep everyone out of the red.",
 ]
 
 const OBJECTIVE_W := 232.0
+const TOOL_HINTS := {
+	"fence": "Fence: drag to draw it, bends and all. People walk around fences, so you can build the route they take.",
+	"stewards": "Stewards: drag a straight line. They hold people back until you tap the line and release them.",
+	"arrow": "Arrow: drag along the way people should walk. They prefer the marked lane.",
+	"oneway": "One-way: drag in the allowed direction. People avoid walking against it.",
+}
 
 var main: Node
 var _labels: Array = []
@@ -53,6 +59,20 @@ func top_bar_h() -> float:
 func bottom_bar_h() -> float:
 	var one := GTUI.TARGET + _bar_pad() * 2
 	return GTUI.dp((one * 2 - _bar_pad() if _narrow() else one) + GTUI.SP_S * 2)
+
+
+## Phones: a small card beside the objective panel for the clock and the budget (the top bar has
+## room only for the controls). Zero-size when the top bar shows them.
+func _compact_stats_rect() -> Rect2:
+	var vs := _vs()
+	var m := GTUI.dp(GTUI.SP_S)
+	var inner_x := m + GTUI.dp(_bar_pad())
+	var title_w := maxf(GTUI.text_width("Crowd Control", GTUI.FS_TITLE, true), GTUI.text_width("Stadium Departure · 00:00 / 99:99", GTUI.FS_CAPTION)) + GTUI.dp(GTUI.SP_S)
+	var controls_w := GTUI.target() * 2 + GTUI.dp(176) + GTUI.dp(GTUI.SP_S) * 2
+	if inner_x + GTUI.dp(4) + title_w + GTUI.dp(GTUI.SP_S) <= vs.x - m - GTUI.dp(_bar_pad()) - controls_w:
+		return Rect2()
+	var x := m + GTUI.dp(OBJECTIVE_W) + m
+	return Rect2(x, top_bar_h(), maxf(0.0, vs.x - m - x), objective_h())
 
 
 func objective_h() -> float:
@@ -133,7 +153,7 @@ func _blocked(pos: Vector2) -> bool:
 func _cancel() -> bool:
 	if main.help_open:
 		main.help_open = false
-	elif main.tool == "barrier":
+	elif main.tool != "select":
 		main.set_tool("select")
 	elif not main.selection.is_empty():
 		main.selection = {}
@@ -162,7 +182,7 @@ func _activate(id: String) -> void:
 		"speed":
 			main.speed_idx = int(parts[1])
 		"tool":
-			main.set_tool("barrier" if int(parts[1]) == 1 else "select")
+			main.set_tool(main.TOOLS[int(parts[1])][0])
 		"ov":
 			if parts[1] == "mood":
 				main.color_mode = 0 if main.color_mode == 1 else 1
@@ -183,6 +203,8 @@ func _activate(id: String) -> void:
 			main.set_sign(main.selection.id, parts[1])
 		"barrier_remove":
 			main.remove_barrier(int(main.selection.id))
+		"stewards_hold":
+			main.set_stewards(int(main.selection.id), parts[1] == "1")
 		"tut_next":
 			main.tutorial_next()
 		"tut_skip":
@@ -230,6 +252,7 @@ func _draw() -> void:
 		_:
 			_draw_world_labels()
 			_draw_hud()
+			_draw_draw_preview()
 			if ph == main.Phase.BRIEFING:
 				_draw_briefing()
 			elif ph == main.Phase.ENDED:
@@ -247,12 +270,18 @@ func _ui_rects() -> Array:
 	var vs := _vs()
 	var m := GTUI.dp(GTUI.SP_S)
 	var out := [Rect2(0, 0, vs.x, top_bar_h()), Rect2(0, vs.y - bottom_bar_h(), vs.x, bottom_bar_h()), Rect2(m, top_bar_h(), GTUI.dp(OBJECTIVE_W), objective_h())]
+	var cs := _compact_stats_rect()
+	if cs.size.x > 0.0:
+		out.append(cs)
 	if not main.selection.is_empty():
 		out.append(_panel_rect(vs.y) if not _narrow() else Rect2(0, vs.y * 0.5, vs.x, vs.y * 0.5))
 	if main.debug:
 		out.append(Rect2(m, vs.y - bottom_bar_h() - GTUI.dp(250), GTUI.dp(300), GTUI.dp(250)))
 	for tl in _toast_layout():
 		out.append(tl.rect)
+	var pl := _draw_preview_layout()
+	if not pl.is_empty():
+		out.append(pl.rect)
 	return out
 
 
@@ -367,8 +396,6 @@ func _draw_hud() -> void:
 	var meta := "%s · %s / %s" % [main.sc.get("title", ""), _mmss(tsec), "99:99"]
 	var title_w := maxf(GTUI.text_width("Crowd Control", GTUI.FS_TITLE, true), GTUI.text_width(meta, GTUI.FS_CAPTION)) + GTUI.dp(GTUI.SP_S)
 	meta = "%s · %s / %s" % [main.sc.get("title", ""), _mmss(tsec), _mmss(limit)]
-	GTUI.text_in(self, Rect2(inner.position.x + GTUI.dp(4), inner.position.y, title_w, inner.size.y * 0.58), "Crowd Control", GTUI.FS_TITLE, GTUI.c("accent"), -1, true)
-	GTUI.text_in(self, Rect2(inner.position.x + GTUI.dp(4), inner.position.y + inner.size.y * 0.56, title_w, inner.size.y * 0.42), meta, GTUI.FS_CAPTION, GTUI.c("text_muted"), -1)
 	# controls on the right: pause, speeds, help
 	var ih := GTUI.target()
 	var x := inner.end.x
@@ -383,19 +410,28 @@ func _draw_hud() -> void:
 	var playing: bool = main.phase == main.Phase.PLAYING and not main.paused
 	GTUI.icon_button(self, "pause", pr, "", main.phase == main.Phase.PLAYING, not playing)
 	_play_pause_glyph(pr, playing)
-	# stats between title and controls
-	var sx := inner.position.x + title_w + GTUI.dp(GTUI.SP_L)
-	var room := pr.position.x - GTUI.dp(GTUI.SP_L) - sx
-	# most important first: on a narrow bar the last ones are left out rather than squeezed
+	var budget := "$%d" % int(float(t.get("budget", 0)) - float(t.get("spent", 0)))
+	var digits := "0".repeat(maxi(4, str(int(pop.get("total", 0))).length()))
+	# most important first: on a narrow bar the last ones are left out rather than squeezed; each
+	# stat reserves room for its widest plausible value so nothing shifts or overlaps as numbers grow
 	var stats := [
 		["Home", "%d/%d" % [int(pop.get("completed", 0)), int(pop.get("total", 0))]],
-		["Budget", "$%d" % int(float(t.get("budget", 0)) - float(t.get("spent", 0)))],
+		["Budget", budget],
 		["On site", str(int(pop.get("active", 0)))],
 		["In stadium", str(int(pop.get("inside", 0)))],
 	]
-	# each stat reserves room for its widest plausible value so nothing shifts or overlaps as numbers grow
-	var digits := "0".repeat(maxi(4, str(int(pop.get("total", 0))).length()))
 	var widest := [digits + "/" + digits, "$0000", digits, digits]
+	var sx := inner.position.x + GTUI.dp(4)
+	if _compact_stats_rect().size.x <= 0.0:
+		# title and clock, then the stats that fit
+		GTUI.text_in(self, Rect2(inner.position.x + GTUI.dp(4), inner.position.y, title_w, inner.size.y * 0.58), "Crowd Control", GTUI.FS_TITLE, GTUI.c("accent"), -1, true)
+		GTUI.text_in(self, Rect2(inner.position.x + GTUI.dp(4), inner.position.y + inner.size.y * 0.56, title_w, inner.size.y * 0.42), meta, GTUI.FS_CAPTION, GTUI.c("text_muted"), -1)
+		sx = inner.position.x + title_w + GTUI.dp(GTUI.SP_L)
+	else:
+		# phones: no room for the title or stats; the clock and budget go in a card beside the
+		# objective panel instead
+		stats = []
+	var room := pr.position.x - GTUI.dp(GTUI.SP_S) - sx
 	var cx := sx
 	for i in stats.size():
 		var w := maxf(GTUI.text_width(String(stats[i][0]).to_upper(), GTUI.FS_CAPTION, true), GTUI.text_width(widest[i], GTUI.FS_HEADING, true)) + GTUI.dp(GTUI.SP_L)
@@ -404,6 +440,18 @@ func _draw_hud() -> void:
 		GTUI.stat(self, Vector2(cx, inner.position.y - GTUI.dp(2)), stats[i][0], stats[i][1])
 		cx += w
 	_draw_objective()
+	var cs := _compact_stats_rect()
+	if cs.size.x > 0.0:
+		GTUI.panel(self, cs)
+		_blockers.append(cs)
+		var half := (cs.size.y - GTUI.dp(GTUI.SP_S) * 2) / 2.0
+		var px := cs.position.x + GTUI.dp(GTUI.SP_M)
+		var pw := cs.size.x - GTUI.dp(GTUI.SP_M) * 2
+		var py := cs.position.y + GTUI.dp(GTUI.SP_S)
+		GTUI.text_in(self, Rect2(px, py, pw, half * 0.4), "TIME", GTUI.FS_CAPTION, GTUI.c("text_muted"), -1, true)
+		GTUI.text_in(self, Rect2(px, py + half * 0.38, pw, half * 0.62), "%s / %s" % [_mmss(tsec), _mmss(limit)], GTUI.FS_LABEL, GTUI.c("text"), -1, true)
+		GTUI.text_in(self, Rect2(px, py + half, pw, half * 0.4), "BUDGET", GTUI.FS_CAPTION, GTUI.c("text_muted"), -1, true)
+		GTUI.text_in(self, Rect2(px, py + half * 1.38, pw, half * 0.62), budget, GTUI.FS_LABEL, GTUI.c("text"), -1, true)
 	_draw_bottom_bar()
 	if not main.selection.is_empty():
 		_draw_side_panel()
@@ -468,9 +516,15 @@ func _draw_bottom_bar() -> void:
 	var inner := bar.grow(-GTUI.dp(_bar_pad()))
 	var ih := GTUI.target()
 	var playing: bool = main.phase == main.Phase.PLAYING
-	var tool_w := GTUI.dp(196)
 	var row1 := Rect2(inner.position.x, inner.position.y, inner.size.x, ih)
-	GTUI.segmented(self, "tool", Rect2(row1.position, Vector2(tool_w, ih)), ["Select", "Barrier"], 1 if main.tool == "barrier" else 0, playing)
+	var tool_w := row1.size.x if _narrow() else GTUI.dp(360)
+	var labels := []
+	var sel := 0
+	for i in main.TOOLS.size():
+		labels.append(main.TOOLS[i][1])
+		if main.TOOLS[i][0] == main.tool:
+			sel = i
+	GTUI.segmented(self, "tool", Rect2(row1.position, Vector2(tool_w, ih)), labels, sel, playing)
 	var chips_r: Rect2
 	if _narrow():
 		chips_r = Rect2(inner.position.x, inner.end.y - ih, inner.size.x, ih)
@@ -481,9 +535,6 @@ func _draw_bottom_bar() -> void:
 		var key: String = OVERLAYS[i][0]
 		var on: bool = main.color_mode == 1 if key == "mood" else bool(main.overlays.get(key, false))
 		GTUI.chip(self, "ov:" + key, rects[i], OVERLAYS[i][1], on, playing)
-	# barrier hint (inside the bar, so nothing moves)
-	if main.tool == "barrier" and not _narrow():
-		pass
 
 
 # --- inspector panel
@@ -602,17 +653,57 @@ func _barrier_panel(id: int) -> void:
 			b = x
 	if b.is_empty():
 		return
-	var r := _panel_rect(GTUI.dp(176))
-	var y := _panel_head(r, "Temporary barrier")
-	var len := Vector2(b.a.x, b.a.y).distance_to(Vector2(b.b.x, b.b.y))
-	y = _line(r, y, "%d m of crowd barrier" % int(round(len)), GTUI.FS_BODY)
+	var kind: String = b.get("kind", "fence")
+	var stewards := kind == "stewards"
+	var r := _panel_rect(GTUI.dp(236 if stewards else 176))
+	var title := "Fence"
+	var what := "%d m of crowd-control fencing. People walk around it." % int(round(float(b.length)))
+	if stewards:
+		title = "Steward line"
+		what = ("Holding the crowd back along %d m." if b.hold else "Stood aside: people walk through (%d m line).") % int(round(float(b.length)))
+	elif kind == "arrow":
+		title = "One-way lane" if b.one_way else "Direction arrow"
+		what = ("%d m lane. People avoid walking against it." if b.one_way else "%d m lane. People prefer to walk this way.") % int(round(float(b.length)))
+	var y := _panel_head(r, title)
+	y = _line(r, y, what, GTUI.FS_BODY)
 	y += GTUI.dp(GTUI.SP_S)
 	var p := GTUI.dp(GTUI.SP_M)
-	GTUI.button(self, "barrier_remove", Rect2(r.position.x + p, y, r.size.x - p * 2, GTUI.target()), "Remove barrier", "danger")
-	y += GTUI.target() + GTUI.dp(GTUI.SP_S)
+	if stewards:
+		GTUI.button(self, "stewards_hold:%d" % (0 if b.hold else 1), Rect2(r.position.x + p, y, r.size.x - p * 2, GTUI.target()), "Release the crowd" if b.hold else "Hold the line again", "primary")
+		y += GTUI.target() + GTUI.dp(GTUI.SP_S)
 	var age := float(main.telemetry.get("time", 0.0)) - float(b.placed_at)
 	var undo := float(main.sc.player_resources.get("undo_window", 10))
+	GTUI.button(self, "barrier_remove", Rect2(r.position.x + p, y, r.size.x - p * 2, GTUI.target()), "Undo (refund $%d)" % int(b.cost) if age <= undo else "Remove", "danger")
+	y += GTUI.target() + GTUI.dp(GTUI.SP_S)
 	_line(r, y, "Full refund if removed within %d s." % int(undo) if age <= undo else "Placed %s ago; removing it gives no refund." % _mmss(age), GTUI.FS_CAPTION, GTUI.c("text_muted"))
+
+
+## Live label beside the line being drawn: length and cost, or why it cannot go there.
+## Returns {} when nothing is being drawn, else {rect, msg, ok}.
+func _draw_preview_layout() -> Dictionary:
+	if main == null or not main.drag_active or main.draw_points.size() < 2:
+		return {}
+	var pts: PackedVector2Array = main.draw_points
+	var tip: Vector2 = main.m_to_screen(pts[pts.size() - 1])
+	var ok: bool = main.preview_ok
+	var msg: String = ("%d m · $%d" % [int(round(main._stroke_len(pts))), int(main.preview_cost)]) if ok else main.preview_error
+	if msg == "":
+		return {}
+	var w := GTUI.text_width(msg, GTUI.FS_LABEL, true) + GTUI.dp(GTUI.SP_M) * 2
+	var h := GTUI.target() * 0.75
+	var vs := _vs()
+	var x := clampf(tip.x + GTUI.dp(16), GTUI.dp(GTUI.SP_S), vs.x - w - GTUI.dp(GTUI.SP_S))
+	var y := clampf(tip.y - h - GTUI.dp(16), top_bar_h(), vs.y - bottom_bar_h() - h)
+	return {"rect": Rect2(x, y, w, h), "msg": msg, "ok": ok}
+
+
+func _draw_draw_preview() -> void:
+	var l := _draw_preview_layout()
+	if l.is_empty():
+		return
+	var rr: Rect2 = l.rect
+	GTUI.box(self, rr, GTUI.c("surface") if l.ok else GTUI.c("danger"), GTUI.R_CONTROL, GTUI.c("border"))
+	GTUI.text_in(self, rr, l.msg, GTUI.FS_LABEL, GTUI.c("text") if l.ok else Color.WHITE, 0, true)
 
 
 func _area_panel() -> void:
@@ -707,7 +798,7 @@ func _draw_title() -> void:
 	var sc_r := Rect2(x, y, w, GTUI.dp(84))
 	GTUI.panel(self, sc_r, 1)
 	GTUI.text_in(self, Rect2(x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(GTUI.SP_S), w - GTUI.dp(GTUI.SP_M) * 2, GTUI.dp(24)), main.sc.get("title", ""), GTUI.FS_TITLE, GTUI.c("text"), -1, true)
-	GTUI.paragraph(self, x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(34), w - GTUI.dp(GTUI.SP_M) * 2, "12,000 fans after the cup final · 4 gates, 2 signs, barriers · a long train delay is likely", GTUI.FS_LABEL, GTUI.c("text_muted"))
+	GTUI.paragraph(self, x + GTUI.dp(GTUI.SP_M), y + GTUI.dp(34), w - GTUI.dp(GTUI.SP_M) * 2, "12,000 fans after the cup final · gates, signs, fences, stewards and arrows · a long train delay is likely", GTUI.FS_LABEL, GTUI.c("text_muted"))
 	var btn := Rect2(x, card.end.y - p - GTUI.target(), w, GTUI.target())
 	var cols := GTUI.row(btn, 3, [1.3, 1, 1])
 	GTUI.chip(self, "title_big", cols[0], "Stress test: 30,000", big_crowd)
@@ -750,24 +841,31 @@ func _draw_briefing() -> void:
 func _draw_help() -> void:
 	_modal = true
 	var lines := [
-		"People choose their own routes. You change gates, barriers and signs, and they react.",
-		"Gates: tap one, then Open, Meter (hold people back) or Close. The station's own entrances can be closed too, to protect its halls while trains are delayed.",
-		"Signs: point train passengers to a gate, or show live waits. Not everyone reads them.",
-		"Barriers: pick the Barrier tool and drag inside a yellow zone (pan with two fingers meanwhile).",
-		"Station halls are watched by cameras that refresh every 30 s: what you see there may be out of date.",
-		"Tap an area to see what is limiting it. Overlays show density, risk, flow and routes.",
-		"Drag or use WASD to pan; scroll, pinch or +/- to zoom; Space pauses; 1–4 set the speed.",
+		"People pick their own routes. You change gates, signs, fences, stewards and arrows; they react.",
+		"Gates: tap one to Open, Meter or Close it. Closing the station's entrances protects its halls while trains are delayed.",
+		"Signs: point train passengers to a gate or show live waits. Not everyone reads them.",
+		"Fence: drag anywhere, bends and all; people walk around it. Stewards: drag a line that holds people until you tap it and release them. Arrow and One-way: mark the way to walk.",
+		"Station halls are seen through cameras that refresh every 30 s.",
+		"Tap an area to see what limits it. Overlays show density, risk, flow and routes.",
+		"Pan: drag or WASD. Zoom: scroll, pinch or +/-. Space pauses, 1–4 set the speed.",
 	]
 	var cw := minf(GTUI.dp(520), _vs().x - GTUI.dp(GTUI.SP_L) * 2) - GTUI.dp(GTUI.SP_XL) * 2
+	# the smaller size when the normal one would not fit the screen (short phones in landscape)
+	var size := GTUI.FS_LABEL
 	var h := 0.0
-	for l in lines:
-		h += GTUI.paragraph(null, 0, 0, cw - GTUI.dp(16), l, GTUI.FS_LABEL, Color.WHITE, false, false) + GTUI.dp(GTUI.SP_XS)
+	for attempt in 2:
+		h = 0.0
+		for l in lines:
+			h += GTUI.paragraph(null, 0, 0, cw - GTUI.dp(16), l, size, Color.WHITE, false, false) + GTUI.dp(GTUI.SP_XS)
+		if GTUI.modal_height(h) <= _vs().y - GTUI.dp(GTUI.SP_M) * 2:
+			break
+		size = GTUI.FS_CAPTION
 	var card := GTUI.modal_rect(self, 520, GTUI.modal_height(h))
 	var c := GTUI.modal(self, card, "How to play", "help_close")
 	var y := c.position.y
 	for l in lines:
 		draw_circle(Vector2(c.position.x + GTUI.dp(4), y + GTUI.dp(10)), GTUI.dp(3), GTUI.c("accent"))
-		y = GTUI.paragraph(self, c.position.x + GTUI.dp(16), y, c.size.x - GTUI.dp(16), l, GTUI.FS_LABEL, GTUI.c("text")) + GTUI.dp(GTUI.SP_XS)
+		y = GTUI.paragraph(self, c.position.x + GTUI.dp(16), y, c.size.x - GTUI.dp(16), l, size, GTUI.c("text")) + GTUI.dp(GTUI.SP_XS)
 	GTUI.button(self, "help_close", GTUI.modal_buttons_rect(c), "Got it", "primary")
 
 
@@ -906,7 +1004,10 @@ func _toast_layout() -> Array:
 		right = vs.x - m
 	var y := top_bar_h() + objective_h() + m
 	var pad := GTUI.dp(GTUI.SP_M + 12)
-	for tst in main.toasts:
+	var items: Array = main.toasts.duplicate()
+	if main.is_drawing_tool() and not main.drag_active:
+		items.push_front({"text": TOOL_HINTS.get(main.tool, ""), "kind": "hint"})
+	for tst in items:
 		var msg: String = tst.text
 		var max_w := right - left
 		var w := minf(GTUI.text_width(msg, GTUI.FS_LABEL, true) + pad + GTUI.dp(GTUI.SP_M), max_w)
@@ -914,7 +1015,7 @@ func _toast_layout() -> Array:
 		var lh := GTUI.line_height(GTUI.FS_LABEL)
 		var h := maxf(GTUI.target(), lines.size() * lh + GTUI.dp(GTUI.SP_S) * 2)
 		var r := Rect2(left + (max_w - w) / 2, y, w, h)
-		var col := GTUI.c("danger") if tst.kind in ["danger", "error"] else (Color("ff922b") if tst.kind in ["warning", "incident"] else GTUI.c("success") if tst.kind == "incident_end" else GTUI.c("surface_high"))
+		var col := GTUI.c("accent") if tst.kind == "hint" else GTUI.c("danger") if tst.kind in ["danger", "error"] else (Color("ff922b") if tst.kind in ["warning", "incident"] else GTUI.c("success") if tst.kind == "incident_end" else GTUI.c("surface_high"))
 		out.append({"rect": r, "lines": lines, "col": col})
 		y += h + GTUI.dp(GTUI.SP_XS)
 	return out

@@ -196,3 +196,44 @@ longer); heavy congestion weighs 0.25 points a second because some of it is unav
 
 **Cost.** About 5,000 people on site at the peak; ~2-3 ms per step natively. A full evening takes
 about a minute of CPU, so CI runs a focused set of strategies.
+
+## ADR 12: Player tools: fences anywhere, steward lines, direction arrows
+
+**Context.** Playtest: "Why is there only one barrier type, why am I restricted to a very specific
+area, I can't create custom routes." Barriers were straight 30 m segments, at most six, inside four
+yellow zones; all they could do was slow a path down.
+
+**Decision.** Three tools, placed anywhere on open ground (`barrier_zones` stay as an optional
+scenario restriction; the stadium has none), paid per metre:
+
+| Tool | Shape | Effect on people | Rules |
+|---|---|---|---|
+| Fence ($4/m, ≤ 240 m) | freehand stroke simplified to ≤ 24 corners | solid wall: walked around, so fences build routes | clear of gates (1 m), exits and walkway points; must not trap anyone |
+| Steward line ($8/m, ≤ 60 m) | straight | while holding: stops bodies; routes still lead through it at ~40 m extra, so people walk round a short line and wait at a long one; release on command | clear of gates and exits; stewards cannot form a line where the crowd is denser than 2 p/m² |
+| Arrow / one-way ($1/m, ≤ 200 m, 8 m lane) | freehand stroke | step cost ×0.7 along the lane, ×2 against (one-way ×8) in the navigation fields | open ground only |
+
+**How.** Fences are wall polylines (as barriers were). Steward walls collide but are left out of
+the navigation grid's blocked cells; their cells take the maximum crowd cost instead, so the
+distance fields and route graph see them as expensive rather than cut. Arrows are a per-cell
+direction in the field search (anisotropic Dijkstra; the along factor keeps every step ≥ 0.7 cell,
+so Dial's bucket queue stays exact). The trap check now counts only fences: before, a closed
+station entrance made every barrier "cut the station off", so nothing could be placed during the
+delay, exactly when it mattered.
+
+**Checks** (`core/tests/tools.rs`): a bent fence sends 100% of people through the opening it
+leaves; an arrow round a kiosk moves the split from about half to > 85%, a one-way lane across the
+other way to > 95%; a full steward line passes nobody for 90 s with > 60 waiting, then everyone
+gets out after release; a short one is walked round; trap, crush and steward-room rules.
+
+**Stewards keep order.** People within 30 m of a holding steward line queue like people at a
+staffed metered gate: they keep personal space and do not push. Without this, a held plaza crowd
+pushed itself into a crush (75 s of danger) where the same hold done with gate metering stayed
+safe, which made stewards strictly worse than the gate staff they stand for.
+
+**Result** (default seed): "close the station entrances, cordon the plaza corners in front of both
+gates with stewards, release after the delay" scores 803 (2 stars, 1 s of danger), next to 818 for
+the gate-metering plan.
+
+**Why not other tools.** Rope lines (cheap queue snaking that people duck under) and openable
+perimeter fences (new ways through the map) were offered; the player chose shaping flow with
+fences, stewards and arrows on the existing map.

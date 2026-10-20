@@ -62,15 +62,22 @@ func _run() -> void:
 	main.set_sign("sign_n", "waits")
 	main.select("sign", "sign_n")
 	await _shot("signage")
-	main.set_tool("barrier")
+	# drawing a bent fence: the live label shows its length and cost
+	main.set_tool("fence")
 	main.drag_active = true
-	main.drag_from = Vector2(156, 93)
-	main.drag_to = Vector2(180, 81)
-	main.preview_ok = true
+	main.draw_points = PackedVector2Array([Vector2(150, 96), Vector2(172, 96), Vector2(180, 84)])
+	main._update_preview(true)
 	await _shot("barrier_preview")
 	main.drag_active = false
-	main.adapter.command({"type": "barrier_add", "a": [156, 93], "b": [180, 81]})
+	main.adapter.command(main.draw_command())
+	# a guide arrow through the south plaza and stewards holding the north walkway
+	main.adapter.command({"type": "arrow_add", "points": [[135, 175], [190, 190], [228, 205]], "one_way": false})
+	var st: Dictionary = main.adapter.command({"type": "stewards_add", "a": [262, 40], "b": [262, 59]})
 	main.set_tool("select")
+	main.step_ticks(int(45.0 / main.dt))
+	main.select("barrier", int(st.get("id", 0)))
+	await _shot("tools")
+	main.set_stewards(int(st.get("id", 0)), false)
 	main.select("gate", "gate_a")
 	main.set_gate("gate_a", "metered", 0.5)
 	main.step_ticks(int(400.0 / main.dt))

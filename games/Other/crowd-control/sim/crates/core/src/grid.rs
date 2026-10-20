@@ -21,11 +21,28 @@ pub struct Wall {
 pub enum WallOwner {
     /// Map boundary or a scenario wall.
     Static,
-    /// Player barrier with its id.
+    /// Player fence with its id.
     Barrier(u32),
+    /// A steward line holding the crowd back (id). It stops bodies but is not cut out of the
+    /// navigation grid: routes still lead through it at a high cost, so people either walk round
+    /// or wait at the line for it to open.
+    Stewards(u32),
     /// A gate line while the gate is closed (gate index).
     Gate(u16),
 }
+
+/// Player direction marking on a cell: walking along `dir` is cheaper, against it dearer (or, with
+/// `strict`, a one-way lane people avoid walking against).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Flow {
+    pub dir: Vec2,
+    pub strict: bool,
+}
+
+/// Step-cost multipliers for direction markings.
+pub const FLOW_ALONG: f32 = 0.7;
+pub const FLOW_AGAINST: f32 = 2.0;
+pub const FLOW_AGAINST_STRICT: f32 = 8.0;
 
 /// A line that may only be crossed in the direction of `normal` (e.g. fare gates).
 #[derive(Clone, Copy, Debug)]
@@ -293,7 +310,14 @@ impl NavGrid {
     }
 
     pub fn add_wall(&mut self, a: Vec2, b: Vec2, owner: WallOwner) {
-        self.walls.push(Wall { a, b, owner });
+        self.add_walls(&[(a, b)], owner);
+    }
+
+    /// Several segments with one owner (a fence polyline), one rebuild.
+    pub fn add_walls(&mut self, segs: &[(Vec2, Vec2)], owner: WallOwner) {
+        for &(a, b) in segs {
+            self.walls.push(Wall { a, b, owner });
+        }
         self.refresh_walkable();
     }
 
@@ -313,7 +337,7 @@ impl NavGrid {
         let dynamic: Vec<(Vec2, Vec2)> = self
             .walls
             .iter()
-            .filter(|w| w.owner != WallOwner::Static)
+            .filter(|w| !matches!(w.owner, WallOwner::Static | WallOwner::Stewards(_)))
             .map(|w| (w.a, w.b))
             .collect();
         for (a, b) in dynamic {
@@ -326,11 +350,56 @@ impl NavGrid {
 
     /// Walkable mask a candidate wall would produce (for placement checks), without applying it.
     pub fn walkable_with(&self, a: Vec2, b: Vec2) -> Vec<bool> {
+        self.walkable_with_segments(&[(a, b)])
+    }
+
+    pub fn walkable_with_segments(&self, segs: &[(Vec2, Vec2)]) -> Vec<bool> {
         let mut m = self.walkable.clone();
-        for i in self.cells_near_segment(a, b) {
-            m[i] = false;
+        for &(a, b) in segs {
+            for i in self.cells_near_segment(a, b) {
+                m[i] = false;
+            }
         }
         m
+    }
+
+    /// Walkable cells counting only scenario walls, player fences and `segs` (for trap checks:
+    /// closed gates and steward lines open again).
+    pub fn fence_mask_with(&self, segs: &[(Vec2, Vec2)]) -> Vec<bool> {
+        let mut m = self.base.clone();
+        let fences: Vec<(Vec2, Vec2)> = self
+            .walls
+            .iter()
+            .filter(|w| matches!(w.owner, WallOwner::Barrier(_)))
+            .map(|w| (w.a, w.b))
+            .chain(segs.iter().copied())
+            .collect();
+        for (a, b) in fences {
+            for i in self.cells_near_segment(a, b) {
+                m[i] = false;
+            }
+        }
+        m
+    }
+
+    /// Cells whose centre lies within `half` of the segment (a lane of width 2 * half).
+    pub fn cells_in_band(&self, a: Vec2, b: Vec2, half: f32) -> Vec<usize> {
+        let mut out = Vec::new();
+        let minx = ((a.x.min(b.x) - half) / self.cell).floor().max(0.0) as usize;
+        let maxx =
+            (((a.x.max(b.x) + half) / self.cell).ceil() as usize).min(self.cols.saturating_sub(1));
+        let miny = ((a.y.min(b.y) - half) / self.cell).floor().max(0.0) as usize;
+        let maxy =
+            (((a.y.max(b.y) + half) / self.cell).ceil() as usize).min(self.rows.saturating_sub(1));
+        for cy in miny..=maxy {
+            for cx in minx..=maxx {
+                let c = self.center(cx, cy);
+                if (closest_on_segment(c, a, b) - c).len() <= half {
+                    out.push(self.idx(cx, cy));
+                }
+            }
+        }
+        out
     }
 
     fn rebuild_buckets(&mut self) {
@@ -524,7 +593,7 @@ pub fn clearance(grid: &NavGrid, mask: &[bool]) -> Vec<f32> {
 
 /// Disc-target field (kept for tests and simple uses).
 pub fn build_field(grid: &NavGrid, mask: &[bool], target: Vec2, radius: f32) -> Field {
-    build_field_to(grid, mask, &FieldTarget::disc(target, radius), None)
+    build_field_to(grid, mask, &FieldTarget::disc(target, radius), None, None)
 }
 
 /// Extra cost of stepping into a cell this close to a wall (fraction of a free step).
@@ -535,12 +604,14 @@ pub fn wall_cost(clearance: f32) -> f32 {
 
 /// 8-connected Dijkstra (no corner cutting) from every walkable cell within `radius` of the target
 /// (on its `side`, if set). `cost` multiplies the length of a step into each cell (>= 1: near walls,
-/// through dense crowd). Ties resolve by cell index, so the result is deterministic.
+/// through dense crowd). `flow` marks direction lanes (cheaper along, dearer against). Ties resolve
+/// by cell index, so the result is deterministic.
 pub fn build_field_to(
     grid: &NavGrid,
     mask: &[bool],
     target: &FieldTarget,
     cost: Option<&[f32]>,
+    flow: Option<&[Flow]>,
 ) -> Field {
     let n = grid.cols * grid.rows;
     let mut f = Field::empty(n, target.a);
@@ -644,6 +715,23 @@ pub fn build_field_to(
                 let mut step = w * c;
                 if let Some(k) = cost {
                     step *= k[j].clamp(1.0, 20.0);
+                }
+                if let Some(fl) = flow {
+                    // the agent walks j -> i, i.e. along (-dx, -dy); never cheaper than 0.7 of a
+                    // cell, so the bucket queue stays exact
+                    let fd = fl[j].dir;
+                    if fd != Vec2::ZERO {
+                        let along = -(dx as f32 * fd.x + dy as f32 * fd.y) / w;
+                        if along > 0.35 {
+                            step *= FLOW_ALONG;
+                        } else if along < -0.35 {
+                            step *= if fl[j].strict {
+                                FLOW_AGAINST_STRICT
+                            } else {
+                                FLOW_AGAINST
+                            };
+                        }
+                    }
                 }
                 let nd = d + step;
                 if nd < f.dist[j] {

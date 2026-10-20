@@ -105,7 +105,7 @@ impl Spec {
                 "crowd_following": self.crowd_following, "patience": [7000, 7000], "group_size": self.group}],
             "spawn_schedules": self.sources, "signs": self.signs, "transit_services": self.transit,
             "event_schedule": self.events,
-            "player_resources": {"budget": 10000, "barrier_cost": 100, "barrier_max_len": 12, "max_barriers": 10},
+            "player_resources": {"budget": 10000, "fence_cost_per_m": 8, "fence_max_len": 100, "stewards_cost_per_m": 10, "stewards_max_len": 40, "arrow_cost_per_m": 1, "arrow_max_len": 60, "max_placed": 10},
             "objectives": {"time_limit": self.time_limit, "clear_fraction": 0.95, "target_journey": 60, "target_max_wait": 60},
             "failure_conditions": {"max_danger_seconds": 100000},
             "scoring_rules": {"base": 1000, "per_journey_second": 1, "per_wait_second": 1, "per_heavy_second": 1,

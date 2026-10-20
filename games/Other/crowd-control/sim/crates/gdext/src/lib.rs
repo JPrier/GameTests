@@ -90,6 +90,10 @@ impl CrowdSim {
         self.text(|s| s.replay())
     }
     #[func]
+    fn check_command(&self, json: GString) -> GString {
+        self.text(|s| s.check_command(&json.to_string()))
+    }
+    #[func]
     fn check_barrier(&self, ax: f64, ay: f64, bx: f64, by: f64) -> GString {
         self.text(|s| s.check_barrier(ax as f32, ay as f32, bx as f32, by as f32))
     }

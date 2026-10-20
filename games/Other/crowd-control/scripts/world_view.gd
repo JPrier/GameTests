@@ -29,6 +29,10 @@ const C_BARRIER := Color("ffd43b")
 const C_BARRIER_DARK := Color("2b2b2b")
 const C_SELECT := Color("ffffff")
 const C_ZONE := Color(1, 0.83, 0.23, 0.55)
+const C_STEWARD := Color("c6f432")       # hi-vis vests
+const C_STEWARD_EDGE := Color("1f2a07")
+const C_LANE := Color("4dabf7")
+const C_ONEWAY := Color("e8590c")
 const DEST_COLORS := [Color("0b7a8a"), Color("c2410c"), Color("7048e8"), Color("2b8a3e")]
 const PROFILE_COLORS := [Color("1c7ed6"), Color("f08c00"), Color("2f9e44"), Color("e03131"), Color("ae3ec9"), Color("495057"), Color("0ca678"), Color("d6336c")]
 
@@ -242,8 +246,8 @@ func _draw_top() -> void:
 	var ov: Dictionary = main.overlays
 	var zoom: float = main.camera.zoom.x
 	var lw := 2.0 / zoom
-	# barrier zones while placing
-	if main.tool == "barrier":
+	# placement zones (only scenarios that restrict placement have any) while drawing
+	if main.tool != "select":
 		for z in sc.map.get("barrier_zones", []):
 			_dashed_rect(rect_px(z.rect), C_ZONE, lw * 1.5, 10.0 / zoom)
 	# flow arrows
@@ -307,19 +311,44 @@ func _draw_top() -> void:
 		var led := Color("ffb627") if on else Color("3a4148")
 		for k in 3:
 			top.draw_rect(Rect2(r.position + Vector2(5, 4 + k * 4), Vector2(18 if on else 10, 2)), led)
-	# barriers
-	for bar in t.get("barriers", []):
-		var a := Vector2(bar.a.x, bar.a.y) * PPM
-		var b := Vector2(bar.b.x, bar.b.y) * PPM
-		_draw_barrier(a, b, lw, main.selection.get("kind", "") == "barrier" and int(main.selection.get("id", -1)) == int(bar.id))
-	# barrier preview
-	if main.tool == "barrier" and main.drag_active:
-		var a: Vector2 = main.drag_from * PPM
-		var b: Vector2 = main.drag_to * PPM
+	# fences, steward lines and arrows (arrows first: they are floor markings)
+	var placed: Array = t.get("barriers", [])
+	for pass_i in 2:
+		for bar in placed:
+			var kind: String = bar.get("kind", "fence")
+			if (kind == "arrow") != (pass_i == 0):
+				continue
+			var pts := PackedVector2Array()
+			for q in bar.get("points", [bar.a, bar.b]):
+				pts.append(Vector2(q.x, q.y) * PPM)
+			var selected: bool = main.selection.get("kind", "") == "barrier" and int(main.selection.get("id", -1)) == int(bar.id)
+			match kind:
+				"arrow":
+					_draw_lane(pts, bool(bar.get("one_way", false)), lw, selected, 1.0)
+				"stewards":
+					_draw_stewards(pts[0], pts[pts.size() - 1], bool(bar.get("hold", true)), lw, selected)
+				_:
+					for i in range(1, pts.size()):
+						_draw_barrier(pts[i - 1], pts[i], lw, selected)
+	# what is being drawn
+	if main.drag_active and main.draw_points.size() >= 2:
+		var pts := PackedVector2Array()
+		for q in main.draw_points:
+			pts.append(q * PPM)
 		var ok: bool = main.preview_ok
-		top.draw_line(a, b, Color(C_BARRIER, 0.55) if ok else Color(C_CLOSED, 0.75), lw * 4.0)
-		top.draw_circle(a, lw * 3.0, Color.WHITE)
-		top.draw_circle(b, lw * 3.0, Color.WHITE)
+		match main.tool:
+			"arrow", "oneway":
+				_draw_lane(pts, main.tool == "oneway", lw, false, 0.6 if ok else 0.3)
+			"stewards":
+				_draw_stewards(pts[0], pts[pts.size() - 1], true, lw, false)
+			_:
+				for i in range(1, pts.size()):
+					top.draw_line(pts[i - 1], pts[i], Color(C_BARRIER, 0.7), lw * 4.0)
+		if not ok:
+			for i in range(1, pts.size()):
+				top.draw_line(pts[i - 1], pts[i], Color(C_CLOSED, 0.8), lw * 2.0)
+		top.draw_circle(pts[0], lw * 3.0, Color.WHITE)
+		top.draw_circle(pts[pts.size() - 1], lw * 3.0, Color.WHITE)
 	# dangerous crowding (staff alarm, never delayed): the whole area outlined in red
 	for at in t.get("areas", []):
 		if at.get("alarm", false):
@@ -368,6 +397,56 @@ func _draw_barrier(a: Vector2, b: Vector2, lw: float, selected: bool) -> void:
 		k = e
 	top.draw_circle(a, lw * 2.2, C_BARRIER_DARK)
 	top.draw_circle(b, lw * 2.2, C_BARRIER_DARK)
+
+
+## A steward line: a row of people in hi-vis vests, arms linked while holding; spaced out and faded
+## once they stand aside.
+func _draw_stewards(a: Vector2, b: Vector2, hold: bool, lw: float, selected: bool) -> void:
+	if selected:
+		top.draw_line(a, b, C_SELECT, lw * 7.0)
+	var len := a.distance_to(b)
+	var dir := (b - a) / maxf(len, 0.001)
+	var gap := 1.2 * PPM if hold else 3.0 * PPM
+	var n := maxi(2, int(len / gap) + 1)
+	var alpha := 1.0 if hold else 0.55
+	if hold:
+		top.draw_line(a, b, Color(C_STEWARD, 0.85), lw * 2.0)
+	var r := 0.32 * PPM
+	for k in n:
+		var p := a + dir * (len * float(k) / float(n - 1))
+		top.draw_circle(p, r + lw, Color(C_STEWARD_EDGE, alpha))
+		top.draw_circle(p, r, Color(C_STEWARD, alpha))
+
+
+## A marked lane: a tinted band with chevrons pointing the way; one-way lanes have orange edges.
+func _draw_lane(pts: PackedVector2Array, one_way: bool, lw: float, selected: bool, alpha: float) -> void:
+	var half := float(sc.player_resources.get("arrow_width", 8.0)) * 0.5 * PPM
+	var col := C_ONEWAY if one_way else C_LANE
+	for i in range(1, pts.size()):
+		var a := pts[i - 1]
+		var b := pts[i]
+		var len := a.distance_to(b)
+		if len < 0.01:
+			continue
+		var dir := (b - a) / len
+		var nrm := dir.orthogonal() * half
+		var quad := PackedVector2Array([a + nrm, b + nrm, b - nrm, a - nrm])
+		top.draw_colored_polygon(quad, Color(col, 0.26 * alpha))
+		if selected:
+			top.draw_line(a + nrm, b + nrm, C_SELECT, lw * 2.0)
+			top.draw_line(a - nrm, b - nrm, C_SELECT, lw * 2.0)
+		elif one_way:
+			top.draw_line(a + nrm, b + nrm, Color(col, 0.8 * alpha), lw * 1.5)
+			top.draw_line(a - nrm, b - nrm, Color(col, 0.8 * alpha), lw * 1.5)
+		var step := 6.0 * PPM
+		var k := step * 0.5
+		var s := half * 0.55
+		while k < len:
+			var c := a + dir * k
+			var tip := c + dir * s * 0.6
+			top.draw_line(tip, tip - dir * s + dir.orthogonal() * s, Color(col, 0.9 * alpha), lw * 2.0)
+			top.draw_line(tip, tip - dir * s - dir.orthogonal() * s, Color(col, 0.9 * alpha), lw * 2.0)
+			k += step
 
 
 func _dashed_rect(r: Rect2, c: Color, w: float, dash: float) -> void:

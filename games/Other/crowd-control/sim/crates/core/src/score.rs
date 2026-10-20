@@ -169,12 +169,19 @@ pub fn report(sim: &Sim) -> Report {
     });
 
     let mut cost_parts = Vec::new();
-    if !sim.barriers.is_empty() {
-        cost_parts.push(format!(
-            "{} barrier{}",
-            sim.barriers.len(),
-            if sim.barriers.len() == 1 { "" } else { "s" }
-        ));
+    for kind in [
+        crate::sim::PlaceKind::Fence,
+        crate::sim::PlaceKind::Stewards,
+        crate::sim::PlaceKind::Arrow,
+    ] {
+        let n = sim.barriers.iter().filter(|b| b.kind == kind).count();
+        if n > 0 {
+            cost_parts.push(format!(
+                "{n} {}{}",
+                kind.label(),
+                if n == 1 { "" } else { "s" }
+            ));
+        }
     }
     if sim.staff_spent > 0.5 {
         cost_parts.push(format!("gate staff ${:.0}", sim.staff_spent));
