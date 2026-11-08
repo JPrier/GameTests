@@ -286,7 +286,14 @@ static func _debug_echo(ev: InputEvent) -> void:
 	else:
 		return
 	var p: Vector2 = ev.position
-	_dbg_input.__gtDebugInput("%s at %d,%d frame %d%s" % [s, p.x, p.y, Engine.get_process_frames(), " synth" if ev.has_meta("gt_synth") else ""])
+	var on := ""
+	if not (ev is InputEventMouseMotion or ev is InputEventScreenDrag):
+		on = " ui-target none"
+		for t in _active_targets():
+			if (t.rect as Rect2).has_point(p):
+				on = " ui-target " + String(t.id)
+	_dbg_input.__gtDebugInput("%s at %d,%d%s frame %d fps %d%s" % [s, p.x, p.y, on, Engine.get_process_frames(),
+		Engine.get_frames_per_second(), " synth" if ev.has_meta("gt_synth") else ""])
 
 
 ## A press + release at `pos` for replaying a keyboard activation through the game's own tap handling:
