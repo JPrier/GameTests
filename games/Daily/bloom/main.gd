@@ -942,15 +942,15 @@ func _press_button(p: Vector2) -> bool:
 					"arch_close":
 						archive_open = false
 						_layout()
-					_:
-						if String(b.id).begins_with("day_"):
-							pick_day(String(b.id).substr(4))
 					"tut_skip": close_tutorial()
 					"tut_next": tut_next()
 					"tut_back": tut_back()
 					"start_over":
 						try_again()
 						clear_seeds()
+					_:   # must stay last: GDScript runs the first matching branch
+						if String(b.id).begins_with("day_"):
+							pick_day(String(b.id).substr(4))
 			return true
 	return false
 
