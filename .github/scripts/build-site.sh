@@ -47,6 +47,14 @@ for dir in "${games[@]}"; do
   mkdir -p "$SITE/$name"
   "$GODOT" --headless --path "$dir" --export-release "Web" "$SITE/$name/index.html"
   [ -s "$SITE/$name/index.wasm" ] || { echo "::error::$name export produced no build"; fail=1; }
+  # Input diagnostics, inert unless the page is opened with ?debug=input (for phones we can't test on).
+  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/input-debug.js" <<'PY'
+import sys
+page, js = sys.argv[1], open(sys.argv[2]).read()
+html = open(page).read()
+if "</head>" in html and "debug=input" not in html:
+    open(page, "w").write(html.replace("</head>", "<script>" + js + "</script></head>", 1))
+PY
   echo "::endgroup::"
 done
 

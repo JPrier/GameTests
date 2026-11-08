@@ -226,6 +226,30 @@ func test_tutorial_on_first_visit():
 	again.close_tutorial()
 
 
+func _tap_button(main, id: String) -> bool:
+	main._layout()
+	main.queue_redraw()
+	await wait_frames(2)
+	for b in main.buttons:
+		if b.id == id:
+			for e in GTUI.tap_events(main.get_global_transform_with_canvas() * (b.rect as Rect2).get_center()):
+				e.remove_meta("gt_synth")
+				main._input(e)
+			return true
+	return false
+
+
+func test_tutorial_buttons_respond_to_taps():
+	var main = await _fresh()
+	main.open_tutorial()
+	assert_true(await _tap_button(main, "tut_next"), "Next button is drawn")
+	assert_eq(main.tut_page, 1, "tapping Next turns the page")
+	assert_true(await _tap_button(main, "tut_back"), "Back button is drawn")
+	assert_eq(main.tut_page, 0, "tapping Back turns it back")
+	assert_true(await _tap_button(main, "tut_skip"), "close button is drawn")
+	assert_false(main.tut_open, "tapping close dismisses the tutorial")
+
+
 func test_demo_boards():
 	var main = await _fresh()
 	main._demo_reset()
