@@ -5,7 +5,11 @@
   try {
     if (!/[?&]debug=input\b/.test(location.search)) return;
   } catch (e) { return; }
-  var lines = [], counts = {}, panel = null, errors = [];
+  var lines = [], counts = {}, panel = null, errors = [], fps = 0, frames = 0, lastMove = '';
+  // the game's shared UI (gtui.gd) echoes what Godot actually receives through this
+  window.__gtDebugInput = function (s) { log('GAME ' + s); };
+  (function tick() { frames++; requestAnimationFrame(tick); })();
+  setInterval(function () { fps = frames; frames = 0; }, 1000);
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]; }); }
   function canvas() { return document.querySelector('canvas'); }
   function describe(el) {
@@ -24,6 +28,7 @@
         Math.round(r.width) + 'x' + Math.round(r.height) + ' focused ' + (document.activeElement === c) : 'no canvas yet',
       'ontouchstart ' + ('ontouchstart' in window) + ' maxTouchPoints ' + (navigator.maxTouchPoints || 0) +
         ' PointerEvent ' + (typeof PointerEvent),
+      'page fps ' + fps + ' ' + document.visibilityState + ' hasFocus ' + document.hasFocus() + lastMove,
       'counts ' + Object.keys(counts).map(function (k) { return k + ':' + counts[k]; }).join(' '),
     ];
   }
@@ -38,7 +43,7 @@
     }
     panel.innerHTML = esc(header().join('\n')) +
       (errors.length ? '\n<span style="color:#f88">' + esc(errors.slice(-4).join('\n')) + '</span>' : '') +
-      '\n' + esc(lines.slice(-14).join('\n'));
+      '\n' + esc(lines.slice(-16).join('\n'));
   }
   function log(s) { lines.push(s); if (lines.length > 60) lines.shift(); render(); }
   function point(e) {
@@ -59,6 +64,11 @@
         }, 0);
       }, { capture: true, passive: true });
     });
+  window.addEventListener('pointermove', function (e) {
+    counts.pointermove = (counts.pointermove || 0) + 1;
+    lastMove = ' last move ' + e.pointerType + ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) +
+      ' mv ' + e.movementX + ',' + e.movementY;
+  }, { capture: true, passive: true });
   window.addEventListener('error', function (e) { errors.push('error: ' + e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno); render(); });
   window.addEventListener('unhandledrejection', function (e) { errors.push('rejection: ' + (e.reason && e.reason.message || e.reason)); render(); });
   ['focus', 'blur', 'resize', 'orientationchange'].forEach(function (t) { window.addEventListener(t, function () { log('window ' + t); }); });

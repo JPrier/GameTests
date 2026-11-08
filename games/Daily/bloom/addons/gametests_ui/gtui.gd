@@ -67,6 +67,7 @@ static var _hover := ""
 static var _focus := ""
 static var _keyboard := false            # show focus rings only after keyboard use
 static var _controls: Control            # Control-node game: its root (see "Control-node games" below)
+static var _dbg_input = null             # JS logger from the ?debug=input page overlay, false when off
 
 
 ## Call once in _ready(). `palette` keys: see PALETTE_KEYS (missing ones are derived).
@@ -227,6 +228,7 @@ static func focused_id() -> String:
 ##   {"activate": id, "pos": Vector2}    keyboard Enter/Space on a focused control; treat as a tap at pos
 ##   {"cancel": true}                    Escape; close the top-most overlay if there is one
 static func handle_input(ev: InputEvent) -> Dictionary:
+	_debug_echo(ev)
 	if ev.has_meta("gt_synth"):
 		return {}
 	if _controls:
@@ -259,6 +261,32 @@ static func handle_input(ev: InputEvent) -> Dictionary:
 		if k == KEY_ESCAPE and not ev.echo:
 			return {"cancel": true}
 	return {}
+
+
+# Echo pointer events into the page's ?debug=input overlay (input-debug.js), to see what the game
+# receives on phones we can't test on. One cached lookup when the overlay isn't there.
+static func _debug_echo(ev: InputEvent) -> void:
+	if _dbg_input == null:
+		_dbg_input = false
+		if OS.has_feature("web"):
+			var w = JavaScriptBridge.get_interface("window")
+			if w != null and bool(JavaScriptBridge.eval("typeof window.__gtDebugInput === 'function'", true)):
+				_dbg_input = w
+	if _dbg_input is bool:
+		return
+	var s := ""
+	if ev is InputEventScreenTouch:
+		s = "touch idx %d %s" % [ev.index, "down" if ev.pressed else "up"]
+	elif ev is InputEventMouseButton:
+		s = "mouse btn %d %s dev %d" % [ev.button_index, "down" if ev.pressed else "up", ev.device]
+	elif ev is InputEventScreenDrag:
+		s = "drag idx %d" % ev.index
+	elif ev is InputEventMouseMotion:
+		s = "motion mask %d dev %d" % [ev.button_mask, ev.device]
+	else:
+		return
+	var p: Vector2 = ev.position
+	_dbg_input.__gtDebugInput("%s at %d,%d frame %d%s" % [s, p.x, p.y, Engine.get_process_frames(), " synth" if ev.has_meta("gt_synth") else ""])
 
 
 ## A press + release at `pos` for replaying a keyboard activation through the game's own tap handling:
