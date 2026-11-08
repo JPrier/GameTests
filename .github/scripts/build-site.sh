@@ -47,13 +47,14 @@ for dir in "${games[@]}"; do
   mkdir -p "$SITE/$name"
   "$GODOT" --headless --path "$dir" --export-release "Web" "$SITE/$name/index.html"
   [ -s "$SITE/$name/index.wasm" ] || { echo "::error::$name export produced no build"; fail=1; }
-  # Input diagnostics, inert unless the page is opened with ?debug=input (for phones we can't test on).
-  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/input-debug.js" <<'PY'
+  # Touch hardening (always on) and input diagnostics (inert unless the page has ?debug=input).
+  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/input-debug.js" "$ROOT/.github/scripts/touch-fix.js" <<'PY'
 import sys
-page, js = sys.argv[1], open(sys.argv[2]).read()
+page, scripts = sys.argv[1], [open(f).read() for f in sys.argv[2:]]
 html = open(page).read()
 if "</head>" in html and "debug=input" not in html:
-    open(page, "w").write(html.replace("</head>", "<script>" + js + "</script></head>", 1))
+    tags = "".join("<script>" + js + "</script>" for js in scripts)
+    open(page, "w").write(html.replace("</head>", tags + "</head>", 1))
 PY
   echo "::endgroup::"
 done

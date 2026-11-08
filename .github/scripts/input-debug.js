@@ -29,6 +29,7 @@
       'ontouchstart ' + ('ontouchstart' in window) + ' maxTouchPoints ' + (navigator.maxTouchPoints || 0) +
         ' PointerEvent ' + (typeof PointerEvent),
       'page fps ' + fps + ' ' + document.visibilityState + ' hasFocus ' + document.hasFocus() + lastMove,
+      'touch-fix dropped ' + JSON.stringify(window.__gtTouchFixDrops || 'n/a'),
       'counts ' + Object.keys(counts).map(function (k) { return k + ':' + counts[k]; }).join(' '),
     ];
   }
