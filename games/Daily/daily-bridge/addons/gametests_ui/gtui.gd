@@ -68,6 +68,9 @@ static var _focus := ""
 static var _keyboard := false            # show focus rings only after keyboard use
 static var _controls: Control            # Control-node game: its root (see "Control-node games" below)
 static var _dbg_input = null             # JS logger from the ?debug=input page overlay, false when off
+static var _dbg_env_sent := false
+static var _dbg_state: Dictionary = {}
+static var _dbg_diff_pending := false
 
 
 ## Call once in _ready(). `palette` keys: see PALETTE_KEYS (missing ones are derived).
@@ -274,6 +277,9 @@ static func _debug_echo(ev: InputEvent) -> void:
 				_dbg_input = w
 	if _dbg_input is bool:
 		return
+	if not _dbg_env_sent:
+		_dbg_env_sent = true
+		_debug_env()
 	var s := ""
 	if ev is InputEventScreenTouch:
 		s = "touch idx %d %s" % [ev.index, "down" if ev.pressed else "up"]
@@ -294,6 +300,63 @@ static func _debug_echo(ev: InputEvent) -> void:
 				on = " ui-target " + String(t.id)
 	_dbg_input.__gtDebugInput("%s at %d,%d%s frame %d fps %d%s" % [s, p.x, p.y, on, Engine.get_process_frames(),
 		Engine.get_frames_per_second(), " synth" if ev.has_meta("gt_synth") else ""])
+	var released: bool = (ev is InputEventScreenTouch or ev is InputEventMouseButton) and not ev.pressed
+	if released and not ev.has_meta("gt_synth"):
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree and not _dbg_diff_pending:
+			_dbg_diff_pending = true   # touch + emulated mouse release: one diff per tap
+			tree.create_timer(0.15).timeout.connect(_debug_state_diff, CONNECT_ONE_SHOT)
+
+
+
+
+static func _debug_env() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	var vp := tree.root if tree else null
+	var f := FileAccess.open("user://_gt_debug_probe", FileAccess.WRITE)
+	var writable := f != null
+	if f:
+		f.close()
+	_dbg_input.__gtDebugInput("env godot %s emulate_mouse_from_touch %s emulate_touch_from_mouse %s window %s vp %s scale %.2f stretch %s/%s gpu %s user:// %s" % [
+		Engine.get_version_info().string,
+		ProjectSettings.get_setting("input_devices/pointing/emulate_mouse_from_touch", true),
+		ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false),
+		DisplayServer.window_get_size(),
+		vp.get_visible_rect().size if vp else Vector2.ZERO,
+		vp.content_scale_factor if vp else 0.0,
+		ProjectSettings.get_setting("display/window/stretch/mode", ""),
+		ProjectSettings.get_setting("display/window/stretch/aspect", ""),
+		RenderingServer.get_video_adapter_name(),
+		"writable" if writable else "NOT writable (%s)" % error_string(FileAccess.get_open_error())])
+	_dbg_state = _debug_snapshot()
+
+
+# What changed in the scene's get_agent_state() since the last tap: shows whether the game reacted.
+static func _debug_snapshot() -> Dictionary:
+	var tree := Engine.get_main_loop() as SceneTree
+	var sc := tree.current_scene if tree else null
+	if sc == null or not sc.has_method("get_agent_state"):
+		return {}
+	var out := {}
+	var st = sc.call("get_agent_state")
+	if st is Dictionary:
+		for k in st:
+			out[str(k)] = str(st[k])
+	return out
+
+
+static func _debug_state_diff() -> void:
+	_dbg_diff_pending = false
+	if _dbg_input is bool:
+		return
+	var now := _debug_snapshot()
+	var parts: Array = []
+	for k in now:
+		if not _dbg_state.has(k) or _dbg_state[k] != now[k]:
+			var v: String = now[k]
+			parts.append("%s=%s" % [k, v.substr(0, 40) + ("~" if v.length() > 40 else "")])
+	_dbg_state = now
+	_dbg_input.__gtDebugInput("state " + ("UNCHANGED after tap" if parts.is_empty() else "changed: " + ", ".join(parts.slice(0, 6))))
 
 
 ## A press + release at `pos` for replaying a keyboard activation through the game's own tap handling:

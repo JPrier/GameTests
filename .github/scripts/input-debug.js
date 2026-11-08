@@ -33,10 +33,39 @@
     if (el.id) s += '#' + el.id;
     return s;
   }
+  var envLine = null;
+  function env() {
+    if (envLine) return envLine;
+    var parts = [];
+    function add(k, f) { try { parts.push(k + ' ' + f()); } catch (e) { parts.push(k + ' ERR ' + e.message); } }
+    add('screen', function () { return screen.width + 'x' + screen.height; });
+    add('orient', function () { return (screen.orientation && screen.orientation.type) || window.orientation; });
+    add('standalone', function () { return !!navigator.standalone || matchMedia('(display-mode: standalone)').matches; });
+    add('reduced-motion', function () { return matchMedia('(prefers-reduced-motion: reduce)').matches; });
+    add('pointer', function () { return (matchMedia('(pointer: coarse)').matches ? 'coarse' : 'fine') + (matchMedia('(hover: hover)').matches ? '+hover' : ''); });
+    add('inapp', function () { return /FBAN|FBAV|Instagram|Line\/|WhatsApp|Snapchat|GSA\/|CriOS|FxiOS|EdgiOS/.test(navigator.userAgent) || 'no'; });
+    add('lang', function () { return navigator.language; });
+    add('cores', function () { return navigator.hardwareConcurrency; });
+    add('localStorage', function () { localStorage.setItem('_gt_probe', '1'); localStorage.removeItem('_gt_probe'); return 'ok'; });
+    add('gpu', function () {
+      var gl = document.createElement('canvas').getContext('webgl2');
+      if (!gl) return 'NO webgl2';
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    });
+    envLine = parts.join(' | ');
+    try {
+      var req = indexedDB.open('_gt_probe');
+      req.onsuccess = function () { envLine += ' | indexedDB ok'; try { req.result.close(); } catch (e) {} };
+      req.onerror = function () { envLine += ' | indexedDB ERR ' + (req.error && req.error.name); };
+    } catch (e) { envLine += ' | indexedDB ERR ' + e.message; }
+    return envLine;
+  }
   function header() {
     var c = canvas(), r = c ? c.getBoundingClientRect() : null, vv = window.visualViewport;
     return [
       'build ' + (window.__gtBuild || '?') + ' | ' + navigator.userAgent,
+      env(),
       'viewport ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio +
         (vv ? ' vv ' + Math.round(vv.width) + 'x' + Math.round(vv.height) + ' scale ' + vv.scale.toFixed(2) : ''),
       c ? 'canvas ' + c.width + 'x' + c.height + ' at ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
@@ -52,7 +81,7 @@
     if (!panel) {
       if (!document.body) return;
       panel = document.createElement('div');
-      panel.style.cssText = 'position:fixed;left:0;right:0;top:0;max-height:45vh;overflow:hidden;z-index:2147483647;' +
+      panel.style.cssText = 'position:fixed;left:0;right:0;top:0;max-height:62vh;overflow:hidden;z-index:2147483647;' +
         'pointer-events:none;background:rgba(0,0,0,.78);color:#9f9;font:10px/1.3 ui-monospace,Menlo,monospace;' +
         'padding:4px 6px;white-space:pre-wrap;word-break:break-all';
       document.body.appendChild(panel);
@@ -104,6 +133,30 @@
         }, 0);
       }, { capture: true, passive: true });
     });
+  var moved = {};
+  window.addEventListener('touchstart', function (e) {
+    for (var i = 0; i < e.changedTouches.length; i++) moved[e.changedTouches[i].identifier] = 0;
+  }, { capture: true, passive: true });
+  window.addEventListener('touchmove', function (e) {
+    counts.touchmove = (counts.touchmove || 0) + 1;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i], n = moved[t.identifier] = (moved[t.identifier] || 0) + 1;
+      if (n === 1 || n % 10 === 0) log('touchmove#' + n + ' ' + Math.round(t.clientX) + ',' + Math.round(t.clientY) + ' id ' + t.identifier);
+    }
+  }, { capture: true, passive: true });
+  ['gesturestart', 'gesturechange', 'gestureend', 'contextmenu', 'selectstart', 'dblclick', 'visibilitychange', 'pagehide', 'pageshow'].forEach(function (t) {
+    (t === 'visibilitychange' ? document : window).addEventListener(t, function (e) {
+      counts[t] = (counts[t] || 0) + 1;
+      if (t !== 'gesturechange') log(t + (e.scale !== undefined ? ' scale ' + e.scale.toFixed(2) : '') + (e.defaultPrevented ? ' prevented' : ''));
+    }, { capture: true, passive: true });
+  });
+  if (window.visualViewport) ['resize', 'scroll'].forEach(function (t) {
+    visualViewport.addEventListener(t, function () {
+      log('visualViewport ' + t + ' ' + Math.round(visualViewport.width) + 'x' + Math.round(visualViewport.height) +
+        ' offset ' + Math.round(visualViewport.offsetLeft) + ',' + Math.round(visualViewport.offsetTop) + ' scale ' + visualViewport.scale.toFixed(2));
+    });
+  });
+  window.addEventListener('scroll', function () { log('window scroll ' + Math.round(scrollX) + ',' + Math.round(scrollY)); }, { passive: true });
   window.addEventListener('pointermove', function (e) {
     counts.pointermove = (counts.pointermove || 0) + 1;
     lastMove = ' last move ' + e.pointerType + ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) +
