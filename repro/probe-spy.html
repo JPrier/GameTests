@@ -117,7 +117,7 @@
         var st = origCheck.call(gl, 0x8CA8), prevRB = null;
         if (st === 0x8CD7 && f !== defaultFbo) { prevRB = gp.call(gl, 0x0C02); P.readBuffer.call(gl, 0x8CE0); st = origCheck.call(gl, 0x8CA8); }
         var key = 'fbo' + f.__id + '=#' + (objIds.has(f) ? objIds.get(f) : '?') + (f === defaultFbo ? '(emscripten)' : '') + ' ' + (st === 0x8CD5 ? '' : 'status 0x' + st.toString(16) + ' ') +
-          (st === 0x8CD5 ? 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%' : '');
+          (st === 0x8CD5 ? 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%' + (f !== defaultFbo ? ' flipped: bar' + rowCount(gl, 260, true) + '% text' + rowCount(gl, 105, true) + '%' : '') : '');
         if (prevRB !== null) { key += ' (readBuffer was 0x' + prevRB.toString(16) + ')'; P.readBuffer.call(gl, prevRB); }
         fboRes[key] = (fboRes[key] || 0) + 1;
       } catch (e) { fboRes['fbo' + f.__id + ' err ' + e.message] = 1; }
@@ -125,8 +125,8 @@
     origBind.call(gl, 0x8CA8, boundRead);
   }
   var rowbuf = null;
-  function rowCount(gl, yUnits) {
-    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, y = Math.floor(h * (1 - yUnits / 1224));
+  function rowCount(gl, yUnits, flipped) {
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, y = Math.floor(h * (flipped ? yUnits / 1224 : 1 - yUnits / 1224));
     if (!rowbuf || rowbuf.length !== w * 4) rowbuf = new Uint8Array(w * 4);
     origRead.call(gl, 0, y, w, 1, 0x1908, 0x1401, rowbuf);
     var n = 0;
