@@ -97,7 +97,7 @@
       origBind.call(gl, 0x8CA9, boundDraw); origBind.call(gl, 0x8CA8, boundRead);
     } catch (e) { tcRes['err ' + e.message] = 1; }
   }
-  var fbos = [], fboRes = {}, lastFbo = {};
+  var fbos = [], fboRes = {}, lastFbo = {}, clears = {}, lastClears = {};
   var origCheck = P.checkFramebufferStatus;
   function fboSample(gl, defaultFbo) {
     for (var i = 0; i < fbos.length; i++) {
@@ -186,6 +186,19 @@
       if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
       if (k === 'createFramebuffer' && r) { r.__id = fbos.length + 1; fbos.push(r); }
+      if (k === 'clear' && boundDraw && boundDraw.__id === 1 && !inPix) {
+        inPix = true;
+        try {
+          var cc2 = gp.call(this, 0x0C22), sc2 = origIsEnabled.call(this, 0x0C11), sb2 = gp.call(this, 0x0C10), cm2 = gp.call(this, 0x0C23);
+          origBind.call(this, 0x8CA8, boundDraw);
+          var ck = 'mask 0x' + a[0].toString(16) + ' color ' + Array.prototype.map.call(cc2, function (v) { return v.toFixed(2); }).join(',') +
+            ' scissor ' + sc2 + (sc2 ? '[' + Array.prototype.join.call(sb2, ',') + ']' : '') + ' wm ' + Array.prototype.join.call(cm2, ',') +
+            ' -> after: text' + rowCount(this, 105) + '%';
+          clears[ck] = (clears[ck] || 0) + 1;
+          origBind.call(this, 0x8CA8, boundRead);
+        } catch (e) { clears['err ' + e.message] = 1; }
+        inPix = false;
+      }
       if (isPresent) pixSample(this, 'scr', null);
       if (isPresent && fx.flush) { fxc('flush'); orig.call; P.flush.call(this); }
       if (isPresent && fx.finish) { fxc('finish'); P.finish.call(this); }
@@ -203,11 +216,11 @@
   });
   (function f(){ frameNo++; requestAnimationFrame(f); })();
   setInterval(function () {
-    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; lastStates = states; lastTc = tcRes; lastFbo = fboRes; fboRes = {}; states = {}; tcRes = {}; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
+    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; lastStates = states; lastTc = tcRes; lastFbo = fboRes; fboRes = {}; lastClears = clears; clears = {}; states = {}; tcRes = {}; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'BSD ' + window.__bsdShape + ' | FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 700) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'BSD ' + window.__bsdShape + ' | FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nGODOT CLEARS on fbo1: ' + JSON.stringify(lastClears) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 300) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
