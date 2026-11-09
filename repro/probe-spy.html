@@ -69,7 +69,7 @@
     if (inPix) return; inPix = true;
     try {
       origBind.call(gl, 0x8CA8, readFbo);   // READ_FRAMEBUFFER
-      var x = Math.floor(gl.drawingBufferWidth * 0.5), y = Math.floor(gl.drawingBufferHeight * (1 - 420 / 1224));
+      var x = Math.floor(gl.drawingBufferWidth * 0.5), y = Math.floor(gl.drawingBufferHeight * (1 - 260 / 1224));
       origRead.call(gl, x, y, 1, 1, 0x1908, 0x1401, pbuf);   // RGBA, UNSIGNED_BYTE
       var key = pbuf[0] > 150 && pbuf[1] > 100 ? 'bar' : 'bg(' + pbuf[0] + ',' + pbuf[1] + ',' + pbuf[2] + ')';
       pix[which][key] = (pix[which][key] || 0) + 1;
