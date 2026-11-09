@@ -93,10 +93,12 @@ body {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <meta name="theme-color" content="#181223"><meta name="description" content="Drinkle: a daily drink deduction game. Every guess shows how close you are. Name the drink in six."><style>#status-splash{display:none!important}#status-progress{accent-color:#f2b84b}html,body,#status{background:#181223!important}html,body{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{touch-action:none}</style>
-	<script>window.__gtBuild="repro 18:25"</script><script>// Rendering switches for diagnosing phones where the game runs and takes input but the screen
+	<script>window.__gtBuild="repro2 18:29"</script><script>// Rendering switches for diagnosing phones where the game runs and takes input but the screen
 // stops updating (seen on an iPhone 14, iOS 18.1). Inert unless the URL asks for one:
 //   ?gl=preserve  create the WebGL context with preserveDrawingBuffer: true
 //   ?dpr=1        report devicePixelRatio 1, so the canvas is 1x instead of 3x on a phone
+//   ?gl=quad      present frames by drawing the offscreen buffer as a textured quad instead of
+//                 blitFramebuffer into the default framebuffer (Emscripten's own fallback path)
 // Several can be combined, e.g. ?gl=preserve&dpr=1. The ?debug=input overlay shows which are on.
 (function () {
   var q = '';
@@ -104,10 +106,20 @@ body {
   var gl = (/[?&]gl=([a-z,]+)/.exec(q) || [])[1] || '';
   var opts = window.__gtRenderOptions = {
     preserve: /\bpreserve\b/.test(gl),
+    quad: /\bquad\b/.test(gl),
     dpr1: /[?&]dpr=1\b/.test(q),
   };
   if (opts.dpr1) {
     try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return 1; }, configurable: true }); } catch (e) {}
+  }
+  if (opts.quad) {
+    // Emscripten keeps its context record on the canvas (canvas.GLctxObject); its commit step
+    // copies the offscreen back buffer with blitFramebuffer unless this flag is set.
+    var tries = 0, t = setInterval(function () {
+      var c = document.querySelector('canvas'), ctx = c && c.GLctxObject;
+      if (ctx && ctx.defaultFbo) { ctx.defaultFboForbidBlitFramebuffer = true; opts.quadApplied = true; clearInterval(t); }
+      else if (++tries > 600) clearInterval(t);
+    }, 50);
   }
   if (opts.preserve) {
     var orig = HTMLCanvasElement.prototype.getContext;
