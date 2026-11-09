@@ -182,6 +182,7 @@
           pc[a[1]] = a[2]; paramCache.set(t, pc);
         }
       }
+      if (fx.nolevels && (k === 'texParameteri' || k === 'texParameterf') && (a[1] === 0x813C || a[1] === 0x813D || a[1] === 0x84FE)) { fxc('nolevels'); return; }
       if (fx.nodsrt && k === 'framebufferTexture2D' && a[1] === 0x821A) { fxc('nodsrt'); return; }
       if (fx.dsrb && k === 'framebufferTexture2D' && a[1] === 0x821A && a[3]) {
         // attach an equivalent DEPTH24_STENCIL8 renderbuffer instead of the texture
