@@ -84,6 +84,10 @@
     } catch (e) { pix[which]['err ' + e.message] = 1; }
     inPix = false;
   }
+  var FX = ((/[?&]fx=([a-z,]+)/.exec(location.search) || [])[1] || '').split(',');
+  var fx = {}; FX.forEach(function (f) { if (f) fx[f] = true; });
+  var bound = {}, sizes = new WeakMap(), fxCount = {};
+  function fxc(k) { fxCount[k] = (fxCount[k] || 0) + 1; }
   Object.getOwnPropertyNames(P).forEach(function (k) {
     var d = Object.getOwnPropertyDescriptor(P, k);
     if (!d || typeof d.value !== 'function' || k === 'constructor') return;
@@ -104,10 +108,22 @@
         counts[key2] = (counts[key2] || 0) + 1;
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
+      if (k === 'bindBuffer') bound[a[0]] = a[1];
+      if (fx.nofence && k === 'fenceSync') { fxc('nofence'); return null; }
+      if (k === 'bufferData') {
+        var buf = bound[a[0]], sz = (typeof a[1] === 'number') ? a[1] : (a[1] && a[1].byteLength);
+        if (fx.subdata && a[0] === 0x8A11 && typeof a[1] !== 'number' && buf && sizes.get(buf) === sz) {
+          fxc('subdata'); return P.bufferSubData.call(this, a[0], 0, a[1]);
+        }
+        if (fx.dynamic && a[2] === 0x88E0) { a = Array.prototype.slice.call(a); a[2] = 0x88E8; fxc('dynamic'); }   // STREAM_DRAW -> DYNAMIC_DRAW
+        if (buf) sizes.set(buf, sz);
+      }
       var isPresent = (k === 'blitFramebuffer' && boundDraw === null);
       if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
       if (isPresent) pixSample(this, 'scr', null);
+      if (isPresent && fx.flush) { fxc('flush'); orig.call; P.flush.call(this); }
+      if (isPresent && fx.finish) { fxc('finish'); P.finish.call(this); }
       if (errChecks < 20000 && k !== 'getError' && k !== 'getSyncParameter' && k !== 'isContextLost') {
         errChecks++;
         var e = origGetError.call(this);
@@ -126,7 +142,7 @@
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'ROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
@@ -350,6 +366,6 @@ const engine = new Engine(GODOT_CONFIG);
 }());
 		</script>
 	<div id="plbl" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#000;color:#9f9;font:14px monospace;padding:6px;pointer-events:none">JS: waiting</div>
-<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search+' '+JSON.stringify(window.__gtRenderOptions||{});};</script><div id="glspy" style="position:fixed;left:0;right:0;top:30%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
+<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:30%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
 </html>
 
