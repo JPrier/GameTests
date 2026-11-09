@@ -65,16 +65,26 @@
   var origGetError = P.getError;
   var pix = {off: {}, scr: {}}, lastPix = {off: {}, scr: {}}, pbuf = new Uint8Array(4), inPix = false;
   var origRead = P.readPixels, origBind = P.bindFramebuffer;
+  var rowbuf = null;
+  function rowCount(gl, yUnits) {
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, y = Math.floor(h * (1 - yUnits / 1224));
+    if (!rowbuf || rowbuf.length !== w * 4) rowbuf = new Uint8Array(w * 4);
+    origRead.call(gl, 0, y, w, 1, 0x1908, 0x1401, rowbuf);
+    var n = 0;
+    for (var i = 0; i < w; i++) { var r = rowbuf[i * 4], g = rowbuf[i * 4 + 1]; if (Math.abs(r - 23) > 20 || Math.abs(g - 18) > 20) n++; }
+    return Math.round(100 * n / w);
+  }
   function pixSample(gl, which, readFbo) {
     if (inPix) return; inPix = true;
     try {
-      origBind.call(gl, 0x8CA8, readFbo);   // READ_FRAMEBUFFER
-      var x = Math.floor(gl.drawingBufferWidth * 0.5), y = Math.floor(gl.drawingBufferHeight * (1 - 260 / 1224));
-      origRead.call(gl, x, y, 1, 1, 0x1908, 0x1401, pbuf);   // RGBA, UNSIGNED_BYTE
-      var key = pbuf[0] > 150 && pbuf[1] > 100 ? 'bar' : 'bg(' + pbuf[0] + ',' + pbuf[1] + ',' + pbuf[2] + ')';
+      origBind.call(gl, 0x8CA8, readFbo);
+      var key = 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%';
       pix[which][key] = (pix[which][key] || 0) + 1;
       origBind.call(gl, 0x8CA8, boundRead);
     } catch (e) { pix[which]['err ' + e.message] = 1; }
+    inPix = false;
+  }
+catch (e) { pix[which]['err ' + e.message] = 1; }
     inPix = false;
   }
   Object.getOwnPropertyNames(P).forEach(function (k) {
@@ -119,7 +129,7 @@
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'PIXEL at bar midpoint, per second: offscreen ' + JSON.stringify(lastPix.off) + ' screen ' + JSON.stringify(lastPix.scr) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'ROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
