@@ -84,9 +84,6 @@
     } catch (e) { pix[which]['err ' + e.message] = 1; }
     inPix = false;
   }
-catch (e) { pix[which]['err ' + e.message] = 1; }
-    inPix = false;
-  }
   Object.getOwnPropertyNames(P).forEach(function (k) {
     var d = Object.getOwnPropertyDescriptor(P, k);
     if (!d || typeof d.value !== 'function' || k === 'constructor') return;
