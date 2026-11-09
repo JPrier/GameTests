@@ -156,6 +156,12 @@
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
       if (k === 'bindBuffer') bound[a[0]] = a[1];
+      if (fx.vapoke && (k === 'vertexAttribPointer' || k === 'vertexAttribIPointer')) {
+        // Same attribute, deliberately different stride first, so any cached binding must be rebuilt.
+        var alt = Array.prototype.slice.call(a), si = (k === 'vertexAttribPointer') ? 4 : 3;
+        alt[si] = (a[si] || 0) + 4;
+        try { orig.apply(this, alt); fxc('vapoke'); } catch (e) { fxc('vapoke-err'); }
+      }
       if (fx.nofence && k === 'fenceSync') { fxc('nofence'); return null; }
       if (k === 'bufferData') {
         var buf = bound[a[0]], sz = (typeof a[1] === 'number') ? a[1] : (a[1] && a[1].byteLength);
