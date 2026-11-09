@@ -209,7 +209,7 @@
       }
       var isPresent = (k === 'blitFramebuffer' && boundDraw === null);
       if (k === 'createFramebuffer') { /* registered after call below */ }
-      if (isPresent) { stateSample(this); if (fx.testclear) testClear(this, boundRead); fboSample(this, boundRead); }
+      if (isPresent) { stateSample(this); if (fx.testclear) testClear(this, boundRead); if (fx.testclearrt && fbos[2]) testClear(this, fbos[2]); fboSample(this, boundRead); }
       if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
       if (k === 'createFramebuffer' && r) { r.__id = fbos.length + 1; fbos.push(r); }
