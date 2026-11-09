@@ -114,9 +114,11 @@
       var f = fbos[i];
       try {
         origBind.call(gl, 0x8CA8, f);
-        var st = origCheck.call(gl, 0x8CA8);
+        var st = origCheck.call(gl, 0x8CA8), prevRB = null;
+        if (st === 0x8CD7 && f !== defaultFbo) { prevRB = gp.call(gl, 0x0C02); P.readBuffer.call(gl, 0x8CE0); st = origCheck.call(gl, 0x8CA8); }
         var key = 'fbo' + f.__id + (f === defaultFbo ? '(emscripten)' : '') + ' ' + (st === 0x8CD5 ? '' : 'status 0x' + st.toString(16) + ' ') +
           (st === 0x8CD5 ? 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%' : '');
+        if (prevRB !== null) { key += ' (readBuffer was 0x' + prevRB.toString(16) + ')'; P.readBuffer.call(gl, prevRB); }
         fboRes[key] = (fboRes[key] || 0) + 1;
       } catch (e) { fboRes['fbo' + f.__id + ' err ' + e.message] = 1; }
     }
@@ -245,7 +247,7 @@
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'BSD ' + window.__bsdShape + ' | FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nGODOT CLEARS on fbo1: ' + JSON.stringify(lastClears) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 300) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'BSD ' + window.__bsdShape + ' | FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nGODOT CLEARS on fbo1: ' + JSON.stringify(lastClears) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 900) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
