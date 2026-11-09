@@ -1,6 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head><script>// WebGL call census for the probe: counts every WebGL2 call per second and records which ones
+	<head><script>// Rendering switches for diagnosing phones where the game runs and takes input but the screen
+// stops updating (seen on an iPhone 14, iOS 18.1). Inert unless the URL asks for one:
+//   ?gl=preserve  create the WebGL context with preserveDrawingBuffer: true
+//   ?dpr=1        report devicePixelRatio 1, so the canvas is 1x instead of 3x on a phone
+//   ?gl=provoke   use the first-vertex provoking convention (WEBGL_provoking_vertex), so ANGLE's
+//                 Metal backend on iOS does not emulate GL's last-vertex rule for flat varyings
+//   ?gl=quad      present frames by drawing the offscreen buffer as a textured quad instead of
+//                 blitFramebuffer into the default framebuffer (Emscripten's own fallback path)
+// Several can be combined, e.g. ?gl=preserve&dpr=1. The ?debug=input overlay shows which are on.
+(function () {
+  var q = '';
+  try { q = location.search; } catch (e) { return; }
+  var gl = (/[?&]gl=([a-z,]+)/.exec(q) || [])[1] || '';
+  var opts = window.__gtRenderOptions = {
+    preserve: /\bpreserve\b/.test(gl),
+    quad: /\bquad\b/.test(gl),
+    provoke: /\bprovoke\b/.test(gl),
+    dpr1: /[?&]dpr=1\b/.test(q),
+  };
+  if (opts.dpr1) {
+    try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return 1; }, configurable: true }); } catch (e) {}
+  }
+  if (opts.quad) {
+    // Emscripten keeps its context record on the canvas (canvas.GLctxObject); its commit step
+    // copies the offscreen back buffer with blitFramebuffer unless this flag is set.
+    var tries = 0, t = setInterval(function () {
+      var c = document.querySelector('canvas'), ctx = c && c.GLctxObject;
+      if (ctx && ctx.defaultFbo) { ctx.defaultFboForbidBlitFramebuffer = true; opts.quadApplied = true; clearInterval(t); }
+      else if (++tries > 600) clearInterval(t);
+    }, 50);
+  }
+  if (opts.provoke) {
+    var origGC = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type) {
+      var ctx = origGC.apply(this, arguments);
+      if (ctx && type === 'webgl2' && !ctx.__gtProvoke) {
+        ctx.__gtProvoke = true;
+        try {
+          var ext = ctx.getExtension('WEBGL_provoking_vertex');
+          if (ext) { ext.provokingVertexWEBGL(ext.FIRST_VERTEX_CONVENTION_WEBGL); opts.provokeApplied = true; }
+          else opts.provokeApplied = 'no extension';
+        } catch (e) { opts.provokeApplied = 'error ' + e.message; }
+      }
+      return ctx;
+    };
+  }
+  if (opts.preserve) {
+    var orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+      if (type === 'webgl2' || type === 'webgl') {
+        attrs = Object.assign({}, attrs || {}, { preserveDrawingBuffer: true });
+      }
+      return orig.call(this, type, attrs);
+    };
+  }
+})();
+</script><script>// WebGL call census for the probe: counts every WebGL2 call per second and records which ones
 // target the default (visible) framebuffer, so the iPhone screenshot shows exactly how Godot
 // presents frames.
 (function () {
@@ -270,6 +326,6 @@ const engine = new Engine(GODOT_CONFIG);
 }());
 		</script>
 	<div id="plbl" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#000;color:#9f9;font:14px monospace;padding:6px;pointer-events:none">JS: waiting</div>
-<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:30%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
+<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search+' '+JSON.stringify(window.__gtRenderOptions||{});};</script><div id="glspy" style="position:fixed;left:0;right:0;top:30%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
 </html>
 
