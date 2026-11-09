@@ -65,6 +65,38 @@
   var origGetError = P.getError;
   var pix = {off: {}, scr: {}}, lastPix = {off: {}, scr: {}}, pbuf = new Uint8Array(4), inPix = false;
   var origRead = P.readPixels, origBind = P.bindFramebuffer;
+  var states = {}, lastStates = {}, tcRes = {}, lastTc = {};
+  var gp = P.getParameter, origEnable = P.enable, origDisable = P.disable, origClear = P.clear, origClearColor = P.clearColor, origColorMask = P.colorMask, origScissor = P.scissor, origIsEnabled = P.isEnabled;
+  function stateSample(gl) {
+    try {
+      var st = 'scissor ' + origIsEnabled.call(gl, 0x0C11) + ' ' + Array.prototype.join.call(gp.call(gl, 0x0C10), ',') +
+        ' viewport ' + Array.prototype.join.call(gp.call(gl, 0x0BA2), ',') +
+        ' mask ' + Array.prototype.join.call(gp.call(gl, 0x0C23), ',') +
+        ' discard ' + origIsEnabled.call(gl, 0x8C89) + ' blend ' + origIsEnabled.call(gl, 0x0BE2) +
+        ' depth ' + origIsEnabled.call(gl, 0x0B71) + ' stencil ' + origIsEnabled.call(gl, 0x0B90);
+      states[st] = (states[st] || 0) + 1;
+    } catch (e) { states['err ' + e.message] = 1; }
+  }
+  function testClear(gl, fbo) {
+    // Clear a 40px square at the bottom-left of Godot's offscreen buffer with every relevant state reset,
+    // then read it back: tells whether ANY write to that buffer still lands.
+    try {
+      var wasSc = origIsEnabled.call(gl, 0x0C11), mask = gp.call(gl, 0x0C23), cc = gp.call(gl, 0x0C22), box = gp.call(gl, 0x0C10);
+      origBind.call(gl, 0x8CA9, fbo);
+      origEnable.call(gl, 0x0C11); origScissor.call(gl, 0, 0, 40, 40); origColorMask.call(gl, true, true, true, true);
+      var t = Math.floor(Date.now() / 500) % 2;
+      origClearColor.call(gl, t, 0, 1 - t, 1); origClear.call(gl, 0x4000);
+      origBind.call(gl, 0x8CA8, fbo);
+      origRead.call(gl, 5, 5, 1, 1, 0x1908, 0x1401, pbuf);
+      var key = 'want ' + (t ? 'red' : 'blue') + ' got ' + (pbuf[0] > 200 && pbuf[2] < 50 ? 'red' : pbuf[2] > 200 && pbuf[0] < 50 ? 'blue' : pbuf[0] + ',' + pbuf[1] + ',' + pbuf[2]);
+      tcRes[key] = (tcRes[key] || 0) + 1;
+      // restore
+      origScissor.call(gl, box[0], box[1], box[2], box[3]);
+      if (!wasSc) origDisable.call(gl, 0x0C11);
+      origColorMask.call(gl, mask[0], mask[1], mask[2], mask[3]); origClearColor.call(gl, cc[0], cc[1], cc[2], cc[3]);
+      origBind.call(gl, 0x8CA9, boundDraw); origBind.call(gl, 0x8CA8, boundRead);
+    } catch (e) { tcRes['err ' + e.message] = 1; }
+  }
   var rowbuf = null;
   function rowCount(gl, yUnits) {
     var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, y = Math.floor(h * (1 - yUnits / 1224));
@@ -119,6 +151,7 @@
         if (buf) sizes.set(buf, sz);
       }
       var isPresent = (k === 'blitFramebuffer' && boundDraw === null);
+      if (isPresent) { stateSample(this); if (fx.testclear) testClear(this, boundRead); }
       if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
       if (isPresent) pixSample(this, 'scr', null);
@@ -138,11 +171,11 @@
   });
   (function f(){ frameNo++; requestAnimationFrame(f); })();
   setInterval(function () {
-    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
+    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; lastStates = states; lastTc = tcRes; states = {}; tcRes = {}; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
@@ -366,6 +399,6 @@ const engine = new Engine(GODOT_CONFIG);
 }());
 		</script>
 	<div id="plbl" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#000;color:#9f9;font:14px monospace;padding:6px;pointer-events:none">JS: waiting</div>
-<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:30%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
+<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:25%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
 </html>
 
