@@ -145,7 +145,7 @@
   }
   var FX = ((/[?&]fx=([a-z0-9,]+)/.exec(location.search) || [])[1] || '').split(',');
   var fx = {}; FX.forEach(function (f) { if (f) fx[f] = true; });
-  var bound = {}, sizes = new WeakMap(), fxCount = {};
+  var bound = {}, sizes = new WeakMap(), fxCount = {}, curUnit = 0x84C0, unitTex = {}, paramCache = new WeakMap();
   function fxc(k) { fxCount[k] = (fxCount[k] || 0) + 1; }
   Object.getOwnPropertyNames(P).forEach(function (k) {
     var d = Object.getOwnPropertyDescriptor(P, k);
@@ -172,6 +172,16 @@
       }
       if (k === 'blitFramebuffer' && boundDraw === null) { presents++; if (presents === 4) { var el2 = document.getElementById('calllog'); if (el2) el2.textContent = callLog.join('\n'); } }
       if (k === 'bufferSubData' && !window.__bsdShape) window.__bsdShape = 'target 0x' + a[0].toString(16) + ' off ' + a[1] + ' args ' + a.length + ' len ' + (a[2] && a[2].byteLength);
+      if (k === 'activeTexture') curUnit = a[0];
+      if (k === 'bindTexture' && a[0] === 0x0DE1) unitTex[curUnit] = a[1];
+      if (fx.dedupparam && (k === 'texParameteri' || k === 'texParameterf') && a[0] === 0x0DE1) {
+        var t = unitTex[curUnit];
+        if (t) {
+          var pc = paramCache.get(t) || {};
+          if (pc[a[1]] === a[2]) { fxc('dedup-skip'); return; }
+          pc[a[1]] = a[2]; paramCache.set(t, pc);
+        }
+      }
       if (fx.clearcolor && k === 'clear' && (a[0] & 0x4000)) { fxc('clearcolor'); a = [0x4000]; }
       if (fx.la2rgba && k === 'texImage2D' && a.length >= 9 && a[2] === 0x190A && a[6] === 0x190A && a[7] === 0x1401) {
         // LUMINANCE_ALPHA -> RGBA8 (L,L,L,A): avoids the emulated two-channel format on Metal.
