@@ -97,6 +97,16 @@
       origBind.call(gl, 0x8CA9, boundDraw); origBind.call(gl, 0x8CA8, boundRead);
     } catch (e) { tcRes['err ' + e.message] = 1; }
   }
+  var callLog = [], presents = 0, objIds = new WeakMap(), nextObj = 1;
+  function fmtArg(v) {
+    if (v === null) return 'null';
+    if (typeof v === 'number') return (v > 255 && Number.isInteger(v)) ? '0x' + v.toString(16) : String(+v.toFixed ? +v.toFixed(3) : v);
+    if (typeof v === 'boolean' || typeof v === 'string') return String(v).slice(0, 20);
+    if (ArrayBuffer.isView(v)) return 'view' + v.length;
+    if (Array.isArray(v)) return '[' + v.length + ']';
+    if (typeof v === 'object') { if (!objIds.has(v)) objIds.set(v, nextObj++); return (v.constructor && v.constructor.name || 'obj').replace('WebGL', '') + '#' + objIds.get(v); }
+    return typeof v;
+  }
   var fbos = [], fboRes = {}, lastFbo = {}, clears = {}, lastClears = {};
   var origCheck = P.checkFramebufferStatus;
   function fboSample(gl, defaultFbo) {
@@ -155,6 +165,10 @@
         counts[key2] = (counts[key2] || 0) + 1;
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
+      if (presents < 4 && callLog.length < 6000 && k !== 'getError' && k !== 'getSyncParameter' && k !== 'getParameter' && k !== 'isEnabled' && k !== 'checkFramebufferStatus' && k !== 'readPixels' && !inPix) {
+        callLog.push(presents + ' ' + k + '(' + Array.prototype.map.call(a, fmtArg).join(',') + ')');
+      }
+      if (k === 'blitFramebuffer' && boundDraw === null) { presents++; if (presents === 4) { var el2 = document.getElementById('calllog'); if (el2) el2.textContent = callLog.join('\n'); } }
       if (k === 'bufferSubData' && !window.__bsdShape) window.__bsdShape = 'target 0x' + a[0].toString(16) + ' off ' + a[1] + ' args ' + a.length + ' len ' + (a[2] && a[2].byteLength);
       if (k === 'bindBuffer') bound[a[0]] = a[1];
       if (fx.vapoke && (k === 'vertexAttribPointer' || k === 'vertexAttribIPointer')) {
@@ -444,6 +458,6 @@ const engine = new Engine(GODOT_CONFIG);
 }());
 		</script>
 	<div id="plbl" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#000;color:#9f9;font:14px monospace;padding:6px;pointer-events:none">JS: waiting</div>
-<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:20%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
+<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:20%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div><pre id="calllog" style="position:absolute;left:0;top:0;width:100px;height:4px;overflow:hidden;font-size:2px;margin:0;color:#171223;z-index:1">pending</pre></body>
 </html>
 
