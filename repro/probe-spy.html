@@ -155,6 +155,7 @@
         counts[key2] = (counts[key2] || 0) + 1;
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
+      if (k === 'bufferSubData' && !window.__bsdShape) window.__bsdShape = 'target 0x' + a[0].toString(16) + ' off ' + a[1] + ' args ' + a.length + ' len ' + (a[2] && a[2].byteLength);
       if (k === 'bindBuffer') bound[a[0]] = a[1];
       if (fx.vapoke && (k === 'vertexAttribPointer' || k === 'vertexAttribIPointer')) {
         // Same attribute, deliberately different stride first, so any cached binding must be rebuilt.
@@ -163,6 +164,14 @@
         try { orig.apply(this, alt); fxc('vapoke'); } catch (e) { fxc('vapoke-err'); }
       }
       if (fx.nofence && k === 'fenceSync') { fxc('nofence'); return null; }
+      if (fx.reupload && k === 'bufferSubData' && a[0] === 0x8892 && a[1] === 0 && a.length <= 3) {
+        fxc('reupload'); return P.bufferData.call(this, a[0], a[2], 0x88E8);   // ARRAY_BUFFER: respecify with the data
+      }
+      if (fx.reupload && k === 'bufferSubData' && a[0] === 0x8892 && a.length > 3) {
+        fxc('reupload-ranged'); var view = a[2], so = a[3] || 0, len = a[4] || 0;
+        var bpe = view.BYTES_PER_ELEMENT || 1, sub = new Uint8Array(view.buffer, view.byteOffset + so * bpe, (len || (view.length - so)) * bpe);
+        if (a[1] === 0) return P.bufferData.call(this, a[0], sub, 0x88E8);
+      }
       if (k === 'bufferData') {
         var buf = bound[a[0]], sz = (typeof a[1] === 'number') ? a[1] : (a[1] && a[1].byteLength);
         if (fx.subdata && a[0] === 0x8A11 && typeof a[1] !== 'number' && buf && sizes.get(buf) === sz) {
@@ -198,7 +207,7 @@
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 700) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'BSD ' + window.__bsdShape + ' | FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 700) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
