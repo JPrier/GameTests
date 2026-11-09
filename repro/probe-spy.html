@@ -97,6 +97,21 @@
       origBind.call(gl, 0x8CA9, boundDraw); origBind.call(gl, 0x8CA8, boundRead);
     } catch (e) { tcRes['err ' + e.message] = 1; }
   }
+  var fbos = [], fboRes = {}, lastFbo = {};
+  var origCheck = P.checkFramebufferStatus;
+  function fboSample(gl, defaultFbo) {
+    for (var i = 0; i < fbos.length; i++) {
+      var f = fbos[i];
+      try {
+        origBind.call(gl, 0x8CA8, f);
+        var st = origCheck.call(gl, 0x8CA8);
+        var key = 'fbo' + f.__id + (f === defaultFbo ? '(emscripten)' : '') + ' ' + (st === 0x8CD5 ? '' : 'status 0x' + st.toString(16) + ' ') +
+          (st === 0x8CD5 ? 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%' : '');
+        fboRes[key] = (fboRes[key] || 0) + 1;
+      } catch (e) { fboRes['fbo' + f.__id + ' err ' + e.message] = 1; }
+    }
+    origBind.call(gl, 0x8CA8, boundRead);
+  }
   var rowbuf = null;
   function rowCount(gl, yUnits) {
     var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, y = Math.floor(h * (1 - yUnits / 1224));
@@ -151,9 +166,11 @@
         if (buf) sizes.set(buf, sz);
       }
       var isPresent = (k === 'blitFramebuffer' && boundDraw === null);
-      if (isPresent) { stateSample(this); if (fx.testclear) testClear(this, boundRead); }
+      if (k === 'createFramebuffer') { /* registered after call below */ }
+      if (isPresent) { stateSample(this); if (fx.testclear) testClear(this, boundRead); fboSample(this, boundRead); }
       if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
+      if (k === 'createFramebuffer' && r) { r.__id = fbos.length + 1; fbos.push(r); }
       if (isPresent) pixSample(this, 'scr', null);
       if (isPresent && fx.flush) { fxc('flush'); orig.call; P.flush.call(this); }
       if (isPresent && fx.finish) { fxc('finish'); P.finish.call(this); }
@@ -171,11 +188,11 @@
   });
   (function f(){ frameNo++; requestAnimationFrame(f); })();
   setInterval(function () {
-    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; lastStates = states; lastTc = tcRes; states = {}; tcRes = {}; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
+    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; lastStates = states; lastTc = tcRes; lastFbo = fboRes; fboRes = {}; states = {}; tcRes = {}; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'FX ' + JSON.stringify(fx) + ' applied ' + JSON.stringify(fxCount) + '\nSTATE at present: ' + JSON.stringify(lastStates).slice(0, 400) + '\nTEST CLEAR: ' + JSON.stringify(lastTc) + '\nFBOS: ' + JSON.stringify(lastFbo).slice(0, 700) + '\nROWS (non-background % of row) per second: OFFSCREEN ' + JSON.stringify(lastPix.off).slice(0, 300) + '\nSCREEN ' + JSON.stringify(lastPix.scr).slice(0, 300) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
@@ -399,6 +416,6 @@ const engine = new Engine(GODOT_CONFIG);
 }());
 		</script>
 	<div id="plbl" style="position:fixed;left:0;right:0;bottom:0;z-index:99;background:#000;color:#9f9;font:14px monospace;padding:6px;pointer-events:none">JS: waiting</div>
-<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:25%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
+<script>window.__probe=function(n){document.getElementById('plbl').textContent='JS sees frame '+n+' bar '+((n%60)+1)+'/60 '+location.search;};</script><div id="glspy" style="position:fixed;left:0;right:0;top:20%;z-index:99;background:rgba(0,0,0,.85);color:#9f9;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;word-break:break-all;pointer-events:none">gl spy</div></body>
 </html>
 
