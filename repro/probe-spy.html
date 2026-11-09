@@ -116,7 +116,7 @@
         origBind.call(gl, 0x8CA8, f);
         var st = origCheck.call(gl, 0x8CA8), prevRB = null;
         if (st === 0x8CD7 && f !== defaultFbo) { prevRB = gp.call(gl, 0x0C02); P.readBuffer.call(gl, 0x8CE0); st = origCheck.call(gl, 0x8CA8); }
-        var key = 'fbo' + f.__id + (f === defaultFbo ? '(emscripten)' : '') + ' ' + (st === 0x8CD5 ? '' : 'status 0x' + st.toString(16) + ' ') +
+        var key = 'fbo' + f.__id + '=#' + (objIds.has(f) ? objIds.get(f) : '?') + (f === defaultFbo ? '(emscripten)' : '') + ' ' + (st === 0x8CD5 ? '' : 'status 0x' + st.toString(16) + ' ') +
           (st === 0x8CD5 ? 'bar' + rowCount(gl, 260) + '% text' + rowCount(gl, 105) + '%' : '');
         if (prevRB !== null) { key += ' (readBuffer was 0x' + prevRB.toString(16) + ')'; P.readBuffer.call(gl, prevRB); }
         fboRes[key] = (fboRes[key] || 0) + 1;
