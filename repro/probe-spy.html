@@ -182,6 +182,10 @@
           pc[a[1]] = a[2]; paramCache.set(t, pc);
         }
       }
+      if (fx.rgba8rt && k === 'texImage2D' && a[2] === 0x8059 && a[7] === 0x8368) {
+        // RGB10_A2 render target -> RGBA8
+        a = Array.prototype.slice.call(a); a[2] = 0x8058; a[7] = 0x1401; fxc('rgba8rt');
+      }
       if (fx.clearcolor && k === 'clear' && (a[0] & 0x4000)) { fxc('clearcolor'); a = [0x4000]; }
       if (fx.la2rgba && k === 'texImage2D' && a.length >= 9 && a[2] === 0x190A && a[6] === 0x190A && a[7] === 0x1401) {
         // LUMINANCE_ALPHA -> RGBA8 (L,L,L,A): avoids the emulated two-channel format on Metal.
