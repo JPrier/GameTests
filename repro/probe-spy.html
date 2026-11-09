@@ -63,6 +63,20 @@
   var P = WebGL2RenderingContext.prototype, counts = {}, nullOps = {}, first = [], frameNo = 0, lastSec = {}, lastNull = {};
   var boundDraw = null, boundRead = null, rets = {}, lastRets = {}, errs = {}, firstErrs = [], errChecks = 0;
   var origGetError = P.getError;
+  var pix = {off: {}, scr: {}}, lastPix = {off: {}, scr: {}}, pbuf = new Uint8Array(4), inPix = false;
+  var origRead = P.readPixels, origBind = P.bindFramebuffer;
+  function pixSample(gl, which, readFbo) {
+    if (inPix) return; inPix = true;
+    try {
+      origBind.call(gl, 0x8CA8, readFbo);   // READ_FRAMEBUFFER
+      var x = Math.floor(gl.drawingBufferWidth * 0.5), y = Math.floor(gl.drawingBufferHeight * (1 - 420 / 1224));
+      origRead.call(gl, x, y, 1, 1, 0x1908, 0x1401, pbuf);   // RGBA, UNSIGNED_BYTE
+      var key = pbuf[0] > 150 && pbuf[1] > 100 ? 'bar' : 'bg(' + pbuf[0] + ',' + pbuf[1] + ',' + pbuf[2] + ')';
+      pix[which][key] = (pix[which][key] || 0) + 1;
+      origBind.call(gl, 0x8CA8, boundRead);
+    } catch (e) { pix[which]['err ' + e.message] = 1; }
+    inPix = false;
+  }
   Object.getOwnPropertyNames(P).forEach(function (k) {
     var d = Object.getOwnPropertyDescriptor(P, k);
     if (!d || typeof d.value !== 'function' || k === 'constructor') return;
@@ -83,7 +97,10 @@
         counts[key2] = (counts[key2] || 0) + 1;
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
+      var isPresent = (k === 'blitFramebuffer' && boundDraw === null);
+      if (isPresent) pixSample(this, 'off', boundRead);
       var r = orig.apply(this, a);
+      if (isPresent) pixSample(this, 'scr', null);
       if (errChecks < 20000 && k !== 'getError' && k !== 'getSyncParameter' && k !== 'isContextLost') {
         errChecks++;
         var e = origGetError.call(this);
@@ -98,11 +115,11 @@
   });
   (function f(){ frameNo++; requestAnimationFrame(f); })();
   setInterval(function () {
-    lastSec = counts; lastNull = nullOps; lastRets = rets; counts = {}; nullOps = {}; rets = {};
+    lastSec = counts; lastNull = nullOps; lastRets = rets; lastPix = pix; counts = {}; nullOps = {}; rets = {}; pix = {off: {}, scr: {}};
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
-    if (el) el.textContent = 'TO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
+    if (el) el.textContent = 'PIXEL at bar midpoint, per second: offscreen ' + JSON.stringify(lastPix.off) + ' screen ' + JSON.stringify(lastPix.scr) + '\nTO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
       '\nGL ERRORS (first 20000 calls): ' + JSON.stringify(errs) + ' first: ' + firstErrs.join(' ') + '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
       ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
