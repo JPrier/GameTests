@@ -182,6 +182,15 @@
           pc[a[1]] = a[2]; paramCache.set(t, pc);
         }
       }
+      if (fx.nodsrt && k === 'framebufferTexture2D' && a[1] === 0x821A) { fxc('nodsrt'); return; }
+      if (fx.dsrb && k === 'framebufferTexture2D' && a[1] === 0x821A && a[3]) {
+        // attach an equivalent DEPTH24_STENCIL8 renderbuffer instead of the texture
+        var tex = a[3], rb = P.createRenderbuffer.call(this);
+        P.bindRenderbuffer.call(this, 0x8D41, rb);
+        P.renderbufferStorage.call(this, 0x8D41, 0x88F0, this.drawingBufferWidth, this.drawingBufferHeight);
+        P.bindRenderbuffer.call(this, 0x8D41, null);
+        fxc('dsrb'); return P.framebufferRenderbuffer.call(this, a[0], 0x821A, 0x8D41, rb);
+      }
       if (fx.rgba8rt && k === 'texImage2D' && a[2] === 0x8059 && a[7] === 0x8368) {
         // RGB10_A2 render target -> RGBA8
         a = Array.prototype.slice.call(a); a[2] = 0x8058; a[7] = 0x1401; fxc('rgba8rt');
