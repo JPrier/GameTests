@@ -51,7 +51,7 @@ for dir in "${games[@]}"; do
   "$GODOT" --headless --path "$dir" --export-release "Web" "$SITE/$name/index.html"
   [ -s "$SITE/$name/index.wasm" ] || { echo "::error::$name export produced no build"; fail=1; }
   # Touch hardening (always on) and input diagnostics (inert unless the page has ?debug=input).
-  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/input-debug.js" "$ROOT/.github/scripts/touch-fix.js" "$ROOT/.github/scripts/stale-reload.js" <<'PY'
+  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/render-options.js" "$ROOT/.github/scripts/input-debug.js" "$ROOT/.github/scripts/touch-fix.js" "$ROOT/.github/scripts/stale-reload.js" <<'PY'
 import json, os, sys
 page, scripts = sys.argv[1], [open(f).read() for f in sys.argv[2:]]
 html = open(page).read()

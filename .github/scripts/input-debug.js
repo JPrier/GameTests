@@ -33,6 +33,23 @@
     if (el.id) s += '#' + el.id;
     return s;
   }
+  var glInfo = 'no GL context yet';
+  (function () {
+    var orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type) {
+      var ctx = orig.apply(this, arguments);
+      if (ctx && (type === 'webgl2' || type === 'webgl')) {
+        try {
+          var a = ctx.getContextAttributes() || {};
+          glInfo = type + ' aa ' + a.antialias + ' preserve ' + a.preserveDrawingBuffer + ' alpha ' + a.alpha +
+            ' power ' + a.powerPreference + ' buffer ' + ctx.drawingBufferWidth + 'x' + ctx.drawingBufferHeight;
+        } catch (e) { glInfo = 'GL attrs ERR ' + e.message; }
+        this.addEventListener('webglcontextlost', function () { errors.push(stamp() + 'WEBGL CONTEXT LOST'); render(); });
+        this.addEventListener('webglcontextrestored', function () { log('webgl context restored'); });
+      }
+      return ctx;
+    };
+  })();
   var envLine = null;
   function env() {
     if (envLine) return envLine;
@@ -66,6 +83,7 @@
     return [
       'build ' + (window.__gtBuild || '?') + ' | ' + navigator.userAgent,
       env(),
+      'render options ' + JSON.stringify(window.__gtRenderOptions || {}) + ' | ' + glInfo,
       'viewport ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio +
         (vv ? ' vv ' + Math.round(vv.width) + 'x' + Math.round(vv.height) + ' scale ' + vv.scale.toFixed(2) : ''),
       c ? 'canvas ' + c.width + 'x' + c.height + ' at ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
