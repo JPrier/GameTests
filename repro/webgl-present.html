@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>WebGL present test</title>
+<style>
+body{margin:0;background:#181223;color:#ddd;font:12px/1.3 ui-monospace,Menlo,monospace}
+.row{display:flex;align-items:center;gap:8px;padding:4px 6px}
+canvas{width:160px;height:72px;background:#000;flex:none}
+.lbl{flex:1}
+</style></head><body>
+<div class="row"><b>WebGL present test</b> <span id="info"></span></div>
+<div id="rows"></div>
+<script>
+// Each canvas animates a bar whose length is the frame number mod 60, so two screenshots
+// taken a few seconds apart show which presentation paths actually reach the screen.
+const dpr = window.devicePixelRatio || 1;
+const godotAttrs = {alpha:false, antialias:false, depth:true, stencil:true, premultipliedAlpha:true, preserveDrawingBuffer:true, powerPreference:'default'};
+const variants = [
+  {name:'A plain (default attrs), draw to screen', attrs:{}, mode:'direct'},
+  {name:'B Godot attrs, draw to screen', attrs:godotAttrs, mode:'direct'},
+  {name:'C Godot attrs, offscreen + blitFramebuffer', attrs:godotAttrs, mode:'blit'},
+  {name:'D Godot attrs, offscreen + quad copy', attrs:godotAttrs, mode:'quad'},
+  {name:'E like C, canvas resized after context', attrs:godotAttrs, mode:'blit', resizeAfter:true},
+  {name:'F like C, no preserveDrawingBuffer', attrs:Object.assign({}, godotAttrs, {preserveDrawingBuffer:false}), mode:'blit'},
+];
+const rows = document.getElementById('rows');
+const items = variants.map(v => {
+  const row = document.createElement('div'); row.className = 'row';
+  const c = document.createElement('canvas');
+  const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = v.name;
+  row.append(c, lbl); rows.append(row);
+  if (!v.resizeAfter) { c.width = 160 * dpr; c.height = 72 * dpr; }
+  const gl = c.getContext('webgl2', v.attrs);
+  if (!gl) { lbl.textContent += ' — NO webgl2'; return null; }
+  if (v.resizeAfter) { c.width = 160 * dpr; c.height = 72 * dpr; }
+  const it = {v, c, gl, lbl, n: 0};
+  if (v.mode !== 'direct') {
+    it.fbo = gl.createFramebuffer(); it.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, it.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, c.width, c.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, it.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, it.tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (v.mode === 'quad') {
+      const vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, 'attribute vec2 p; varying vec2 t; void main(){ t = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }');
+      gl.compileShader(vs);
+      const fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, 'precision mediump float; varying vec2 t; uniform sampler2D s; void main(){ gl_FragColor = texture2D(s,t); }');
+      gl.compileShader(fs);
+      it.prog = gl.createProgram(); gl.attachShader(it.prog, vs); gl.attachShader(it.prog, fs); gl.linkProgram(it.prog);
+      it.vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, it.vb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+    }
+  }
+  return it;
+}).filter(Boolean);
+function drawScene(it) {
+  const gl = it.gl, w = it.c.width, h = it.c.height;
+  gl.disable(gl.SCISSOR_TEST);
+  gl.clearColor(0.1, 0.1, 0.15, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.SCISSOR_TEST);
+  const len = Math.max(1, Math.round(w * ((it.n % 60) + 1) / 60));
+  gl.scissor(0, 0, len, h); gl.clearColor(0.95, 0.72, 0.2, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.SCISSOR_TEST);
+}
+function frame() {
+  for (const it of items) {
+    const gl = it.gl;
+    it.n++;
+    if (it.v.mode === 'direct') { gl.bindFramebuffer(gl.FRAMEBUFFER, null); drawScene(it); }
+    else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, it.fbo); drawScene(it);
+      if (it.v.mode === 'blit') {
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, it.fbo); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        gl.blitFramebuffer(0, 0, it.c.width, it.c.height, 0, 0, it.c.width, it.c.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      } else {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, it.c.width, it.c.height);
+        gl.useProgram(it.prog); gl.bindBuffer(gl.ARRAY_BUFFER, it.vb);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, it.tex);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, it.fbo);   // leave the offscreen buffer bound, as Emscripten does
+    }
+    it.lbl.textContent = it.v.name + ' | frame ' + it.n + ' bar ' + ((it.n % 60) + 1) + '/60';
+  }
+  requestAnimationFrame(frame);
+}
+document.getElementById('info').textContent = 'dpr ' + dpr + ' ' + navigator.userAgent.replace(/^.*?\(/, '(').slice(0, 60);
+requestAnimationFrame(frame);
+</script></body></html>
