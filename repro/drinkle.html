@@ -93,10 +93,25 @@ body {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <meta name="theme-color" content="#181223"><meta name="description" content="Drinkle: a daily drink deduction game. Every guess shows how close you are. Name the drink in six."><style>#status-splash{display:none!important}#status-progress{accent-color:#f2b84b}html,body,#status{background:#181223!important}html,body{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{touch-action:none}</style>
-	<script>window.__gtBuild="repro2 18:29"</script><script>// Rendering switches for diagnosing phones where the game runs and takes input but the screen
-// stops updating (seen on an iPhone 14, iOS 18.1). Inert unless the URL asks for one:
+	<script>window.__gtBuild="repro3 18:56"</script><script>// Rendering fixes and switches for phones where the game runs and takes input but the screen stops
+// updating (iPhone 14 on iOS 18.0/18.1; iOS 26 is fine).
+//
+// ROOT CAUSE (reproduced on a real iPhone 14, iOS 18.0, via BrowserStack): Godot creates its 2D render
+// target texture with texParameteri(TEXTURE_MAX_LEVEL, 0). On iOS 18 WebKit, once a texture with
+// MAX_LEVEL 0 is a framebuffer attachment, nothing drawn into that framebuffer lands after the first
+// frame (no GL error; reads keep returning frame 1), so the canvas shows the first frame forever.
+// The render-target fix below (on by default in WebKit) restores MAX_LEVEL to its default on
+// framebuffer-attached textures and ignores later MAX_LEVEL calls on them. Render targets have one
+// mip level and non-mipmap filtering, so the value has no visible effect there; other textures are
+// untouched.
+//   ?gl=rtfix     force the render-target fix on (default: on in WebKit browsers, off elsewhere)
+//   ?gl=nortfix   turn it off, to reproduce the bug
+//
+// Diagnostic switches, inert unless the URL asks for one:
 //   ?gl=preserve  create the WebGL context with preserveDrawingBuffer: true
 //   ?dpr=1        report devicePixelRatio 1, so the canvas is 1x instead of 3x on a phone
+//   ?gl=provoke   use the first-vertex provoking convention (WEBGL_provoking_vertex), so ANGLE's
+//                 Metal backend on iOS does not emulate GL's last-vertex rule for flat varyings
 //   ?gl=quad      present frames by drawing the offscreen buffer as a textured quad instead of
 //                 blitFramebuffer into the default framebuffer (Emscripten's own fallback path)
 // Several can be combined, e.g. ?gl=preserve&dpr=1. The ?debug=input overlay shows which are on.
@@ -107,6 +122,10 @@ body {
   var opts = window.__gtRenderOptions = {
     preserve: /\bpreserve\b/.test(gl),
     quad: /\bquad\b/.test(gl),
+    provoke: /\bprovoke\b/.test(gl),
+    rtfix: /\bnortfix\b/.test(gl) ? false : (/\brtfix\b/.test(gl) ||
+      (/AppleWebKit/.test(navigator.userAgent) && !/(Chrome|Chromium|Edg|Android)\//.test(navigator.userAgent)) ||
+      /(CriOS|FxiOS|EdgiOS)/.test(navigator.userAgent)),
     dpr1: /[?&]dpr=1\b/.test(q),
   };
   if (opts.dpr1) {
@@ -120,6 +139,48 @@ body {
       if (ctx && ctx.defaultFbo) { ctx.defaultFboForbidBlitFramebuffer = true; opts.quadApplied = true; clearInterval(t); }
       else if (++tries > 600) clearInterval(t);
     }, 50);
+  }
+  if (opts.rtfix && window.WebGL2RenderingContext) {
+    (function () {
+      var P = WebGL2RenderingContext.prototype, TEX2D = 0x0DE1, MAX_LEVEL = 0x813D, BINDING_2D = 0x8069;
+      var oTexI = P.texParameteri, oTexF = P.texParameterf, oFbTex = P.framebufferTexture2D, oBind = P.bindTexture, oGet = P.getParameter;
+      var attached = new WeakSet();
+      opts.rtfixApplied = 0;
+      function skip(gl, target, pname) {
+        if (target !== TEX2D || pname !== MAX_LEVEL) return false;
+        var t = oGet.call(gl, BINDING_2D);
+        return !!(t && attached.has(t));
+      }
+      P.texParameteri = function (target, pname) { return skip(this, target, pname) ? undefined : oTexI.apply(this, arguments); };
+      P.texParameterf = function (target, pname) { return skip(this, target, pname) ? undefined : oTexF.apply(this, arguments); };
+      P.framebufferTexture2D = function (target, attachment, textarget, texture) {
+        var r = oFbTex.apply(this, arguments);
+        if (texture && textarget === TEX2D && !attached.has(texture)) {
+          attached.add(texture);
+          var prev = oGet.call(this, BINDING_2D);
+          oBind.call(this, TEX2D, texture);
+          oTexI.call(this, TEX2D, MAX_LEVEL, 1000);   // GL default
+          oBind.call(this, TEX2D, prev);
+          opts.rtfixApplied++;
+        }
+        return r;
+      };
+    })();
+  }
+  if (opts.provoke) {
+    var origGC = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type) {
+      var ctx = origGC.apply(this, arguments);
+      if (ctx && type === 'webgl2' && !ctx.__gtProvoke) {
+        ctx.__gtProvoke = true;
+        try {
+          var ext = ctx.getExtension('WEBGL_provoking_vertex');
+          if (ext) { ext.provokingVertexWEBGL(ext.FIRST_VERTEX_CONVENTION_WEBGL); opts.provokeApplied = true; }
+          else opts.provokeApplied = 'no extension';
+        } catch (e) { opts.provokeApplied = 'error ' + e.message; }
+      }
+      return ctx;
+    };
   }
   if (opts.preserve) {
     var orig = HTMLCanvasElement.prototype.getContext;
