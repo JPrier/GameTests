@@ -182,6 +182,9 @@
           pc[a[1]] = a[2]; paramCache.set(t, pc);
         }
       }
+      if (fx.noaniso && (k === 'texParameteri' || k === 'texParameterf') && a[1] === 0x84FE) { fxc('noaniso'); return; }
+      if (fx.nomaxlevel && (k === 'texParameteri' || k === 'texParameterf') && a[1] === 0x813D) { fxc('nomaxlevel'); return; }
+      if (fx.nobaselevel && (k === 'texParameteri' || k === 'texParameterf') && a[1] === 0x813C) { fxc('nobaselevel'); return; }
       if (fx.nolevels && (k === 'texParameteri' || k === 'texParameterf') && (a[1] === 0x813C || a[1] === 0x813D || a[1] === 0x84FE)) { fxc('nolevels'); return; }
       if (fx.nodsrt && k === 'framebufferTexture2D' && a[1] === 0x821A) { fxc('nodsrt'); return; }
       if (fx.dsrb && k === 'framebufferTexture2D' && a[1] === 0x821A && a[3]) {
