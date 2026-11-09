@@ -5,7 +5,7 @@
 // presents frames.
 (function () {
   var P = WebGL2RenderingContext.prototype, counts = {}, nullOps = {}, first = [], frameNo = 0, lastSec = {}, lastNull = {};
-  var boundDraw = null, boundRead = null;
+  var boundDraw = null, boundRead = null, rets = {}, lastRets = {};
   Object.getOwnPropertyNames(P).forEach(function (k) {
     var d = Object.getOwnPropertyDescriptor(P, k);
     if (!d || typeof d.value !== 'function' || k === 'constructor') return;
@@ -26,16 +26,24 @@
         counts[key2] = (counts[key2] || 0) + 1;
       }
       if (first.length < 40 && /Framebuffer|clear|blit|invalidate|viewport|scissor/.test(k)) first.push(k + (k === 'bindFramebuffer' ? '(' + a[0] + ',' + (a[1] === null ? 'null' : 'fbo') + ')' : ''));
-      return orig.apply(this, a);
+      var r = orig.apply(this, a);
+      if (/^(clientWaitSync|getSyncParameter|fenceSync|deleteSync)$/.test(k)) {
+        var rk = k + '=>' + (k === 'fenceSync' ? (r ? 'sync' : 'null') : String(r));
+        rets[rk] = (rets[rk] || 0) + 1;
+      }
+      return r;
     };
   });
   setInterval(function () {
-    lastSec = counts; lastNull = nullOps; counts = {}; nullOps = {};
+    lastSec = counts; lastNull = nullOps; lastRets = rets; counts = {}; nullOps = {}; rets = {};
     var top = Object.keys(lastSec).sort(function (x, y) { return lastSec[y] - lastSec[x]; }).slice(0, 14)
       .map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ');
     var el = document.getElementById('glspy');
     if (el) el.textContent = 'TO SCREEN/s: ' + JSON.stringify(lastNull) + '\nINVALIDATES/s: ' +
       Object.keys(lastSec).filter(function (k) { return /invalidate/.test(k); }).map(function (k) { return k + ' ' + lastSec[k]; }).join(' | ') +
+      '\nSYNC/s: ' + JSON.stringify(lastRets) + '\nBUFFERS/s: ' +
+      ['bufferData','bufferSubData','copyBufferSubData','texSubImage2D','texImage2D','flush','finish','readPixels','getBufferSubData','drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','uniformBlockBinding','bindBufferBase','bindBufferRange']
+        .map(function (k) { return k + ' ' + (lastSec[k] || 0); }).join(' | ') +
       '\nTOP/s: ' + top + '\nFIRST: ' + first.join(' ');
   }, 1000);
 })();
