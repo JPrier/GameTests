@@ -141,7 +141,7 @@
     } catch (e) { pix[which]['err ' + e.message] = 1; }
     inPix = false;
   }
-  var FX = ((/[?&]fx=([a-z,]+)/.exec(location.search) || [])[1] || '').split(',');
+  var FX = ((/[?&]fx=([a-z0-9,]+)/.exec(location.search) || [])[1] || '').split(',');
   var fx = {}; FX.forEach(function (f) { if (f) fx[f] = true; });
   var bound = {}, sizes = new WeakMap(), fxCount = {};
   function fxc(k) { fxCount[k] = (fxCount[k] || 0) + 1; }
