@@ -1,0 +1,169 @@
+name: EXPERIMENT ios freeze detection
+# Throwaway: can a free GitHub macOS runner reproduce the iOS 18 frozen-canvas bug?
+# Opens a Godot probe page (bar + frame counter redrawn every frame) with the fix off
+# (?gl=nortfix) and on (?gl=rtfix), screenshots twice, and reports ALIVE/FROZEN.
+on:
+  push:
+    branches: [exp/ios-detect]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine files (Godot 4.7.2 web template)
+        run: |
+          python3 .github/scripts/fetch-zip-members.py \
+            "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz" \
+            /tmp/tpl "templates/web_nothreads_release.zip"
+          cd /tmp/tpl && unzip -oq web_nothreads_release.zip
+          for f in js wasm audio.worklet.js audio.position.worklet.js; do cp "/tmp/tpl/godot.$f" "$GITHUB_WORKSPACE/exp/site/index.$f"; done
+          ls -la "$GITHUB_WORKSPACE/exp/site"
+      - run: pip3 install --break-system-packages pillow || pip3 install pillow
+      - name: Simulator runtimes
+        run: |
+          sw_vers; xcodebuild -version; xcrun simctl list runtimes
+      - name: Probe every iOS runtime
+        run: |
+          (cd exp/site && python3 -m http.server 8000 >/dev/null 2>&1 &)
+          sleep 2; curl -sI http://localhost:8000/ | head -1
+          mkdir -p shots
+          echo "| ${{ matrix.os }} iOS Simulator | result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          xcrun simctl list runtimes -j > rt.json
+          python3 - > pairs.txt <<'PY'
+          import json
+          rts = [r for r in json.load(open("rt.json"))["runtimes"] if r["platform"] == "iOS" and r["isAvailable"]]
+          for r in rts[-5:]:
+              dts = [d for d in r.get("supportedDeviceTypes", []) if d["name"].startswith("iPhone") and "SE" not in d["name"]]
+              if dts:
+                  print(r["identifier"], r["version"], dts[0]["identifier"], dts[0]["name"].replace(" ", "_"))
+          PY
+          cat pairs.txt
+          while read -r rt ver dt dname; do
+            dev=$(xcrun simctl create "probe-$ver" "$dt" "$rt")
+            xcrun simctl boot "$dev"; xcrun simctl bootstatus "$dev" >/dev/null; sleep 20
+            for fix in nortfix rtfix; do
+              xcrun simctl openurl "$dev" "http://localhost:8000/?gl=$fix&r=$RANDOM"
+              sleep 40
+              xcrun simctl io "$dev" screenshot "shots/ios$ver-$fix-1.png" >/dev/null 2>&1
+              sleep 3
+              xcrun simctl io "$dev" screenshot "shots/ios$ver-$fix-2.png" >/dev/null 2>&1
+              python3 exp/compare.py "iOS $ver $dname fix=$fix" "shots/ios$ver-$fix-1.png" "shots/ios$ver-$fix-2.png" "$GITHUB_STEP_SUMMARY" || echo "| iOS $ver fix=$fix | no screenshot |" >> "$GITHUB_STEP_SUMMARY"
+            done
+            xcrun simctl shutdown "$dev"; xcrun simctl delete "$dev"
+          done < pairs.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-sim-${{ matrix.os }}
+          path: shots
+
+  macos-safari:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine files
+        run: |
+          python3 .github/scripts/fetch-zip-members.py \
+            "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz" \
+            /tmp/tpl "templates/web_nothreads_release.zip"
+          cd /tmp/tpl && unzip -oq web_nothreads_release.zip
+          for f in js wasm audio.worklet.js audio.position.worklet.js; do cp "/tmp/tpl/godot.$f" "$GITHUB_WORKSPACE/exp/site/index.$f"; done
+      - run: pip3 install --break-system-packages pillow selenium || pip3 install pillow selenium
+      - name: Safari (safaridriver)
+        run: |
+          sudo safaridriver --enable
+          (cd exp/site && python3 -m http.server 8000 >/dev/null 2>&1 &)
+          mkdir -p shots
+          echo "| ${{ matrix.os }} Safari | result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          import time, subprocess, os
+          from selenium import webdriver
+          d = webdriver.Safari()
+          print("UA", d.execute_script("return navigator.userAgent"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("| UA | " + d.execute_script("return navigator.userAgent") + " |\n")
+          for fix in ("nortfix", "rtfix"):
+              d.get(f"http://localhost:8000/?gl={fix}")
+              time.sleep(25)
+              d.save_screenshot(f"shots/safari-{fix}-1.png"); time.sleep(3); d.save_screenshot(f"shots/safari-{fix}-2.png")
+              print(fix, d.execute_script("return document.getElementById('jslabel').textContent"))
+              subprocess.run(["python3", "exp/compare.py", f"Safari fix={fix}", f"shots/safari-{fix}-1.png", f"shots/safari-{fix}-2.png", os.environ["GITHUB_STEP_SUMMARY"]])
+          d.quit()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-safari-${{ matrix.os }}
+          path: shots
+
+  playwright-webkit:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, pw: "1.47.2" }   # WebKit 18.0
+          - { os: macos-15, pw: "1.47.2" }
+          - { os: macos-15, pw: "latest" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine files
+        run: |
+          python3 .github/scripts/fetch-zip-members.py \
+            "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz" \
+            /tmp/tpl "templates/web_nothreads_release.zip"
+          cd /tmp/tpl && unzip -oq web_nothreads_release.zip
+          for f in js wasm audio.worklet.js audio.position.worklet.js; do cp "/tmp/tpl/godot.$f" "$GITHUB_WORKSPACE/exp/site/index.$f"; done
+      - run: pip3 install --break-system-packages pillow || pip3 install pillow
+      - name: Playwright WebKit ${{ matrix.pw }}
+        run: |
+          mkdir /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm install playwright@${{ matrix.pw }} >/dev/null && npx playwright install webkit
+          (cd "$GITHUB_WORKSPACE/exp/site" && python3 -m http.server 8000 >/dev/null 2>&1 &)
+          mkdir -p "$GITHUB_WORKSPACE/shots"
+          echo "| ${{ matrix.os }} Playwright ${{ matrix.pw }} | result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          cat > run.cjs <<'JS'
+          const { webkit } = require('playwright');
+          const { execFileSync } = require('child_process');
+          (async () => {
+            for (const headless of [true, false]) {
+              const b = await webkit.launch({ headless });
+              const tag = `wk${b.version()}-${headless ? 'headless' : 'headed'}`;
+              for (const fix of ['nortfix', 'rtfix']) {
+                const p = await b.newPage({ viewport: { width: 390, height: 844 } });
+                await p.goto(`http://localhost:8000/?gl=${fix}`);
+                await p.waitForTimeout(20000);
+                const a = `${process.env.GITHUB_WORKSPACE}/shots/${tag}-${fix}-1.png`, c = a.replace('-1.png', '-2.png');
+                await p.screenshot({ path: a }); await p.waitForTimeout(3000); await p.screenshot({ path: c });
+                console.log(tag, fix, await p.evaluate(() => document.getElementById('jslabel').textContent));
+                execFileSync('python3', [`${process.env.GITHUB_WORKSPACE}/exp/compare.py`, `${tag} fix=${fix}`, a, c, process.env.GITHUB_STEP_SUMMARY], { stdio: 'inherit' });
+                await p.close();
+              }
+              await b.close();
+            }
+          })();
+          JS
+          node run.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-pw-${{ matrix.os }}-${{ matrix.pw }}
+          path: shots
