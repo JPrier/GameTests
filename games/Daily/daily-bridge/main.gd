@@ -1728,7 +1728,9 @@ func _draw_backdrop(vs: Vector2) -> void:
 	hills.append(Vector2(0, vs.y))
 	for i in 25:
 		var x := vs.x * i / 24.0
-		hills.append(Vector2(x, base_y - 40.0 - 26.0 * sin(i * 0.9 + 1.3 + shift * 0.01) - 14.0 * sin(i * 2.1)))
+		# kept above the bottom edge: on short (landscape) screens a dip below it would make the
+		# hill polygon cross its own baseline and fail to triangulate
+		hills.append(Vector2(x, minf(base_y - 40.0 - 26.0 * sin(i * 0.9 + 1.3 + shift * 0.01) - 14.0 * sin(i * 2.1), vs.y - 1.0)))
 	hills.append(Vector2(vs.x, vs.y))
 	draw_colored_polygon(hills, C_HILL)
 	for c in [[0.18, 0.12, 1.0], [0.62, 0.08, 0.8], [0.86, 0.2, 0.6]]:
