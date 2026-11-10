@@ -47,9 +47,18 @@ Every push to `main` and every pull request runs [`.github/workflows/pages.yml`]
 1. installs Godot 4.7.2 and only the web export templates (cached between runs),
 2. validates and runs the tests of every Godot project under `games/` (found in any category folder), failing the build on errors; a game with an executable `prebuild.sh` runs it first (Crowd Control builds its Rust simulation there, so the workflow also installs Rust with the wasm target),
 3. exports each game to `/<folder>/`, generates the home page, and moves the Godot engine (identical for every game, ~40 MB) to one shared copy in `/engine/<hash>/`,
-4. deploys it: `main` to the root of the `gh-pages` branch (the live site), a pull request to `https://joshprier.dev/GameTests/pr-preview/pr-<number>/` (a bot comments the link on the PR; the preview is deleted when the PR closes).
+4. plays every game in Chromium, Firefox and WebKit (see below); `main` only deploys if that passes,
+5. deploys it: `main` to the root of the `gh-pages` branch (the live site), a pull request to `https://joshprier.dev/GameTests/pr-preview/pr-<number>/` (a bot comments the link on the PR; the preview is deleted when the PR closes).
 
 GitHub Pages serves the `gh-pages` branch (Settings → Pages → Source: Deploy from a branch, `gh-pages`, `/ (root)`). Previews only run for branches in this repo, not forks.
+
+### Browser tests
+
+Godot's headless tests check game logic; they never run the exported web page. [`.github/tests/browsers.mjs`](.github/tests/browsers.mjs) does, in Chromium, Firefox and WebKit (Playwright), on two kinds of screen: a phone (390x844 at 3x, touch input, then rotated to landscape) and a desktop (1280x800, mouse). For every game it checks the engine boots, nothing logs an error, the canvas fills the screen at full resolution, tapping a real button redraws the screen (gtui lists the buttons on `?debug=input`), and rotating re-lays it out. `--self-test` freezes the screen on purpose and requires the check to fail.
+
+Run locally: `npm i --no-save playwright && npx playwright install chromium && node .github/tests/browsers.mjs _site --browsers chromium`.
+
+These are Linux browser builds, so bugs that only exist on a real device (like iOS 18 Safari's frozen screen) still need a real iPhone: see [`CLAUDE.md`](CLAUDE.md).
 
 To add a game, put a Godot project with a `Web` export preset in `games/<Category>/<name>/` (or one level deeper, `games/<Category>/<Subcategory>/<name>/`) and push. A new category is just a new folder.
 

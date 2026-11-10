@@ -76,10 +76,42 @@ jobs:
           include-hidden-files: true   # .nojekyll
           retention-days: 7
 
+  # Every game in Chromium, Firefox and WebKit, as a touch phone (with a rotation) and a desktop
+  # with a mouse: boots, no page errors, canvas fills the screen, a button tap redraws it.
+  browsers:
+    if: github.event.action != 'closed'
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: _site
+      - name: Install Playwright (${{ matrix.browser }})
+        run: |
+          npm install --no-save --no-package-lock playwright@1
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Play every game (phone + desktop)
+        run: node .github/tests/browsers.mjs _site --browsers ${{ matrix.browser }}
+      - name: Self-test (a frozen screen must fail the check)
+        if: matrix.browser == 'chromium'
+        run: node .github/tests/browsers.mjs _site --browsers chromium --profiles phone --games drinkle,plans-tonight --self-test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browsers-${{ matrix.browser }}-screenshots
+          path: browsers-*.png
+          if-no-files-found: ignore
+
   # Live site: the root of the gh-pages branch, leaving PR previews (pr-preview/) in place.
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, browsers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
