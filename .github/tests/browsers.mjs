@@ -4,7 +4,7 @@
 // tapping a real button redraws it, and rotating the phone re-lays it out.
 //
 //   node .github/tests/browsers.mjs [_site] [--browsers chromium,firefox,webkit]
-//        [--profiles phone,desktop] [--games drinkle,bloom] [--self-test]
+//        [--profiles phone,desktop] [--games drinkle,bloom] [--self-test] [--headed]
 //
 // Buttons come from the page's ?debug=input overlay (input-debug.js) and gtui.gd's debug lines:
 //   "GAME targets id@x,y;..."   tappable controls, centres in canvas backing pixels
@@ -184,7 +184,12 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const list = await games(SITE);
 let failed = 0, runs = 0;
 for (const name of BROWSERS) {
-  const browser = await { chromium, firefox, webkit }[name].launch();
+  // CI machines have no GPU. Headless Firefox then reports no WebGL 2 at all, so Firefox runs
+  // headed (CI wraps it in xvfb-run) with WebGL forced on, which gives it Mesa's software WebGL 2.
+  const launch = name === 'firefox'
+    ? { headless: !args.includes('--headed'), firefoxUserPrefs: { 'webgl.force-enabled': true, 'webgl.disable-fail-if-major-performance-caveat': true } }
+    : {};
+  const browser = await { chromium, firefox, webkit }[name].launch(launch);
   for (const profile of PROFILES) {
     for (const game of list) {
       const { problems, notes } = await checkGame(name, browser, profile, base, game);

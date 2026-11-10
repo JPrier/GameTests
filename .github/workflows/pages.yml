@@ -97,7 +97,13 @@ jobs:
           npm install --no-save --no-package-lock playwright@1
           npx playwright install --with-deps ${{ matrix.browser }}
       - name: Play every game (phone + desktop)
-        run: node .github/tests/browsers.mjs _site --browsers ${{ matrix.browser }}
+        # Firefox needs a (virtual) display for software WebGL 2; see browsers.mjs
+        run: |
+          if [ "${{ matrix.browser }}" = firefox ]; then
+            xvfb-run -a node .github/tests/browsers.mjs _site --browsers firefox --headed
+          else
+            node .github/tests/browsers.mjs _site --browsers ${{ matrix.browser }}
+          fi
       - name: Self-test (a frozen screen must fail the check)
         if: matrix.browser == 'chromium'
         run: node .github/tests/browsers.mjs _site --browsers chromium --profiles phone --games drinkle,plans-tonight --self-test
