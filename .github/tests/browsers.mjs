@@ -95,7 +95,12 @@ async function checkGame(browserName, browser, profileName, base, game) {
   const page = await context.newPage();
   const problems = [], notes = [];
   page.on('pageerror', e => problems.push(`page error: ${e.message.split('\n')[0]}`));
-  page.on('console', m => { if (m.type() === 'error') problems.push(`console error: ${m.text().slice(0, 300)}`); });
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    const a = m.args()[0];   // Firefox reports an Error object as just "Error": fetch its message
+    Promise.resolve(a ? a.evaluate(v => (v && v.message) ? `${v.name}: ${v.message}` : String(v)).catch(() => '') : '')
+      .then(t => problems.push(`console error: ${(t && t !== 'Error' ? t : m.text()).slice(0, 300)}`));
+  });
   await page.addInitScript(CAPTURE);
   if (SELF_TEST) await page.addInitScript(FREEZE);
   const canvas = page.locator('canvas').first();
@@ -112,10 +117,15 @@ async function checkGame(browserName, browser, profileName, base, game) {
 
   try {
     await page.goto(`${base}/${game}/?debug=input`, { waitUntil: 'load' });
+    // Booted when Godot hides its status overlay; failed when it shows a notice (missing WebGL 2,
+    // a load error, ...), whose text is the most useful thing to report.
+    const notice = () => page.evaluate(() => (document.getElementById('status-notice') || {}).textContent || '').catch(() => '');
     await page.waitForFunction(() => {
-      const s = document.getElementById('status');
-      return !s || getComputedStyle(s).display === 'none' || s.style.visibility === 'hidden';
-    }, null, { timeout: BOOT_MS }).catch(() => { throw new Error(`did not boot within ${BOOT_MS / 1000}s`); });
+      const s = document.getElementById('status'), n = document.getElementById('status-notice');
+      return !s || getComputedStyle(s).display === 'none' || s.style.visibility === 'hidden' || (n && n.textContent.trim());
+    }, null, { timeout: BOOT_MS }).catch(async () => { throw new Error(`did not boot within ${BOOT_MS / 1000}s ${await notice()}`.trim()); });
+    const failed = (await notice()).trim();
+    if (failed) throw new Error(`boot failed: ${failed.replace(/\s+/g, ' ').slice(0, 300)}`);
     await page.waitForTimeout(500);
     const box = await canvas.boundingBox();
     if (!box) throw new Error('no canvas after boot');
