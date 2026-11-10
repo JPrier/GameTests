@@ -1,0 +1,32 @@
+{
+  "device": "iPhone X",
+  "viewport": {
+    "width": 375,
+    "height": 812
+  },
+  "deviceScaleFactor": 3,
+  "ciRenderScale": 0.25,
+  "cpu": {
+    "runnerScore": 5400,
+    "slowdown": 2.0,
+    "note": "The main thread is throttled to runnerScore / slowdown on the CPU_SCORE workload in bench.mjs. runnerScore is what a GitHub ubuntu-latest runner scores unthrottled; slowdown is how much slower than that runner the target phone is assumed to be (iPhone X A11: ~1.3x by single-core benchmarks, plus mobile-Safari overhead). Every run re-measures its own machine and throttles to the same target, so the result doesn't depend on which runner you get. Raise slowdown to make the budget tighter."
+  },
+  "budget": {
+    "minFps": 58,
+    "maxAvgFrameMs": 12,
+    "maxSlowFramePct": 3,
+    "maxFrameMs": 50
+  },
+  "phases": {
+    "warmupSeconds": 2,
+    "idleSeconds": 4,
+    "tapGrid": {
+      "cols": 3,
+      "rows": 5,
+      "pauseMs": 350
+    },
+    "swipes": 6
+  },
+  "loadTimeoutSeconds": 90,
+  "retries": 1
+}
