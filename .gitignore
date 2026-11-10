@@ -1,3 +1,5 @@
 _site/
 .godot/
 __pycache__/
+node_modules/
+browsers-*.png

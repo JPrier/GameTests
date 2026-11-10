@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, closed]   # closed: remove the PR's preview
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,7 @@ env:
 
 jobs:
   build:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,21 +69,97 @@ jobs:
           bash .github/scripts/build-site.sh
 
       - name: Upload site
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
+          name: site
           path: _site
+          include-hidden-files: true   # .nojekyll
+          retention-days: 7
 
-  deploy:
-    if: github.event_name != 'pull_request'
+  # Every game in Chromium, Firefox and WebKit, as a touch phone (with a rotation) and a desktop
+  # with a mouse: boots, no page errors, canvas fills the screen, a button tap redraws it.
+  browsers:
+    if: github.event.action != 'closed'
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: _site
+      - name: Install Playwright (${{ matrix.browser }})
+        run: |
+          npm install --no-save --no-package-lock playwright@1
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Play every game (phone + desktop)
+        # Firefox needs a (virtual) display for software WebGL 2; see browsers.mjs
+        run: |
+          if [ "${{ matrix.browser }}" = firefox ]; then
+            xvfb-run -a node .github/tests/browsers.mjs _site --browsers firefox --headed
+          else
+            node .github/tests/browsers.mjs _site --browsers ${{ matrix.browser }}
+          fi
+      - name: Self-test (a frozen screen must fail the check)
+        if: matrix.browser == 'chromium'
+        run: node .github/tests/browsers.mjs _site --browsers chromium --profiles phone --games drinkle,plans-tonight --self-test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browsers-${{ matrix.browser }}-screenshots
+          path: browsers-*.png
+          if-no-files-found: ignore
+
+  # Live site: the root of the gh-pages branch, leaving PR previews (pr-preview/) in place.
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build, browsers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: _site
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false
+
+  # PR preview at https://joshprier.dev/GameTests/pr-preview/pr-<number>/, removed when the PR closes.
+  preview:
+    needs: build
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action == 'closed' || needs.build.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: github.event.action != 'closed'
+        with:
+          name: site
+          path: _site
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: _site
+          umbrella-dir: pr-preview
+          pages-base-url: joshprier.dev/GameTests
