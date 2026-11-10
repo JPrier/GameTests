@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Games</title>
+<meta name="description" content="A handful of small browser games with a new puzzle every day.">
+<meta name="theme-color" content="#1d1514">
+<style>
+/* GameTests homepage. Tokens match ui/VISUAL_GUIDE.md: spacing 4/8/12/16/24/32/48, radii 6/8, 1px borders. */
+:root{--bg:#1d1514;--surface:#261c1a;--line:#3d2d28;--ink:#f3e9dc;--muted:#bba893;--accent:#ffcf6b;--ok:#8fd694;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--r-control:6px;--r-panel:8px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:1040px;margin:0 auto;padding:var(--s7) var(--s5) var(--s7)}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--s1) var(--s4);padding-bottom:var(--s4);border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:2rem;line-height:1.2;font-weight:700;letter-spacing:-.01em;color:var(--accent)}
+.today{margin:0;color:var(--muted);font-variant-numeric:tabular-nums}
+.today b{color:var(--ink);font-weight:600}
+section{margin-top:var(--s6)}
+h2{margin:0 0 var(--s2);font-size:.75rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.group{margin-top:var(--s5)}
+.group h3{margin:0 0 var(--s2);font-size:.875rem;font-weight:600;color:var(--ink)}
+.games{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));column-gap:var(--s6)}
+.games li{border-top:1px solid var(--line)}
+.game{display:flex;gap:var(--s4);align-items:flex-start;padding:var(--s4) var(--s2);margin:0 calc(var(--s2) * -1);border-radius:var(--r-panel);color:inherit;text-decoration:none;transition:background-color .1s}
+.game:hover{background:var(--surface)}
+.game:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.art{flex:0 0 160px;aspect-ratio:16/9;border-radius:var(--r-control);overflow:hidden;background:var(--surface);border:1px solid var(--line)}
+.art img{display:block;width:100%;height:100%;object-fit:cover}
+.fallback{display:flex;align-items:flex-end;height:100%;padding:var(--s2);background:var(--c);color:var(--k);font-weight:700;font-size:.875rem;line-height:1.2}
+.info{display:flex;flex-direction:column;gap:var(--s1);min-width:0;flex:1}
+.line{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s2)}
+.title{font-size:1.0625rem;font-weight:600;line-height:1.3}
+.num{color:var(--muted);font-size:.8125rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{color:var(--muted);font-size:.9375rem;line-height:1.45}
+.status{font-size:.8125rem;font-weight:600;color:var(--accent)}
+.status.done{color:var(--ok)}
+.empty{color:var(--muted)}
+@media (max-width:600px){
+  main{padding:var(--s6) var(--s4) var(--s7)}
+  h1{font-size:1.625rem}
+  .games{grid-template-columns:1fr}
+  .game{gap:var(--s3);padding:var(--s3) var(--s2)}
+  .art{flex-basis:104px}
+  .fallback{font-size:.75rem;padding:var(--s1) var(--s2)}
+  .tag{font-size:.875rem}
+}
+@media (prefers-reduced-motion:reduce){.game{transition:none}}
+</style></head>
+<body><main>
+<header><h1>Daily Games</h1><p class="today" id="today"></p></header>
+<section><h2>Daily</h2><ul class="games"><li><a class="game" href="./bloom/" data-slug="bloom" data-start="2026-10-01" data-clock="local"><span class="art"><img src="./bloom/thumbnail.webp?v=2c9c19c0" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Bloom</span><span class="num" hidden></span></span><span class="tag">Plant a few seed cells, run the Game of Life, and spread as far as you can.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./plans-tonight/" data-slug="plans-tonight" data-start="2026-10-16" data-clock="utc"><span class="art"><img src="./plans-tonight/thumbnail.webp?v=02a977da" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Plans Tonight?</span><span class="num" hidden></span></span><span class="tag">Everyone in the group chat has rules. Find the one plan that works for all of them.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./daily-bridge/" data-slug="daily-bridge" data-start="2026-10-02" data-clock="local"><span class="art"><img src="./daily-bridge/thumbnail.webp?v=d41ee31d" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Daily Bridge</span><span class="num" hidden></span></span><span class="tag">Build a bridge with as little material as you can, then watch today’s vehicle try to cross.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./earthquake-test/" data-slug="earthquake-test" data-start="2026-10-02" data-clock="local"><span class="art"><img src="./earthquake-test/thumbnail.webp?v=7b8d4bef" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Earthquake Test</span><span class="num" hidden></span></span><span class="tag">Build a tower from wood and steel, then everyone gets the same quake.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./ticker-time/" data-slug="ticker-time" data-start="2026-10-02" data-clock="utc"><span class="art"><img src="./ticker-time/thumbnail.webp?v=37173f35" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Ticker Time</span><span class="num" hidden></span></span><span class="tag">Guess the year of real stock charts, then bet up or down with $1,000.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./seating-chart/" data-slug="seating-chart" data-start="2026-10-16" data-clock="local"><span class="art"><img src="./seating-chart/thumbnail.webp?v=7bec2502" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Seating Chart</span><span class="num" hidden></span></span><span class="tag">Seat ten wedding guests so every clue holds. Easy on Monday, devious by Sunday.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./bouquet-toss/" data-slug="bouquet-toss" data-start="2026-10-16" data-clock="local"><span class="art"><img src="./bouquet-toss/thumbnail.png?v=d592f2c8" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Bouquet Toss</span><span class="num" hidden></span></span><span class="tag">Five bouquet trick shots a day, the same for everyone. Fewest tries wins.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./drinkle/" data-slug="drinkle" data-start="2026-10-16" data-clock="local"><span class="art"><img src="./drinkle/thumbnail.webp?v=320aad07" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Drinkle</span><span class="num" hidden></span></span><span class="tag">Cocktail Wordle meets Mastermind. Every guess shows how close you are; deduce the drink in six.</span><span class="status" hidden></span></span></a></li></ul><div class="group"><h3>Airplanes</h3><ul class="games"><li><a class="game" href="./flightle/" data-slug="flightle" data-start="2026-10-03" data-clock="utc"><span class="art"><img src="./flightle/thumbnail.webp?v=928c5821" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Flightle</span><span class="num" hidden></span></span><span class="tag">A real flight path with the airports hidden. Every miss reveals a clue.</span><span class="status" hidden></span></span></a></li><li><a class="game" href="./xray-shift/" data-slug="xray-shift" data-start="2026-10-03" data-clock="utc"><span class="art"><img src="./xray-shift/thumbnail.webp?v=649fc66a" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">X-Ray Shift</span><span class="num" hidden></span></span><span class="tag">Work the airport x-ray: flag the bags with contraband, then find the illegal items.</span><span class="status" hidden></span></span></a></li></ul></div></section>
+<section><h2>Incremental</h2><ul class="games"><li><a class="game" href="./bistro-empire/"><span class="art"><img src="./bistro-empire/thumbnail.png?v=48e39beb" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Bistro Empire</span></span><span class="tag">Grow a corner diner into a franchise empire with side businesses, then sell for stars. Opt-in challenges bring real costs and the risk of going bust. 1,726 upgrades.</span></span></a></li></ul></section>
+<section><h2>Other</h2><ul class="games"><li><a class="game" href="./crowd-control/"><span class="art"><span class="fallback" style="--c:#3a2a26;--k:#f3e9dc">Crowd Control</span></span><span class="info"><span class="line"><span class="title">Crowd Control</span></span><span class="tag">You don&#x27;t control people; you control the system they move through. Get 1,000 fans home after the match.</span></span></a></li><li><a class="game" href="./kitchen-crawl/"><span class="art"><img src="./kitchen-crawl/thumbnail.webp?v=71dc961a" alt="" loading="lazy" decoding="async"></span><span class="info"><span class="line"><span class="title">Kitchen Crawl</span></span><span class="tag">Run a tiny restaurant for ten days. Rent rises every night; pick an upgrade after each shift.</span></span></a></li></ul></section>
+</main>
+<script>
+(function(){
+  var pad=function(n){return String(n).padStart(2,"0")};
+  var now=new Date();
+  var day={
+    local:now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate()),
+    utc:now.getUTCFullYear()+"-"+pad(now.getUTCMonth()+1)+"-"+pad(now.getUTCDate())
+  };
+  var dayNum=function(start,d){return Math.round((Date.parse(d)-Date.parse(start))/864e5)+1};
+  var store=null;try{store=window.localStorage}catch(e){}
+  var cards=document.querySelectorAll(".game[data-slug]"),played=0;
+  cards.forEach(function(c){
+    var d=day[c.dataset.clock]||day.utc,n=dayNum(c.dataset.start,d);
+    var num=c.querySelector(".num"),st=c.querySelector(".status");
+    if(n>=1){num.textContent="#"+n;num.hidden=false}
+    var rec=null;
+    try{rec=store&&store.getItem("gametests:"+c.dataset.slug+":"+d)}catch(e){}
+    if(rec){
+      played++;var r="";try{r=JSON.parse(rec).result||""}catch(e){}
+      st.textContent="Played today"+(r?" · "+r:"");st.classList.add("done");st.hidden=false;
+    }else if(n===1){st.textContent="New today";st.hidden=false}
+  });
+  var label=now.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});
+  var t=document.getElementById("today");
+  t.innerHTML="<b>"+label+"</b>"+(cards.length&&played?" · "+played+" of "+cards.length+" played":"");
+})();
+</script>
+</body></html>

@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>Plans Tonight?</title>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: white;
+	background-color: black;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+#status, #status-splash, #status-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+}
+
+#status, #status-splash {
+	top: 0;
+	bottom: 0;
+}
+
+#status {
+	background-color: #141021;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	visibility: hidden;
+}
+
+#status-splash {
+	max-height: 100%;
+	max-width: 100%;
+	margin: auto;
+}
+
+#status-splash.show-image--false {
+	display: none;
+}
+
+#status-splash.fullsize--true {
+	height: 100%;
+	width: 100%;
+	object-fit: contain;
+}
+
+#status-splash.use-filter--false {
+	image-rendering: pixelated;
+}
+
+#status-progress, #status-notice {
+	display: none;
+}
+
+#status-progress {
+	bottom: 10%;
+	width: 50%;
+	margin: 0 auto;
+}
+
+#status-notice {
+	background-color: #5b3943;
+	border-radius: 0.5rem;
+	border: 1px solid #9b3943;
+	color: #e0e0e0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	line-height: 1.3;
+	margin: 0 2rem;
+	overflow: hidden;
+	padding: 1rem;
+	text-align: center;
+	z-index: 1;
+}
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<meta name="theme-color" content="#141021"><meta name="description" content="Plans Tonight? A daily deduction puzzle: your friends all have rules. Find the one plan that works for everyone."><style>#status-splash{display:none!important}html,body,#status{background:#141021!important}html,body{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{touch-action:none}</style>
+	<script>window.__gtBuild="4b00567 2026-11-10T12:12Z"</script><script>// iOS 18 frozen-canvas fix for every exported game.
+//
+// Symptom: on iOS 18 Safari (and every iOS browser, all WebKit) the game runs, takes input and changes
+// state, but the screen keeps showing the first frame. iOS 26 is fine.
+//
+// Root cause (reproduced on a real iPhone 14 with iOS 18.0 via BrowserStack, with a WebGL call census):
+// Godot sets texParameteri(TEXTURE_2D, TEXTURE_MAX_LEVEL, 0) on every texture without mipmaps. With
+// that set, iOS 18's WebGL stops applying anything drawn into Godot's 2D render target after the
+// first frame: no GL error, reads keep returning frame 1, so frame 1 is presented forever. Skipping
+// MAX_LEVEL 0 only on render-target textures was not enough; textures sampled while drawing also
+// trigger it, so it is skipped for all of them.
+//
+// Fix: ignore TEXTURE_MAX_LEVEL 0. For a single-level texture with a non-mipmap filter (how Godot uses
+// MAX_LEVEL 0) the GL default (1000) samples and renders identically. Mipmapped textures, which set
+// other values, are untouched. Checked on the device: with the fix Drinkle updates normally; with
+// ?gl=nortfix the same page freezes again.
+//
+// On by default in WebKit browsers (all iOS browsers, Safari on macOS), off elsewhere.
+//   ?gl=rtfix     force it on      ?gl=nortfix   force it off (to reproduce the bug)
+// The ?debug=input overlay shows whether it is on and how many calls it skipped.
+(function () {
+  var q = '';
+  try { q = location.search; } catch (e) { return; }
+  var gl = (/[?&]gl=([a-z,]+)/.exec(q) || [])[1] || '', ua = navigator.userAgent || '';
+  var webkit = (/AppleWebKit/.test(ua) && !/(Chrome|Chromium|Edg|Android)\//.test(ua)) || /(CriOS|FxiOS|EdgiOS)/.test(ua);
+  var opts = window.__gtRenderOptions = {
+    rtfix: /\bnortfix\b/.test(gl) ? false : (/\brtfix\b/.test(gl) || webkit),
+  };
+  if (!opts.rtfix || !window.WebGL2RenderingContext) return;
+  var P = WebGL2RenderingContext.prototype, MAX_LEVEL = 0x813D;
+  var oTexI = P.texParameteri, oTexF = P.texParameterf;
+  opts.rtfixApplied = 0;
+  P.texParameteri = function (target, pname, value) {
+    if (pname === MAX_LEVEL && value === 0) { opts.rtfixApplied++; return; }
+    return oTexI.apply(this, arguments);
+  };
+  P.texParameterf = function (target, pname, value) {
+    if (pname === MAX_LEVEL && value === 0) { opts.rtfixApplied++; return; }
+    return oTexF.apply(this, arguments);
+  };
+})();
+</script><script>// Touch/input diagnostics for every exported game. Inert unless the URL has ?debug=input.
+// Shows what the browser delivers to the page (touch, pointer, mouse events), what the game receives
+// (GAME lines from gtui.gd), JS and engine errors, so a player on a phone we can't test can send a
+// screenshot. The panel ignores touches, so the game stays playable. A two-finger tap copies the
+// whole log to the clipboard so it can be pasted into a message.
+(function () {
+  try {
+    if (!/[?&]debug=input\b/.test(location.search)) return;
+  } catch (e) { return; }
+  var lines = [], counts = {}, panel = null, errors = [], fps = 0, frames = 0, lastMove = '', t0 = Date.now();
+  function stamp() { return ((Date.now() - t0) / 1000).toFixed(2) + 's '; }
+  // engine and script errors (Godot reports GDScript errors through console.error / console.warn)
+  ['error', 'warn'].forEach(function (level) {
+    var orig = console[level];
+    console[level] = function () {
+      try {
+        errors.push(stamp() + level + ': ' + Array.prototype.map.call(arguments, String).join(' ').slice(0, 300));
+        if (errors.length > 200) errors.shift();
+        render();
+      } catch (e) {}
+      return orig.apply(console, arguments);
+    };
+  });
+  // the game's shared UI (gtui.gd) echoes what Godot actually receives through this
+  window.__gtDebugInput = function (s) { log('GAME ' + s); };
+  (function tick() { frames++; requestAnimationFrame(tick); })();
+  setInterval(function () { fps = frames; frames = 0; }, 1000);
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]; }); }
+  function canvas() { return document.querySelector('canvas'); }
+  function describe(el) {
+    if (!el) return 'null';
+    var s = el.tagName ? el.tagName.toLowerCase() : String(el);
+    if (el.id) s += '#' + el.id;
+    return s;
+  }
+  var glInfo = 'no GL context yet';
+  (function () {
+    var orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type) {
+      var ctx = orig.apply(this, arguments);
+      if (ctx && (type === 'webgl2' || type === 'webgl')) {
+        try {
+          var a = ctx.getContextAttributes() || {};
+          glInfo = type + ' aa ' + a.antialias + ' preserve ' + a.preserveDrawingBuffer + ' alpha ' + a.alpha +
+            ' power ' + a.powerPreference + ' buffer ' + ctx.drawingBufferWidth + 'x' + ctx.drawingBufferHeight;
+        } catch (e) { glInfo = 'GL attrs ERR ' + e.message; }
+        this.addEventListener('webglcontextlost', function () { errors.push(stamp() + 'WEBGL CONTEXT LOST'); render(); });
+        this.addEventListener('webglcontextrestored', function () { log('webgl context restored'); });
+      }
+      return ctx;
+    };
+  })();
+  var envLine = null;
+  function env() {
+    if (envLine) return envLine;
+    var parts = [];
+    function add(k, f) { try { parts.push(k + ' ' + f()); } catch (e) { parts.push(k + ' ERR ' + e.message); } }
+    add('screen', function () { return screen.width + 'x' + screen.height; });
+    add('orient', function () { return (screen.orientation && screen.orientation.type) || window.orientation; });
+    add('standalone', function () { return !!navigator.standalone || matchMedia('(display-mode: standalone)').matches; });
+    add('reduced-motion', function () { return matchMedia('(prefers-reduced-motion: reduce)').matches; });
+    add('pointer', function () { return (matchMedia('(pointer: coarse)').matches ? 'coarse' : 'fine') + (matchMedia('(hover: hover)').matches ? '+hover' : ''); });
+    add('inapp', function () { return /FBAN|FBAV|Instagram|Line\/|WhatsApp|Snapchat|GSA\/|CriOS|FxiOS|EdgiOS/.test(navigator.userAgent) || 'no'; });
+    add('lang', function () { return navigator.language; });
+    add('cores', function () { return navigator.hardwareConcurrency; });
+    add('localStorage', function () { localStorage.setItem('_gt_probe', '1'); localStorage.removeItem('_gt_probe'); return 'ok'; });
+    add('gpu', function () {
+      var gl = document.createElement('canvas').getContext('webgl2');
+      if (!gl) return 'NO webgl2';
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    });
+    envLine = parts.join(' | ');
+    try {
+      var req = indexedDB.open('_gt_probe');
+      req.onsuccess = function () { envLine += ' | indexedDB ok'; try { req.result.close(); } catch (e) {} };
+      req.onerror = function () { envLine += ' | indexedDB ERR ' + (req.error && req.error.name); };
+    } catch (e) { envLine += ' | indexedDB ERR ' + e.message; }
+    return envLine;
+  }
+  function header() {
+    var c = canvas(), r = c ? c.getBoundingClientRect() : null, vv = window.visualViewport;
+    return [
+      'build ' + (window.__gtBuild || '?') + ' | ' + navigator.userAgent,
+      env(),
+      'render options ' + JSON.stringify(window.__gtRenderOptions || {}) + ' | ' + glInfo,
+      'viewport ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio +
+        (vv ? ' vv ' + Math.round(vv.width) + 'x' + Math.round(vv.height) + ' scale ' + vv.scale.toFixed(2) : ''),
+      c ? 'canvas ' + c.width + 'x' + c.height + ' at ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
+        Math.round(r.width) + 'x' + Math.round(r.height) + ' focused ' + (document.activeElement === c) : 'no canvas yet',
+      'ontouchstart ' + ('ontouchstart' in window) + ' maxTouchPoints ' + (navigator.maxTouchPoints || 0) +
+        ' PointerEvent ' + (typeof PointerEvent),
+      'page fps ' + fps + ' ' + document.visibilityState + ' hasFocus ' + document.hasFocus() + lastMove,
+      'touch-fix dropped ' + JSON.stringify(window.__gtTouchFixDrops || 'n/a'),
+      'counts ' + Object.keys(counts).map(function (k) { return k + ':' + counts[k]; }).join(' '),
+    ];
+  }
+  function render() {
+    if (!panel) {
+      if (!document.body) return;
+      panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;left:0;right:0;top:0;max-height:62vh;overflow:hidden;z-index:2147483647;' +
+        'pointer-events:none;background:rgba(0,0,0,.78);color:#9f9;font:10px/1.3 ui-monospace,Menlo,monospace;' +
+        'padding:4px 6px;white-space:pre-wrap;word-break:break-all';
+      document.body.appendChild(panel);
+    }
+    panel.innerHTML = esc(header().join('\n')) +
+      '\n2-finger tap: copy full log' + (errors.length ? ' | ' + errors.length + ' errors' : '') +
+      (errors.length ? '\n<span style="color:#f88">' + esc(errors.slice(-4).join('\n')) + '</span>' : '') +
+      '\n' + esc(lines.slice(-16).join('\n'));
+  }
+  function log(s) { lines.push(stamp() + s); if (lines.length > 500) lines.shift(); render(); }
+  function fullText() { return header().concat(['-- errors --'], errors, ['-- log --'], lines).join('\n'); }
+  function copyLog() {
+    var text = fullText(), done = function (ok) { log(ok ? 'COPIED ' + text.length + ' chars: paste it into a message' : 'copy failed'); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(fallback(text)); });
+      } else done(fallback(text));
+    } catch (e) { done(fallback(text)); }
+  }
+  function fallback(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand('copy'); document.body.removeChild(ta); return ok;
+    } catch (e) { return false; }
+  }
+  var twoFinger = false;
+  window.addEventListener('touchstart', function (e) { if (e.touches && e.touches.length >= 2) twoFinger = true; }, { capture: true, passive: true });
+  window.addEventListener('touchend', function (e) {
+    if (twoFinger && (!e.touches || e.touches.length === 0)) { twoFinger = false; copyLog(); }
+  }, { capture: true, passive: true });
+  function point(e) {
+    var t = e.changedTouches && e.changedTouches[0];
+    return t ? { x: t.clientX, y: t.clientY, id: t.identifier } : { x: e.clientX, y: e.clientY };
+  }
+  ['touchstart', 'touchend', 'touchcancel', 'pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click']
+    .forEach(function (type) {
+      window.addEventListener(type, function (e) {
+        counts[type] = (counts[type] || 0) + 1;
+        var p = point(e), x = Math.round(p.x), y = Math.round(p.y);
+        var top = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+        // read defaultPrevented after the page's own handlers (bubble phase on canvas) have run
+        setTimeout(function () {
+          var tg = describe(e.target), tp = describe(top);
+          log(type + (e.pointerType ? '(' + e.pointerType + ')' : '') + ' ' + x + ',' + y +
+            (p.id !== undefined ? ' id ' + p.id : '') + (tg === tp ? ' on ' + tg : ' target ' + tg + ' top ' + tp) +
+            ' prevented ' + e.defaultPrevented + (e.cancelable ? '' : ' NOT-cancelable'));
+        }, 0);
+      }, { capture: true, passive: true });
+    });
+  var moved = {};
+  window.addEventListener('touchstart', function (e) {
+    for (var i = 0; i < e.changedTouches.length; i++) moved[e.changedTouches[i].identifier] = 0;
+  }, { capture: true, passive: true });
+  window.addEventListener('touchmove', function (e) {
+    counts.touchmove = (counts.touchmove || 0) + 1;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i], n = moved[t.identifier] = (moved[t.identifier] || 0) + 1;
+      if (n === 1 || n % 10 === 0) log('touchmove#' + n + ' ' + Math.round(t.clientX) + ',' + Math.round(t.clientY) + ' id ' + t.identifier);
+    }
+  }, { capture: true, passive: true });
+  ['gesturestart', 'gesturechange', 'gestureend', 'contextmenu', 'selectstart', 'dblclick', 'visibilitychange', 'pagehide', 'pageshow'].forEach(function (t) {
+    (t === 'visibilitychange' ? document : window).addEventListener(t, function (e) {
+      counts[t] = (counts[t] || 0) + 1;
+      if (t !== 'gesturechange') log(t + (e.scale !== undefined ? ' scale ' + e.scale.toFixed(2) : '') + (e.defaultPrevented ? ' prevented' : ''));
+    }, { capture: true, passive: true });
+  });
+  if (window.visualViewport) ['resize', 'scroll'].forEach(function (t) {
+    visualViewport.addEventListener(t, function () {
+      log('visualViewport ' + t + ' ' + Math.round(visualViewport.width) + 'x' + Math.round(visualViewport.height) +
+        ' offset ' + Math.round(visualViewport.offsetLeft) + ',' + Math.round(visualViewport.offsetTop) + ' scale ' + visualViewport.scale.toFixed(2));
+    });
+  });
+  window.addEventListener('scroll', function () { log('window scroll ' + Math.round(scrollX) + ',' + Math.round(scrollY)); }, { passive: true });
+  window.addEventListener('pointermove', function (e) {
+    counts.pointermove = (counts.pointermove || 0) + 1;
+    lastMove = ' last move ' + e.pointerType + ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) +
+      ' mv ' + e.movementX + ',' + e.movementY;
+  }, { capture: true, passive: true });
+  window.addEventListener('error', function (e) { errors.push(stamp() + 'error: ' + e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno); render(); });
+  window.addEventListener('unhandledrejection', function (e) { errors.push(stamp() + 'rejection: ' + (e.reason && e.reason.message || e.reason)); render(); });
+  ['focus', 'blur', 'resize', 'orientationchange'].forEach(function (t) { window.addEventListener(t, function () { log('window ' + t); }); });
+  // ?debug=input&tap=190,600;26,540 taps those CSS positions after load (tapwait ms, default 8000;
+  // tapgap ms between taps, default 1500), so a remote device can be driven without coordinate taps.
+  (function () {
+    var m = /[?&]tap=([0-9.,;]+)/.exec(location.search);
+    if (!m) return;
+    var pts = m[1].split(';').map(function (p) { return p.split(',').map(Number); });
+    var wait = +((/[?&]tapwait=(\d+)/.exec(location.search) || [])[1] || 8000);
+    var gap = +((/[?&]tapgap=(\d+)/.exec(location.search) || [])[1] || 1500);
+    var id = 1000;
+    function fire(target, type, x, y, touchId) {
+      var t = { identifier: touchId, target: target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y,
+        radiusX: 10, radiusY: 10, force: 1 };
+      var e = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(e, 'changedTouches', { value: [t] });
+      Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [t] });
+      Object.defineProperty(e, 'targetTouches', { value: type === 'touchend' ? [] : [t] });
+      target.dispatchEvent(e);
+    }
+    function pe(target, type, x, y) {
+      try {
+        target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch',
+          isPrimary: true, clientX: x, clientY: y, buttons: type === 'pointerdown' ? 1 : 0 }));
+      } catch (e) {}
+    }
+    function tap(i) {
+      if (i >= pts.length) { log('AUTOTAP done'); return; }
+      var x = pts[i][0], y = pts[i][1], c = document.querySelector('canvas'), tid = id++;
+      if (!c) { log('AUTOTAP no canvas'); return; }
+      log('AUTOTAP ' + (i + 1) + '/' + pts.length + ' at ' + x + ',' + y);
+      pe(c, 'pointerdown', x, y); fire(c, 'touchstart', x, y, tid);
+      setTimeout(function () {
+        pe(c, 'pointerup', x, y); fire(c, 'touchend', x, y, tid);
+        setTimeout(function () { tap(i + 1); }, gap);
+      }, 90);
+    }
+    setTimeout(function () { tap(0); }, wait);
+  })();
+  setInterval(render, 1000);
+  document.addEventListener('DOMContentLoaded', render);
+})();
+</script><script>// Touch hardening for every exported game (always on). Godot's web runtime reads touches from
+// touchstart/move/end and also turns every window `pointermove` into a real-mouse motion event.
+// On phones that gives the game a second, separate pointer stream during each touch, and phones
+// can also send "ghost" mouse events after a tap. Games only need the touch stream (the engine
+// turns it into mouse events itself), so the extras are dropped before the engine sees them.
+// Mouse and pen input are untouched.
+(function () {
+  var GHOST_MS = 800, lastTouch = -1e9, drops = window.__gtTouchFixDrops = {};
+  function drop(e) { drops[e.type] = (drops[e.type] || 0) + 1; e.stopImmediatePropagation(); }
+  function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function markTouch() { lastTouch = now(); }
+  ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (t) {
+    window.addEventListener(t, markTouch, { capture: true, passive: true });
+  });
+  // 1. Touch pointermoves: Godot already gets these moves from touchmove.
+  window.addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'touch') drop(e);
+  }, { capture: true });
+  // 2. Compatibility mouse events a browser may fire after a tap: they would arrive as a second
+  //    press/release on top of the one the engine already made from the touch.
+  ['mousedown', 'mouseup', 'mousemove'].forEach(function (t) {
+    window.addEventListener(t, function (e) {
+      if (now() - lastTouch < GHOST_MS) drop(e);
+    }, { capture: true });
+  });
+  // 3. No grey tap flash or callout over the canvas on iOS.
+  var css = document.createElement('style');
+  css.textContent = 'html,body,canvas{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}';
+  (document.head || document.documentElement).appendChild(css);
+})();
+</script><script>// Stale-page guard for every exported game (always on). Phones keep open tabs and Home Screen
+// apps in memory for days without refetching, so a player can keep running an old build long
+// after a fix ships. The site build writes build.json next to the games; when the page is opened
+// or brought back to the foreground and its own stamp (window.__gtBuild) differs, reload once.
+(function () {
+  var mine = window.__gtBuild, last = 0;
+  if (!mine || mine.indexOf('local') === 0 || !window.fetch) return;
+  function check() {
+    var t = Date.now();
+    if (t - last < 30000) return;
+    last = t;
+    var url;
+    try { url = new URL('../build.json', location.href).href + '?t=' + t; } catch (e) { return; }
+    fetch(url, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !j.build || j.build === mine) return;
+      var key = 'gt_reloaded_for', done = null;
+      try { done = sessionStorage.getItem(key); sessionStorage.setItem(key, j.build); } catch (e) {}
+      if (done !== j.build) location.reload();   // at most once per new build, so never a reload loop
+    }).catch(function () {});
+  }
+  check();
+  window.addEventListener('pageshow', function (e) { if (e.persisted) { last = 0; check(); } });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); });
+})();
+</script></head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<noscript>
+			Your browser does not support JavaScript.
+		</noscript>
+
+		<div id="status">
+			<img id="status-splash" class="show-image--false fullsize--true use-filter--true" src="index.png" alt="">
+			<progress id="status-progress"></progress>
+			<div id="status-notice"></div>
+		</div>
+
+		<script src="../engine/b651cca853fc/index.js"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"../engine/b651cca853fc/index","experimentalVK":false,"fileSizes":{"index.pck":679144,"../engine/b651cca853fc/index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"mainPack":"index.pck"};
+const GODOT_THREADS_ENABLED = false;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusNotice = document.getElementById('status-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		const lines = text.split('\n');
+		lines.forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('An unknown error occurred.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+			let serviceWorkerRegistrationPromise;
+			try {
+				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+			} catch (err) {
+				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
+			}
+			// There's a chance that installing the service worker would fix the issue
+			Promise.race([
+				serviceWorkerRegistrationPromise.then((registration) => {
+					if (registration != null) {
+						return Promise.reject(new Error('Service worker already exists.'));
+					}
+					return registration;
+				}).then(() => engine.installServiceWorker()),
+				// For some reason, `getRegistration()` can stall
+				new Promise((resolve) => {
+					setTimeout(() => resolve(), 2000);
+				}),
+			]).then(() => {
+				// Reload if there was no error.
+				window.location.reload();
+			}).catch((err) => {
+				console.error('Error while registering service worker:', err);
+			});
+		} else {
+			// Display the message as usual
+			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			displayFailureNotice(missingMsg + missing.join('\n'));
+		}
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+}());
+		</script>
+	</body>
+</html>
+
