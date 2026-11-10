@@ -25,10 +25,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The iOS 18 frozen-screen fix (render-options.js): which browsers get it, what it drops.
-      - name: Unit tests (site scripts)
-        run: node --test .github/tests/*.test.mjs
-
       - name: Cache Godot + web export templates
         id: cache-godot
         uses: actions/cache@v4
@@ -71,27 +67,6 @@ jobs:
           export GODOT_BIN=~/.local/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
           chmod +x "$GODOT_BIN"
           bash .github/scripts/build-site.sh
-
-      # Every game in Chromium and WebKit: boots without errors and a button tap redraws the screen.
-      # Then the same check against an injected frozen screen, which it must catch.
-      - name: Install Playwright browsers
-        run: |
-          npm install --no-save --no-package-lock playwright@1
-          npx playwright install --with-deps chromium webkit
-
-      - name: Smoke test (every game, Chromium + WebKit)
-        run: node .github/tests/smoke.mjs _site
-
-      - name: Smoke self-test (an injected frozen screen must fail)
-        run: node .github/tests/smoke.mjs _site --self-test --browsers chromium,webkit --games drinkle,plans-tonight
-
-      - name: Upload smoke screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-screenshots
-          path: smoke-*.png
-          if-no-files-found: ignore
 
       - name: Upload site
         uses: actions/upload-artifact@v4

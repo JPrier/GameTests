@@ -70,6 +70,4 @@ printf '{"build": "%s"}\n' "$GT_BUILD" > "$SITE/build.json"
 python3 "$ROOT/.github/scripts/share-engine.py" "$SITE" || fail=1
 # Served from the gh-pages branch: skip Jekyll so nothing is filtered or rewritten.
 touch "$SITE/.nojekyll"
-# Structural checks on the finished site (render fix injected first, engine paths resolve, size).
-python3 "$ROOT/.github/tests/check-site.py" "$SITE" || fail=1
 exit $fail

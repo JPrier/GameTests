@@ -329,21 +329,6 @@ static func _debug_env() -> void:
 		RenderingServer.get_video_adapter_name(),
 		"writable" if writable else "NOT writable (%s)" % error_string(FileAccess.get_open_error())])
 	_dbg_state = _debug_snapshot()
-	_debug_targets()
-
-
-# The tappable controls on screen, centres in window pixels (the canvas's backing pixels), so the
-# site smoke test (.github/tests/smoke.mjs) can tap a real button in every game without knowing it.
-static func _debug_targets() -> void:
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or _dbg_input is bool:
-		return
-	var xf: Transform2D = tree.root.get_final_transform()
-	var parts: Array = []
-	for t in (_scan_controls() if _controls else _active_targets()):
-		var c: Vector2 = xf * (t.rect as Rect2).get_center()
-		parts.append("%s@%d,%d" % [t.id, roundi(c.x), roundi(c.y)])
-	_dbg_input.__gtDebugInput("targets " + ";".join(parts.slice(0, 24)))
 
 
 # What changed in the scene's get_agent_state() since the last tap: shows whether the game reacted.
@@ -372,7 +357,6 @@ static func _debug_state_diff() -> void:
 			parts.append("%s=%s" % [k, v.substr(0, 40) + ("~" if v.length() > 40 else "")])
 	_dbg_state = now
 	_dbg_input.__gtDebugInput("state " + ("UNCHANGED after tap" if parts.is_empty() else "changed: " + ", ".join(parts.slice(0, 6))))
-	_debug_targets()
 
 
 ## A press + release at `pos` for replaying a keyboard activation through the game's own tap handling:
