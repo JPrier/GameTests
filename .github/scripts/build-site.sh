@@ -8,6 +8,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GODOT="${GODOT_BIN:-godot}"
 SITE="${SITE_DIR:-$ROOT/_site}"
+# One stamp for the whole site: pages compare theirs with build.json to notice they are stale.
+export GT_BUILD="${GITHUB_SHA:-local}"
+GT_BUILD="${GT_BUILD:0:7} $(date -u +%Y-%m-%dT%H:%MZ)"
 mkdir -p "$SITE"
 fail=0
 
@@ -48,12 +51,12 @@ for dir in "${games[@]}"; do
   "$GODOT" --headless --path "$dir" --export-release "Web" "$SITE/$name/index.html"
   [ -s "$SITE/$name/index.wasm" ] || { echo "::error::$name export produced no build"; fail=1; }
   # Touch hardening (always on) and input diagnostics (inert unless the page has ?debug=input).
-  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/input-debug.js" "$ROOT/.github/scripts/touch-fix.js" <<'PY'
-import datetime, json, os, sys
+  python3 - "$SITE/$name/index.html" "$ROOT/.github/scripts/render-options.js" "$ROOT/.github/scripts/input-debug.js" "$ROOT/.github/scripts/touch-fix.js" "$ROOT/.github/scripts/stale-reload.js" <<'PY'
+import json, os, sys
 page, scripts = sys.argv[1], [open(f).read() for f in sys.argv[2:]]
 html = open(page).read()
 if "</head>" in html and "debug=input" not in html:
-    build = os.environ.get("GITHUB_SHA", "local")[:7] + " " + datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+    build = os.environ["GT_BUILD"]
     tags = "<script>window.__gtBuild=%s</script>" % json.dumps(build)
     tags += "".join("<script>" + js + "</script>" for js in scripts)
     open(page, "w").write(html.replace("</head>", tags + "</head>", 1))
@@ -62,4 +65,5 @@ PY
 done
 
 python3 "$ROOT/.github/scripts/make-index.py" "$ROOT/games" "$SITE"
+printf '{"build": "%s"}\n' "$GT_BUILD" > "$SITE/build.json"
 exit $fail

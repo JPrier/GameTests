@@ -33,6 +33,23 @@
     if (el.id) s += '#' + el.id;
     return s;
   }
+  var glInfo = 'no GL context yet';
+  (function () {
+    var orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type) {
+      var ctx = orig.apply(this, arguments);
+      if (ctx && (type === 'webgl2' || type === 'webgl')) {
+        try {
+          var a = ctx.getContextAttributes() || {};
+          glInfo = type + ' aa ' + a.antialias + ' preserve ' + a.preserveDrawingBuffer + ' alpha ' + a.alpha +
+            ' power ' + a.powerPreference + ' buffer ' + ctx.drawingBufferWidth + 'x' + ctx.drawingBufferHeight;
+        } catch (e) { glInfo = 'GL attrs ERR ' + e.message; }
+        this.addEventListener('webglcontextlost', function () { errors.push(stamp() + 'WEBGL CONTEXT LOST'); render(); });
+        this.addEventListener('webglcontextrestored', function () { log('webgl context restored'); });
+      }
+      return ctx;
+    };
+  })();
   var envLine = null;
   function env() {
     if (envLine) return envLine;
@@ -66,6 +83,7 @@
     return [
       'build ' + (window.__gtBuild || '?') + ' | ' + navigator.userAgent,
       env(),
+      'render options ' + JSON.stringify(window.__gtRenderOptions || {}) + ' | ' + glInfo,
       'viewport ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio +
         (vv ? ' vv ' + Math.round(vv.width) + 'x' + Math.round(vv.height) + ' scale ' + vv.scale.toFixed(2) : ''),
       c ? 'canvas ' + c.width + 'x' + c.height + ' at ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
@@ -165,6 +183,43 @@
   window.addEventListener('error', function (e) { errors.push(stamp() + 'error: ' + e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno); render(); });
   window.addEventListener('unhandledrejection', function (e) { errors.push(stamp() + 'rejection: ' + (e.reason && e.reason.message || e.reason)); render(); });
   ['focus', 'blur', 'resize', 'orientationchange'].forEach(function (t) { window.addEventListener(t, function () { log('window ' + t); }); });
+  // ?debug=input&tap=190,600;26,540 taps those CSS positions after load (tapwait ms, default 8000;
+  // tapgap ms between taps, default 1500), so a remote device can be driven without coordinate taps.
+  (function () {
+    var m = /[?&]tap=([0-9.,;]+)/.exec(location.search);
+    if (!m) return;
+    var pts = m[1].split(';').map(function (p) { return p.split(',').map(Number); });
+    var wait = +((/[?&]tapwait=(\d+)/.exec(location.search) || [])[1] || 8000);
+    var gap = +((/[?&]tapgap=(\d+)/.exec(location.search) || [])[1] || 1500);
+    var id = 1000;
+    function fire(target, type, x, y, touchId) {
+      var t = { identifier: touchId, target: target, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y,
+        radiusX: 10, radiusY: 10, force: 1 };
+      var e = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(e, 'changedTouches', { value: [t] });
+      Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [t] });
+      Object.defineProperty(e, 'targetTouches', { value: type === 'touchend' ? [] : [t] });
+      target.dispatchEvent(e);
+    }
+    function pe(target, type, x, y) {
+      try {
+        target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch',
+          isPrimary: true, clientX: x, clientY: y, buttons: type === 'pointerdown' ? 1 : 0 }));
+      } catch (e) {}
+    }
+    function tap(i) {
+      if (i >= pts.length) { log('AUTOTAP done'); return; }
+      var x = pts[i][0], y = pts[i][1], c = document.querySelector('canvas'), tid = id++;
+      if (!c) { log('AUTOTAP no canvas'); return; }
+      log('AUTOTAP ' + (i + 1) + '/' + pts.length + ' at ' + x + ',' + y);
+      pe(c, 'pointerdown', x, y); fire(c, 'touchstart', x, y, tid);
+      setTimeout(function () {
+        pe(c, 'pointerup', x, y); fire(c, 'touchend', x, y, tid);
+        setTimeout(function () { tap(i + 1); }, gap);
+      }, 90);
+    }
+    setTimeout(function () { tap(0); }, wait);
+  })();
   setInterval(render, 1000);
   document.addEventListener('DOMContentLoaded', render);
 })();
