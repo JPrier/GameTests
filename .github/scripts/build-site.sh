@@ -66,4 +66,10 @@ done
 
 python3 "$ROOT/.github/scripts/make-index.py" "$ROOT/games" "$SITE"
 printf '{"build": "%s"}\n' "$GT_BUILD" > "$SITE/build.json"
+# One shared copy of each distinct Godot engine (keeps the site, and each PR preview, small).
+python3 "$ROOT/.github/scripts/share-engine.py" "$SITE" || fail=1
+# Served from the gh-pages branch: skip Jekyll so nothing is filtered or rewritten.
+touch "$SITE/.nojekyll"
+# Structural checks on the finished site (render fix injected first, engine paths resolve, size).
+python3 "$ROOT/.github/tests/check-site.py" "$SITE" || fail=1
 exit $fail

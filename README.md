@@ -42,14 +42,23 @@ games/
 
 ## How deploys work
 
-Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which:
+Every push to `main` and every pull request runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which:
 
 1. installs Godot 4.7.2 and only the web export templates (cached between runs),
 2. validates and runs the tests of every Godot project under `games/` (found in any category folder), failing the build on errors; a game with an executable `prebuild.sh` runs it first (Crowd Control builds its Rust simulation there, so the workflow also installs Rust with the wasm target),
-3. exports each game to `/<folder>/` and generates the home page,
-4. deploys the result to GitHub Pages.
+3. exports each game to `/<folder>/`, generates the home page, and moves the Godot engine (identical for every game, ~40 MB) to one shared copy in `/engine/<hash>/`,
+4. tests the built site (see below),
+5. deploys it: `main` to the root of the `gh-pages` branch (the live site), a pull request to `https://joshprier.dev/GameTests/pr-preview/pr-<number>/` (a bot comments the link on the PR; the preview is deleted when the PR closes).
 
-Pull requests run steps 1–3 without deploying.
+GitHub Pages serves the `gh-pages` branch (Settings → Pages → Source: Deploy from a branch, `gh-pages`, `/ (root)`). Previews only run for branches in this repo, not forks.
+
+### Site tests
+
+- `node --test .github/tests/*.test.mjs`: unit tests for the injected page scripts, chiefly `render-options.js`, the fix for iOS 18 Safari showing only the first frame (every iPhone browser on iOS 18 froze: taps worked, the screen never updated).
+- `.github/tests/check-site.py` (end of `build-site.sh`): every page has the fix injected first, engine paths resolve, the site fits its size budget (live site + previews must stay under Pages' 1 GB).
+- `node .github/tests/smoke.mjs _site`: opens every game in Chromium and WebKit (Playwright), taps a real button (gtui reports them on `?debug=input`) and requires the canvas to redraw, with no page errors; in WebKit it also requires the fix to be active. `--self-test` freezes the screen on purpose and requires the check to catch it.
+
+Linux WebKit does not have the iOS 18 driver bug, so these guard the fix and the symptom rather than reproduce the bug; for a real iPhone, open a preview link on one (or BrowserStack) with `?debug=input`.
 
 To add a game, put a Godot project with a `Web` export preset in `games/<Category>/<name>/` (or one level deeper, `games/<Category>/<Subcategory>/<name>/`) and push. A new category is just a new folder.
 

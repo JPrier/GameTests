@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, closed]   # closed: remove the PR's preview
   workflow_dispatch:
 
 permissions:
@@ -19,9 +20,14 @@ env:
 
 jobs:
   build:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The iOS 18 frozen-screen fix (render-options.js): which browsers get it, what it drops.
+      - name: Unit tests (site scripts)
+        run: node --test .github/tests/*.test.mjs
 
       - name: Cache Godot + web export templates
         id: cache-godot
@@ -66,22 +72,81 @@ jobs:
           chmod +x "$GODOT_BIN"
           bash .github/scripts/build-site.sh
 
-      - name: Upload site
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+      # Every game in Chromium and WebKit: boots without errors and a button tap redraws the screen.
+      # Then the same check against an injected frozen screen, which it must catch.
+      - name: Install Playwright browsers
+        run: |
+          npm install --no-save --no-package-lock playwright@1
+          npx playwright install --with-deps chromium webkit
 
+      - name: Smoke test (every game, Chromium + WebKit)
+        run: node .github/tests/smoke.mjs _site
+
+      - name: Smoke self-test (an injected frozen screen must fail)
+        run: node .github/tests/smoke.mjs _site --self-test --browsers chromium,webkit --games drinkle,plans-tonight
+
+      - name: Upload smoke screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: smoke-*.png
+          if-no-files-found: ignore
+
+      - name: Upload site
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: _site
+          include-hidden-files: true   # .nojekyll
+          retention-days: 7
+
+  # Live site: the root of the gh-pages branch, leaving PR previews (pr-preview/) in place.
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: _site
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false
+
+  # PR preview at https://joshprier.dev/GameTests/pr-preview/pr-<number>/, removed when the PR closes.
+  preview:
+    needs: build
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action == 'closed' || needs.build.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: github.event.action != 'closed'
+        with:
+          name: site
+          path: _site
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: _site
+          umbrella-dir: pr-preview
+          pages-base-url: joshprier.dev/GameTests
